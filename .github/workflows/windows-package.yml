@@ -32,17 +32,13 @@ jobs:
         working-directory: client
         run: flutter build windows --release
 
-      - name: Package Windows client
-        shell: pwsh
-        run: |
-          Compress-Archive `
-            -Path client/build/windows/x64/runner/Release/* `
-            -DestinationPath client/build/eighty-point-huai-an-windows-x64.zip `
-            -Force
+      - name: Package Windows client as MSIX
+        working-directory: client
+        run: dart run msix:create --build-windows false --install-certificate false
 
       - name: Upload Windows package
         uses: actions/upload-artifact@v4.6.2
         with:
           name: windows-x64-${{ github.sha }}
-          path: client/build/eighty-point-huai-an-windows-x64.zip
+          path: client/build/windows/**/*.msix
           if-no-files-found: error

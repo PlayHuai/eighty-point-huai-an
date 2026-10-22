@@ -276,7 +276,7 @@ migrations/
 
 ## 14. GitHub Actions 构建产物
 
-- master 分支中的 `server/**` 变更触发 Linux/amd64 服务端验证及 Docker 镜像归档构建；`client/**` 变更分别触发 iOS 和 Windows 客户端构建。
-- 初始工作流约定服务端入口为 `server/cmd/server`、镜像定义为 `server/Dockerfile`；Flutter 工程位于 `client/`。工作流构建产物上传到对应 Actions run，不自动部署、发布或推送镜像仓库。
-- Windows 初始产物为便携 ZIP。iOS 初始构建使用无签名模式；签名 IPA 的生成和分发必须在确认分发方式并配置相应 Apple 签名材料后完成。
+- master 分支中的 `server/**` 变更触发 Linux/amd64 服务端验证及 Docker 镜像归档构建；`client/**` 变更触发 Windows 客户端 MSIX 构建。暂不提供 iOS 打包 Action。
+- 初始工作流约定服务端入口为 `server/cmd/server`、镜像定义为 `server/Dockerfile`；Flutter 工程位于 `client/`，并需配置 `msix` 开发依赖及 `msix_config`。工作流构建产物上传到对应 Actions run，不自动部署、发布或推送镜像仓库。
+- Windows 产物为 MSIX，使用开发签名配置；自签名 MSIX 的安装需要接收方信任相应证书。正式分发前需配置经确认的签名证书或商店发布流程。
 - 仓库当前只有架构/需求文档，没有上述源码或构建配置。因此工作流是待应用骨架落地后启用的构建约定；不能在缺少源码和签名材料时声称已生成可安装产物。

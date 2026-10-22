@@ -24,11 +24,11 @@
 | T09 | TODO | 实现牌局编排、房间内串行化、持久化事件、重连恢复和断线托管；验证崩溃恢复与幂等。 | T03、T04、T08 |
 | T10 | TODO | 实现整场结束结算、积分/段位更新及审计记录；验证同一场次只结算一次且符合已确认规则。 | T03、T04、T09 |
 | T11 | TODO | 建立 Flutter 共享客户端骨架、API 客户端、登录态及基础导航；验证 iOS、Windows、Web 可构建。 | T05、T06 |
-| T12 | TODO | 完成 Flutter iOS 客户端和目标分发方式所需的签名配置；在 macOS CI 生成经确认可安装/分发的 IPA。 | T11、T01 |
-| T13 | TODO | 完成 Flutter Windows 客户端；按确认的分发格式生成并验证 Windows 安装包。 | T11、T01 |
+| T12 | TODO | 完成 Flutter iOS 客户端；当前暂不配置 iOS 打包 Action，后续如需自动打包再确认分发方式和签名要求。 | T11、T01 |
+| T13 | TODO | 完成 Flutter Windows 客户端和 MSIX 配置；生成 MSIX，并按确认的证书/分发策略验证签名与安装。 | T11、T01 |
 | T14 | TODO | 完成 Flutter Web 客户端；验证选定 gRPC-Web 实现、浏览器支持及 WebSocket 重连。 | T11、T01 |
 | T15 | TODO | 完成服务端 Docker 镜像构建与部署包；验证 Docker Compose、健康检查、迁移和备份恢复。 | T02、T04、T09、T10 |
-| T16 | TODO | 在 master 分支为服务端、iOS、Windows 配置按对应源码变更触发的 GitHub Actions；每次构建上传可追溯的包产物，并验证签名/分发要求。 | T12、T13、T15 |
+| T16 | TODO | 在 master 分支为服务端、Windows 配置按对应源码变更触发的 GitHub Actions；上传 Docker 镜像归档和 MSIX 构建产物。不配置 iOS 打包 Action。 | T13、T15 |
 | T17 | TODO | 完成安全、规则、并发、集成及三端兼容测试；不得将密钥或未授权牌面写入日志/产物。 | T03–T16 |
 | T18 | TODO | 完成监控、告警、Linux 部署手册和生产发布/回滚演练；生产容量及恢复目标须经确认。 | T01、T15、T17 |
 
@@ -36,11 +36,11 @@
 
 以下选择会影响构建或发布，本次先不自行决定：
 
-1. **iOS 分发方式**：签名证书/描述文件和 Apple Team、Bundle ID 由谁提供；采用开发、Ad Hoc、TestFlight 还是 App Store 分发。未配置签名时只能构建未签名 IPA，不能作为可直接安装的包。
-2. **Windows 包格式**：接受便携 ZIP，还是需要 MSIX/安装程序；如需签名，需提供证书和分发要求。
-3. **服务端分发方式**：本次工作流产出 Docker 镜像归档；后续是否推送到指定镜像仓库，以及仓库地址/凭据由用户确认。
+1. **iOS 打包**：目前不提供 iOS 打包 Action；如后续需要，需确认签名证书/描述文件、Apple Team、Bundle ID 及开发、Ad Hoc、TestFlight 或 App Store 分发方式。
+2. **Windows MSIX 签名/分发**：工作流生成 MSIX，使用 msix 工具默认的开发签名配置；对外分发前需确认可信签名证书或 Microsoft Store 发布方式。自签名包的接收方需信任对应证书才能安装。
+3. **服务端分发方式**：工作流产出 Docker 镜像归档；后续是否推送到指定镜像仓库，以及仓库地址/凭据由用户确认。
 4. **架构文档第 13 节事项**：多端登录与 Token 有效期、聊天留存/删除策略、观战开牌权限、容量与可用性目标、Flutter Web gRPC-Web 插件及浏览器范围。
 
 ## 当前构建工作流约定
 
-仓库目前尚无应用源码。新增工作流约定服务端位于 `server/`（含 `go.mod`、`cmd/server` 和 `Dockerfile`），Flutter 应用位于 `client/`（含 `pubspec.yaml`、iOS/Windows 工程）。源码提交到 master 后，服务端构建 Linux/amd64 Docker 镜像归档，iOS 构建未签名 IPA，Windows 构建便携 ZIP；产物上传到对应 GitHub Actions run，不自动发布到商店或镜像仓库。目录、入口和分发格式如需调整，应先确认并同步修改工作流。
+仓库目前尚无应用源码。工作流约定服务端位于 `server/`（含 `go.mod`、`cmd/server` 和 `Dockerfile`），Flutter 应用位于 `client/`（含 `pubspec.yaml`、Windows 工程及 `msix` 开发依赖/`msix_config`）。master 上的服务端代码变更构建 Linux/amd64 Docker 镜像归档；客户端代码变更构建 Windows MSIX。暂不提供 iOS 打包 Action。产物上传到对应 GitHub Actions run，不自动发布到商店或镜像仓库；MSIX 当前使用开发签名，正式分发前需配置经确认的签名证书或商店发布流程。
