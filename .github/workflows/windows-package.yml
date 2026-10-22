@@ -1,0 +1,48 @@
+name: Windows client package
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - "client/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4.2.2
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2.19.0
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        working-directory: client
+        run: flutter pub get
+
+      - name: Build Windows client
+        working-directory: client
+        run: flutter build windows --release
+
+      - name: Package Windows client
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path client/build/windows/x64/runner/Release/* `
+            -DestinationPath client/build/eighty-point-huai-an-windows-x64.zip `
+            -Force
+
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: windows-x64-${{ github.sha }}
+          path: client/build/eighty-point-huai-an-windows-x64.zip
+          if-no-files-found: error

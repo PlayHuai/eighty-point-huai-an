@@ -273,3 +273,10 @@ migrations/
 | 5 | Flutter Web 使用的 gRPC-Web 插件及浏览器支持范围 | 在技术验证中确认；不能满足时 Web 端 RPC 改用 HTTP/JSON 网关，WebSocket 保持不变 | Web 客户端 API 生成、Envoy 配置和兼容测试 |
 
 托管策略的细节（例如超时后自动选择何种合法动作）应作为规则引擎的独立、可测策略实现；所有托管动作都标注服务端身份和原因，写入事件日志，不得冒充玩家主动操作。
+
+## 14. GitHub Actions 构建产物
+
+- master 分支中的 `server/**` 变更触发 Linux/amd64 服务端验证及 Docker 镜像归档构建；`client/**` 变更分别触发 iOS 和 Windows 客户端构建。
+- 初始工作流约定服务端入口为 `server/cmd/server`、镜像定义为 `server/Dockerfile`；Flutter 工程位于 `client/`。工作流构建产物上传到对应 Actions run，不自动部署、发布或推送镜像仓库。
+- Windows 初始产物为便携 ZIP。iOS 初始构建使用无签名模式；签名 IPA 的生成和分发必须在确认分发方式并配置相应 Apple 签名材料后完成。
+- 仓库当前只有架构/需求文档，没有上述源码或构建配置。因此工作流是待应用骨架落地后启用的构建约定；不能在缺少源码和签名材料时声称已生成可安装产物。
