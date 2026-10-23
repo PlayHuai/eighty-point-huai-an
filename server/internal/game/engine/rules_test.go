@@ -211,6 +211,19 @@ func TestPointsAndBottomMultiplier(t *testing.T) {
 			t.Errorf("BottomMultiplier(%v, %d) = (%d, %v), want %d", test.kind, test.pairs, got, err, test.multiplier)
 		}
 	}
+	for _, test := range []struct {
+		kind  PlayKind
+		pairs int
+	}{
+		{PlaySingle, 1},
+		{PlayPair, 0},
+		{PlayTwoPairs, 1},
+		{Play510K, 3},
+	} {
+		if _, err := BottomMultiplier(test.kind, test.pairs); err != ErrInvalidPlay {
+			t.Errorf("BottomMultiplier(%v, %d) error = %v, want ErrInvalidPlay", test.kind, test.pairs, err)
+		}
+	}
 	got, err := ScoreHand(35, 15, true, PlayPair, 1)
 	if err != nil || got != 95 {
 		t.Fatalf("ScoreHand() = (%d, %v), want (95, nil)", got, err)

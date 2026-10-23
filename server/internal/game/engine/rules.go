@@ -476,10 +476,19 @@ func Points(cards []Card) (int, error) {
 func BottomMultiplier(kind PlayKind, pairCount int) (int, error) {
 	switch kind {
 	case PlaySingle:
+		if pairCount != 0 {
+			return 0, ErrInvalidPlay
+		}
 		return 2, nil
 	case PlayPair:
+		if pairCount != 1 {
+			return 0, ErrInvalidPlay
+		}
 		return 4, nil
 	case PlayTwoPairs:
+		if pairCount != 2 {
+			return 0, ErrInvalidPlay
+		}
 		return 8, nil
 	case PlayTractor:
 		if pairCount < 2 || pairCount > 30 {
