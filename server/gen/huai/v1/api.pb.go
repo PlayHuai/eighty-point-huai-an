@@ -1117,6 +1117,7 @@ type RoomSummary struct {
 	OccupiedSeats uint32                 `protobuf:"varint,5,opt,name=occupied_seats,json=occupiedSeats,proto3" json:"occupied_seats,omitempty"`
 	Capacity      uint32                 `protobuf:"varint,6,opt,name=capacity,proto3" json:"capacity,omitempty"`
 	HasPassword   bool                   `protobuf:"varint,7,opt,name=has_password,json=hasPassword,proto3" json:"has_password,omitempty"`
+	Version       uint64                 `protobuf:"varint,8,opt,name=version,proto3" json:"version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1198,6 +1199,13 @@ func (x *RoomSummary) GetHasPassword() bool {
 		return x.HasPassword
 	}
 	return false
+}
+
+func (x *RoomSummary) GetVersion() uint64 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
 }
 
 type ListRoomsRequest struct {
@@ -3533,7 +3541,7 @@ const file_huai_v1_api_proto_rawDesc = "" +
 	"\x0emaximum_points\x18\x04 \x01(\x03R\rmaximumPoints\x126\n" +
 	"\x17multiplier_basis_points\x18\x05 \x01(\x05R\x15multiplierBasisPoints\"8\n" +
 	"\x11ListHallsResponse\x12#\n" +
-	"\x05halls\x18\x01 \x03(\v2\r.huai.v1.HallR\x05halls\"\xe6\x01\n" +
+	"\x05halls\x18\x01 \x03(\v2\r.huai.v1.HallR\x05halls\"\x80\x02\n" +
 	"\vRoomSummary\x12\x17\n" +
 	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x12\x17\n" +
 	"\ahall_id\x18\x02 \x01(\tR\x06hallId\x12\x12\n" +
@@ -3541,7 +3549,8 @@ const file_huai_v1_api_proto_rawDesc = "" +
 	"\x06status\x18\x04 \x01(\x0e2\x13.huai.v1.RoomStatusR\x06status\x12%\n" +
 	"\x0eoccupied_seats\x18\x05 \x01(\rR\roccupiedSeats\x12\x1a\n" +
 	"\bcapacity\x18\x06 \x01(\rR\bcapacity\x12!\n" +
-	"\fhas_password\x18\a \x01(\bR\vhasPassword\"U\n" +
+	"\fhas_password\x18\a \x01(\bR\vhasPassword\x12\x18\n" +
+	"\aversion\x18\b \x01(\x04R\aversion\"U\n" +
 	"\x10ListRoomsRequest\x12\x17\n" +
 	"\ahall_id\x18\x01 \x01(\tR\x06hallId\x12(\n" +
 	"\x04page\x18\x02 \x01(\v2\x14.huai.v1.PageRequestR\x04page\"f\n" +

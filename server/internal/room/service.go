@@ -63,6 +63,7 @@ type Summary struct {
 	Capacity        uint32
 	HasPassword     bool
 	AllowSpectators bool
+	Version         uint64
 }
 
 type Member struct {
@@ -162,7 +163,9 @@ func (m *Manager) ListRooms(hallID string, userPoints int64) ([]Summary, error) 
 	for _, state := range rooms {
 		state.mu.Lock()
 		if state.summary.HallID == hallID && state.summary.Status != StatusClosed {
-			result = append(result, state.summary)
+			summary := state.summary
+			summary.Version = state.version
+			result = append(result, summary)
 		}
 		state.mu.Unlock()
 	}
@@ -171,11 +174,10 @@ func (m *Manager) ListRooms(hallID string, userPoints int64) ([]Summary, error) 
 }
 
 func (m *Manager) JoinRoom(roomID, userID string, points int64, password string, expectedVersion uint64) (Details, error) {
-	state, err := m.findRoom(roomID)
+	state, err := m.lockRoom(roomID)
 	if err != nil {
 		return Details{}, err
 	}
-	state.mu.Lock()
 	defer state.mu.Unlock()
 	if err := state.checkVersion(expectedVersion); err != nil {
 		return Details{}, err
@@ -202,17 +204,16 @@ func (m *Manager) JoinRoom(roomID, userID string, points int64, password string,
 	return snapshotLocked(state), nil
 }
 
-func (m *Manager) JoinSpectator(roomID, userID string, points int64, viewSeat uint32, expectedVersion uint64) (Details, error) {
-	state, err := m.findRoom(roomID)
+func (m *Manager) JoinSpectator(roomID, userID string, points int64, password string, viewSeat uint32, expectedVersion uint64) (Details, error) {
+	state, err := m.lockRoom(roomID)
 	if err != nil {
 		return Details{}, err
 	}
-	state.mu.Lock()
 	defer state.mu.Unlock()
 	if err := state.checkVersion(expectedVersion); err != nil {
 		return Details{}, err
 	}
-	if err := state.checkAdmission(userID, points); err != nil {
+	if err := state.checkHallAdmission(userID, points); err != nil {
 		return Details{}, err
 	}
 	if state.summary.Status == StatusClosed {
@@ -227,6 +228,9 @@ func (m *Manager) JoinSpectator(roomID, userID string, points int64, viewSeat ui
 	if _, exists := state.members[userID]; exists {
 		return Details{}, ErrAlreadyMember
 	}
+	if state.summary.HasPassword && !verifyPassword(password, state.passwordSalt[:], state.passwordHash) {
+		return Details{}, ErrInvalidPassword
+	}
 	state.members[userID] = memberState{Member: Member{
 		UserID: userID, Role: RoleSpectator, ViewSeat: viewSeat,
 	}}
@@ -235,11 +239,10 @@ func (m *Manager) JoinSpectator(roomID, userID string, points int64, viewSeat ui
 }
 
 func (m *Manager) SitDown(roomID, userID string, seat uint32, points int64, expectedVersion uint64) (Details, error) {
-	state, err := m.findRoom(roomID)
+	state, err := m.lockRoom(roomID)
 	if err != nil {
 		return Details{}, err
 	}
-	state.mu.Lock()
 	defer state.mu.Unlock()
 	if err := state.checkVersion(expectedVersion); err != nil {
 		return Details{}, err
@@ -257,7 +260,7 @@ func (m *Manager) SitDown(roomID, userID string, seat uint32, points int64, expe
 	if !exists {
 		return Details{}, ErrNotMember
 	}
-	if member.Role == RolePlayer {
+	if member.Role == RolePlayer && member.Seat != 0 {
 		return Details{}, ErrAlreadyMember
 	}
 	if seatTaken(state.members, seat) {
@@ -270,12 +273,34 @@ func (m *Manager) SitDown(roomID, userID string, seat uint32, points int64, expe
 	return snapshotLocked(state), nil
 }
 
-func (m *Manager) ChangeSeat(roomID, userID string, seat uint32, expectedVersion uint64) (Details, error) {
-	state, err := m.findRoom(roomID)
+func (m *Manager) StandUp(roomID, userID string, expectedVersion uint64) (Details, error) {
+	state, err := m.lockRoom(roomID)
 	if err != nil {
 		return Details{}, err
 	}
-	state.mu.Lock()
+	defer state.mu.Unlock()
+	if err := state.checkVersion(expectedVersion); err != nil {
+		return Details{}, err
+	}
+	if state.summary.Status != StatusWaiting {
+		return Details{}, ErrRoomStarted
+	}
+	member, exists := state.members[userID]
+	if !exists || member.Role != RolePlayer || member.Seat == 0 {
+		return Details{}, ErrNotMember
+	}
+	member.Seat = 0
+	state.members[userID] = member
+	state.summary.OccupiedSeats--
+	state.version++
+	return snapshotLocked(state), nil
+}
+
+func (m *Manager) ChangeSeat(roomID, userID string, seat uint32, expectedVersion uint64) (Details, error) {
+	state, err := m.lockRoom(roomID)
+	if err != nil {
+		return Details{}, err
+	}
 	defer state.mu.Unlock()
 	if err := state.checkVersion(expectedVersion); err != nil {
 		return Details{}, err
@@ -290,7 +315,7 @@ func (m *Manager) ChangeSeat(roomID, userID string, seat uint32, expectedVersion
 	if !exists {
 		return Details{}, ErrNotMember
 	}
-	if member.Role != RolePlayer {
+	if member.Role != RolePlayer || member.Seat == 0 {
 		return Details{}, ErrNotMember
 	}
 	if seatTakenByOther(state.members, seat, userID) {
@@ -303,11 +328,10 @@ func (m *Manager) ChangeSeat(roomID, userID string, seat uint32, expectedVersion
 }
 
 func (m *Manager) LeaveRoom(roomID, userID string, expectedVersion uint64) (Details, error) {
-	state, err := m.findRoom(roomID)
+	state, err := m.lockRoom(roomID)
 	if err != nil {
 		return Details{}, err
 	}
-	state.mu.Lock()
 	defer state.mu.Unlock()
 	if err := state.checkVersion(expectedVersion); err != nil {
 		return Details{}, err
@@ -316,26 +340,26 @@ func (m *Manager) LeaveRoom(roomID, userID string, expectedVersion uint64) (Deta
 	if !exists {
 		return Details{}, ErrNotMember
 	}
-	if member.Role == RolePlayer && state.summary.Status != StatusWaiting {
+	if member.Role == RolePlayer && state.summary.Status == StatusPlaying {
 		return Details{}, ErrRoomStarted
 	}
 	delete(state.members, userID)
-	if member.Role == RolePlayer {
+	if member.Role == RolePlayer && member.Seat != 0 {
 		state.summary.OccupiedSeats--
 	}
 	if userID == state.ownerID && state.summary.Status == StatusWaiting {
 		state.summary.Status = StatusClosed
 	}
 	state.version++
+	m.evictIfEmpty(state)
 	return snapshotLocked(state), nil
 }
 
 func (m *Manager) SetSpectatorView(roomID, userID string, viewSeat uint32, expectedVersion uint64) (Details, error) {
-	state, err := m.findRoom(roomID)
+	state, err := m.lockRoom(roomID)
 	if err != nil {
 		return Details{}, err
 	}
-	state.mu.Lock()
 	defer state.mu.Unlock()
 	if err := state.checkVersion(expectedVersion); err != nil {
 		return Details{}, err
@@ -354,11 +378,10 @@ func (m *Manager) SetSpectatorView(roomID, userID string, viewSeat uint32, expec
 }
 
 func (m *Manager) SetHandVisibility(roomID, userID string, visible bool, expectedVersion uint64) (Details, error) {
-	state, err := m.findRoom(roomID)
+	state, err := m.lockRoom(roomID)
 	if err != nil {
 		return Details{}, err
 	}
-	state.mu.Lock()
 	defer state.mu.Unlock()
 	if err := state.checkVersion(expectedVersion); err != nil {
 		return Details{}, err
@@ -374,11 +397,10 @@ func (m *Manager) SetHandVisibility(roomID, userID string, visible bool, expecte
 }
 
 func (m *Manager) Start(roomID, userID string, expectedVersion uint64) (Details, error) {
-	state, err := m.findRoom(roomID)
+	state, err := m.lockRoom(roomID)
 	if err != nil {
 		return Details{}, err
 	}
-	state.mu.Lock()
 	defer state.mu.Unlock()
 	if err := state.checkVersion(expectedVersion); err != nil {
 		return Details{}, err
@@ -398,11 +420,10 @@ func (m *Manager) Start(roomID, userID string, expectedVersion uint64) (Details,
 }
 
 func (m *Manager) Close(roomID, userID string, expectedVersion uint64) (Details, error) {
-	state, err := m.findRoom(roomID)
+	state, err := m.lockRoom(roomID)
 	if err != nil {
 		return Details{}, err
 	}
-	state.mu.Lock()
 	defer state.mu.Unlock()
 	if err := state.checkVersion(expectedVersion); err != nil {
 		return Details{}, err
@@ -418,15 +439,15 @@ func (m *Manager) Close(roomID, userID string, expectedVersion uint64) (Details,
 	}
 	state.summary.Status = StatusClosed
 	state.version++
+	m.evictIfEmpty(state)
 	return snapshotLocked(state), nil
 }
 
 func (m *Manager) GetRoom(roomID, userID string) (Details, error) {
-	state, err := m.findRoom(roomID)
+	state, err := m.lockRoom(roomID)
 	if err != nil {
 		return Details{}, err
 	}
-	state.mu.Lock()
 	defer state.mu.Unlock()
 	if _, exists := state.members[userID]; !exists {
 		return Details{}, ErrNotMember
@@ -441,11 +462,21 @@ func (s *roomState) checkVersion(expected uint64) error {
 	return nil
 }
 
-func (s *roomState) checkAdmission(userID string, points int64) error {
+func (s *roomState) checkHallAdmission(userID string, points int64) error {
 	if userID == "" || points < 0 {
 		return ErrInvalidInput
 	}
-	if !lobby.CanEnter(points, s.summary.HallID) || points < s.minimumPoints {
+	if !lobby.CanEnter(points, s.summary.HallID) {
+		return ErrAdmissionDenied
+	}
+	return nil
+}
+
+func (s *roomState) checkAdmission(userID string, points int64) error {
+	if err := s.checkHallAdmission(userID, points); err != nil {
+		return err
+	}
+	if points < s.minimumPoints {
 		return ErrAdmissionDenied
 	}
 	return nil
@@ -461,6 +492,33 @@ func (m *Manager) findRoom(roomID string) (*roomState, error) {
 	return state, nil
 }
 
+func (m *Manager) lockRoom(roomID string) (*roomState, error) {
+	state, err := m.findRoom(roomID)
+	if err != nil {
+		return nil, err
+	}
+	state.mu.Lock()
+	m.mu.RLock()
+	current := m.rooms[roomID] == state
+	m.mu.RUnlock()
+	if !current {
+		state.mu.Unlock()
+		return nil, ErrRoomNotFound
+	}
+	return state, nil
+}
+
+func (m *Manager) evictIfEmpty(state *roomState) {
+	if state.summary.Status != StatusClosed || len(state.members) != 0 {
+		return
+	}
+	m.mu.Lock()
+	if m.rooms[state.summary.ID] == state {
+		delete(m.rooms, state.summary.ID)
+	}
+	m.mu.Unlock()
+}
+
 func snapshot(state *roomState) Details {
 	state.mu.Lock()
 	defer state.mu.Unlock()
@@ -468,7 +526,9 @@ func snapshot(state *roomState) Details {
 }
 
 func snapshotLocked(state *roomState) Details {
-	result := Details{Room: state.summary, Version: state.version}
+	summary := state.summary
+	summary.Version = state.version
+	result := Details{Room: summary, Version: state.version}
 	result.Members = make([]Member, 0, len(state.members))
 	for _, member := range state.members {
 		result.Members = append(result.Members, member.Member)

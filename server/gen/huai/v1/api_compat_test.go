@@ -94,3 +94,14 @@ func TestSubmitActionFieldNumbers(t *testing.T) {
 		}
 	}
 }
+
+func TestRoomSummaryVersionFieldNumber(t *testing.T) {
+	fields := (&RoomSummary{}).ProtoReflect().Descriptor().Fields()
+	field := fields.ByName("version")
+	if field == nil {
+		t.Fatal("RoomSummary.version is missing")
+	}
+	if got, want := field.Number(), protoreflect.FieldNumber(8); got != want {
+		t.Fatalf("RoomSummary.version field number = %d, want %d", got, want)
+	}
+}

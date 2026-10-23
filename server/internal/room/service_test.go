@@ -60,12 +60,15 @@ func TestRoomAdmissionSeatingAndStart(t *testing.T) {
 	if _, err := manager.ChangeSeat(created.Room.ID, "owner", 2, started.Version); !errors.Is(err, ErrRoomStarted) {
 		t.Fatalf("ChangeSeat after start: got %v, want ErrRoomStarted", err)
 	}
+	if _, err := manager.LeaveRoom(created.Room.ID, "owner", started.Version); !errors.Is(err, ErrRoomStarted) {
+		t.Fatalf("LeaveRoom after start: got %v, want ErrRoomStarted", err)
+	}
 }
 
 func TestRoomSpectatingAndHallIsolation(t *testing.T) {
 	manager := NewManager()
-	ordinary, err := manager.CreateRoom(lobby.HallOrdinary, "ordinary-owner", 0, Settings{
-		Name: "ordinary", AllowSpectators: true,
+	ordinary, err := manager.CreateRoom(lobby.HallOrdinary, "ordinary-owner", 9000, Settings{
+		Name: "ordinary", MinimumPoints: 8000, AllowSpectators: true, Password: "secret",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -87,13 +90,29 @@ func TestRoomSpectatingAndHallIsolation(t *testing.T) {
 	if _, err := manager.ListRooms(lobby.HallAdvanced, 9999); !errors.Is(err, ErrAdmissionDenied) {
 		t.Fatalf("ListRooms for an ineligible hall: got %v, want ErrAdmissionDenied", err)
 	}
-	if _, err := manager.JoinSpectator(advanced.Room.ID, "spectator", 9999, 1, advanced.Version); !errors.Is(err, ErrAdmissionDenied) {
+	if _, err := manager.JoinSpectator(advanced.Room.ID, "spectator", 9999, "", 1, advanced.Version); !errors.Is(err, ErrAdmissionDenied) {
 		t.Fatalf("cross-hall spectating: got %v, want ErrAdmissionDenied", err)
 	}
 
-	details, err := manager.JoinSpectator(ordinary.Room.ID, "spectator", 0, 2, ordinary.Version)
+	if rooms[0].Version != ordinary.Version {
+		t.Fatalf("listed room version = %d, want %d", rooms[0].Version, ordinary.Version)
+	}
+	if _, err := manager.JoinSpectator(ordinary.Room.ID, "spectator", 0, "", 2, ordinary.Version); !errors.Is(err, ErrInvalidPassword) {
+		t.Fatalf("JoinSpectator without password: got %v, want ErrInvalidPassword", err)
+	}
+	if _, err := manager.SitDown(ordinary.Room.ID, "spectator", 2, 9000, ordinary.Version); !errors.Is(err, ErrNotMember) {
+		t.Fatalf("SitDown after failed spectator admission: got %v, want ErrNotMember", err)
+	}
+	details, err := manager.JoinSpectator(ordinary.Room.ID, "spectator", 0, "secret", 2, ordinary.Version)
 	if err != nil {
 		t.Fatal(err)
+	}
+	rooms, err = manager.ListRooms(lobby.HallOrdinary, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rooms[0].Version != details.Version {
+		t.Fatalf("listed room version = %d, want current version %d", rooms[0].Version, details.Version)
 	}
 	spectator := memberFor(t, details, "spectator")
 	if spectator.Role != RoleSpectator || spectator.ViewSeat != 2 || spectator.Seat != 0 {
@@ -151,12 +170,15 @@ func TestRoomMutationsUseOptimisticVersioning(t *testing.T) {
 func TestRoomSupportsSpectatorConversionAndPreGameSeatChanges(t *testing.T) {
 	manager := NewManager()
 	created, err := manager.CreateRoom(lobby.HallOrdinary, "owner", 0, Settings{
-		Name: "table", AllowSpectators: true,
+		Name: "table", AllowSpectators: true, Password: "secret",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	spectator, err := manager.JoinSpectator(created.Room.ID, "guest", 0, 4, created.Version)
+	if _, err := manager.JoinSpectator(created.Room.ID, "guest", 0, "", 4, created.Version); !errors.Is(err, ErrInvalidPassword) {
+		t.Fatalf("JoinSpectator without password: got %v, want ErrInvalidPassword", err)
+	}
+	spectator, err := manager.JoinSpectator(created.Room.ID, "guest", 0, "secret", 4, created.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,6 +195,140 @@ func TestRoomSupportsSpectatorConversionAndPreGameSeatChanges(t *testing.T) {
 	}
 	if got := memberFor(t, moved, "guest").Seat; got != 3 {
 		t.Fatalf("seat after change = %d, want 3", got)
+	}
+}
+
+func TestRoomSupportsStandingUpAndSittingDownAgain(t *testing.T) {
+	manager := NewManager()
+	created, err := manager.CreateRoom(lobby.HallOrdinary, "owner", 0, Settings{Name: "table"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seated, err := manager.JoinRoom(created.Room.ID, "owner", 0, "", created.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.StandUp(created.Room.ID, "owner", created.Version); !errors.Is(err, ErrVersionConflict) {
+		t.Fatalf("StandUp with stale version: got %v, want ErrVersionConflict", err)
+	}
+	standing, err := manager.StandUp(created.Room.ID, "owner", seated.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if standing.Room.OccupiedSeats != 0 || memberFor(t, standing, "owner").Seat != 0 {
+		t.Fatalf("standing player still occupies a seat: %+v", standing)
+	}
+	if _, err := manager.Start(created.Room.ID, "owner", standing.Version); !errors.Is(err, ErrRoomNotReady) {
+		t.Fatalf("Start after owner stood up: got %v, want ErrRoomNotReady", err)
+	}
+	resat, err := manager.SitDown(created.Room.ID, "owner", 2, 0, standing.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := memberFor(t, resat, "owner").Seat; got != 2 {
+		t.Fatalf("seat after sitting down again = %d, want 2", got)
+	}
+}
+
+func TestMembersCanLeaveClosedRoomsAndClosedRoomsAreEvicted(t *testing.T) {
+	manager := NewManager()
+	created, err := manager.CreateRoom(lobby.HallOrdinary, "owner", 0, Settings{Name: "table"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined, err := manager.JoinRoom(created.Room.ID, "owner", 0, "", created.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined, err = manager.JoinRoom(created.Room.ID, "player", 0, "", joined.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed, err := manager.Close(created.Room.ID, "owner", joined.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	playerLeft, err := manager.LeaveRoom(created.Room.ID, "player", closed.Version)
+	if err != nil {
+		t.Fatalf("player leaving closed room: %v", err)
+	}
+	ownerLeft, err := manager.LeaveRoom(created.Room.ID, "owner", playerLeft.Version)
+	if err != nil {
+		t.Fatalf("owner leaving closed room: %v", err)
+	}
+	if len(ownerLeft.Members) != 0 {
+		t.Fatalf("closed room retained members: %+v", ownerLeft.Members)
+	}
+	if _, err := manager.GetRoom(created.Room.ID, "owner"); !errors.Is(err, ErrRoomNotFound) {
+		t.Fatalf("GetRoom after last member left: got %v, want ErrRoomNotFound", err)
+	}
+	rooms, err := manager.ListRooms(lobby.HallOrdinary, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rooms) != 0 {
+		t.Fatalf("closed room remains listed: %+v", rooms)
+	}
+}
+
+func TestOwnerDepartureClosesAndEvictsRoomAfterMembersLeave(t *testing.T) {
+	manager := NewManager()
+	created, err := manager.CreateRoom(lobby.HallOrdinary, "owner", 0, Settings{Name: "table"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined, err := manager.JoinRoom(created.Room.ID, "owner", 0, "", created.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined, err = manager.JoinRoom(created.Room.ID, "player", 0, "", joined.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerLeft, err := manager.LeaveRoom(created.Room.ID, "owner", joined.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ownerLeft.Room.Status != StatusClosed {
+		t.Fatalf("room status after owner departure = %q, want %q", ownerLeft.Room.Status, StatusClosed)
+	}
+	if _, err := manager.LeaveRoom(created.Room.ID, "player", ownerLeft.Version); err != nil {
+		t.Fatalf("player leaving after owner departure: %v", err)
+	}
+	if _, err := manager.GetRoom(created.Room.ID, "player"); !errors.Is(err, ErrRoomNotFound) {
+		t.Fatalf("GetRoom after last member left: got %v, want ErrRoomNotFound", err)
+	}
+}
+
+func TestClosedRoomEvictionIsSafeWithConcurrentLookups(t *testing.T) {
+	manager := NewManager()
+	created, err := manager.CreateRoom(lobby.HallOrdinary, "owner", 0, Settings{Name: "table"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := make(chan struct{})
+	errs := make(chan error, 16)
+	var wg sync.WaitGroup
+	for i := 0; i < cap(errs); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := manager.GetRoom(created.Room.ID, "nonmember")
+			errs <- err
+		}()
+	}
+	close(start)
+	_, closeErr := manager.Close(created.Room.ID, "owner", created.Version)
+	if closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if !errors.Is(err, ErrRoomNotFound) && !errors.Is(err, ErrNotMember) {
+			t.Fatalf("concurrent GetRoom: got %v, want ErrRoomNotFound or ErrNotMember", err)
+		}
 	}
 }
 
