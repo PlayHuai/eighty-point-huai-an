@@ -129,7 +129,7 @@ func TestRegisterLoginAndPasswordStorage(t *testing.T) {
 	service := newTestService(t, repository)
 	ctx := context.Background()
 
-	registered, err := service.Register(ctx, "Alice", "correct horse battery", "Alice")
+	registered, err := service.Register(ctx, "Alice", "correct horse battery 123", "Alice")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,17 +148,17 @@ func TestRegisterLoginAndPasswordStorage(t *testing.T) {
 		t.Fatalf("access token lifetime = %s, want approximately seven days", expires)
 	}
 
-	loggedIn, err := service.Login(ctx, "ALICE", "correct horse battery", "phone")
+	loggedIn, err := service.Login(ctx, "ALICE", "correct horse battery 123", "phone")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if loggedIn.Profile.UserID != registered.Profile.UserID {
 		t.Fatalf("login returned user %q, want %q", loggedIn.Profile.UserID, registered.Profile.UserID)
 	}
-	if _, err := service.Login(ctx, "Alice", "incorrect password", ""); !errors.Is(err, ErrInvalidCredentials) {
+	if _, err := service.Login(ctx, "Alice", "incorrect password 123", ""); !errors.Is(err, ErrInvalidCredentials) {
 		t.Fatalf("wrong password error = %v, want generic invalid credentials", err)
 	}
-	if _, err := service.Login(ctx, "unknown", "correct horse battery", ""); !errors.Is(err, ErrInvalidCredentials) {
+	if _, err := service.Login(ctx, "unknown", "correct horse battery 123", ""); !errors.Is(err, ErrInvalidCredentials) {
 		t.Fatalf("unknown account error = %v, want generic invalid credentials", err)
 	}
 	if _, err := service.AuthenticateAccess(ctx, "invalid"); !errors.Is(err, ErrUnauthenticated) {
@@ -170,7 +170,7 @@ func TestRefreshRotatesTokensAndLogoutRevokesSession(t *testing.T) {
 	repository := newTestRepository()
 	service := newTestService(t, repository)
 	ctx := context.Background()
-	first, err := service.Register(ctx, "alice@example.com", "correct horse battery", "Alice")
+	first, err := service.Register(ctx, "alice@example.com", "correct horse battery 123", "Alice")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,19 +203,19 @@ func TestChangePasswordRevokesAllSessions(t *testing.T) {
 	repository := newTestRepository()
 	service := newTestService(t, repository)
 	ctx := context.Background()
-	first, err := service.Register(ctx, "alice", "correct horse battery", "Alice")
+	first, err := service.Register(ctx, "alice", "correct horse battery 123", "Alice")
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := service.Login(ctx, "alice", "correct horse battery", "tablet")
+	second, err := service.Login(ctx, "alice", "correct horse battery 123", "tablet")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := service.ChangePassword(ctx, first.Profile.UserID, "wrong password", "new password 123"); !errors.Is(err, ErrInvalidCredentials) {
+	if err := service.ChangePassword(ctx, first.Profile.UserID, "wrong password 123", "new password 123"); !errors.Is(err, ErrInvalidCredentials) {
 		t.Fatalf("wrong current password error = %v", err)
 	}
-	if err := service.ChangePassword(ctx, first.Profile.UserID, "correct horse battery", "new password 123"); err != nil {
+	if err := service.ChangePassword(ctx, first.Profile.UserID, "correct horse battery 123", "new password 123"); err != nil {
 		t.Fatal(err)
 	}
 	for _, token := range []string{first.AccessToken, second.AccessToken} {
@@ -234,19 +234,21 @@ func TestRegisterRejectsInvalidInputsAndDuplicateAccount(t *testing.T) {
 	for _, input := range []struct {
 		account, password, nickname string
 	}{
-		{"ab", "correct horse battery", "Alice"},
+		{"ab", "correct horse battery 123", "Alice"},
 		{"alice", "short", "Alice"},
-		{"alice", "correct horse battery", " "},
-		{"not an email@", "correct horse battery", "Alice"},
+		{"alice", "correct horse battery 123", " "},
+		{"not an email@", "correct horse battery 123", "Alice"},
+		{"alice", "letters only", "Alice"},
+		{"alice", "12345678", "Alice"},
 	} {
 		if _, err := service.Register(ctx, input.account, input.password, input.nickname); !errors.Is(err, ErrInvalidInput) {
 			t.Errorf("Register(%q, ...) error = %v, want invalid input", input.account, err)
 		}
 	}
-	if _, err := service.Register(ctx, "alice", "correct horse battery", "Alice"); err != nil {
+	if _, err := service.Register(ctx, "alice", "correct horse battery 123", "Alice"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Register(ctx, "ALICE", "correct horse battery", "Alice"); !errors.Is(err, ErrAccountExists) {
+	if _, err := service.Register(ctx, "ALICE", "correct horse battery 123", "Alice"); !errors.Is(err, ErrAccountExists) {
 		t.Fatalf("duplicate account error = %v, want account exists", err)
 	}
 }

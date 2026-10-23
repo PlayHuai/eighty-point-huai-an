@@ -11,6 +11,7 @@ import (
 	"net/mail"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"golang.org/x/crypto/argon2"
@@ -232,7 +233,15 @@ func normalizeAccount(account string) (string, bool, error) {
 }
 
 func validPassword(password string) bool {
-	return len(password) >= 8 && len(password) <= 128
+	if len(password) < 8 || len(password) > 128 || !utf8.ValidString(password) {
+		return false
+	}
+	hasLetter, hasDigit := false, false
+	for _, character := range password {
+		hasLetter = hasLetter || unicode.IsLetter(character)
+		hasDigit = hasDigit || unicode.IsDigit(character)
+	}
+	return hasLetter && hasDigit
 }
 
 func validNickname(nickname string) bool {
