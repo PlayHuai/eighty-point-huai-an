@@ -565,6 +565,38 @@ func TestSettleCommitsOnceAndPreservesPointConstraints(t *testing.T) {
 	}
 }
 
+func TestSettleRetriesLegacyRankSensitiveHash(t *testing.T) {
+	request := testSettlement()
+	legacyHash, err := legacySettlementHash(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := testMemoryState()
+	session := state.sessions[request.GameSessionID]
+	session.status = "SETTLED"
+	state.sessions[request.GameSessionID] = session
+	state.results[request.GameSessionID] = memoryResult{
+		winner: request.Winner, levelDifference: request.LevelDifference,
+		endType: request.EndType, multiplier: request.HallMultiplierBP,
+		configVersion: request.ConfigVersion, requestHash: legacyHash[:],
+	}
+	for _, change := range request.Changes {
+		state.ledger[request.GameSessionID] = append(state.ledger[request.GameSessionID], memoryLedgerEntry{
+			userID: change.UserID, delta: change.Delta, rank: change.Rank,
+		})
+	}
+	store, db := newTestStore(t, state)
+
+	result, err := store.Settle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("legacy retry failed: %v", err)
+	}
+	if !reflect.DeepEqual(result.Changes, request.Changes) || len(db.state.ledger[request.GameSessionID]) != 4 {
+		t.Fatalf("legacy retry changed settlement ledger: result=%+v ledger=%+v",
+			result.Changes, db.state.ledger[request.GameSessionID])
+	}
+}
+
 func TestSettleCapsLossesAndBalancesAwards(t *testing.T) {
 	state := testMemoryState()
 	state.profiles["p3"] = memoryProfile{points: 0, rank: "青铜"}

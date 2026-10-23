@@ -487,10 +487,20 @@ func (s *Store) LoadGameEventsAfter(ctx context.Context, sessionID string, seq u
 }
 
 func settlementHash(result settlement.MatchResult) ([32]byte, error) {
+	return hashSettlement(result, false)
+}
+
+func legacySettlementHash(result settlement.MatchResult) ([32]byte, error) {
+	return hashSettlement(result, true)
+}
+
+func hashSettlement(result settlement.MatchResult, includeRanks bool) ([32]byte, error) {
 	normalized := result
 	normalized.Changes = append([]settlement.PointChange(nil), result.Changes...)
-	for i := range normalized.Changes {
-		normalized.Changes[i].Rank = ""
+	if !includeRanks {
+		for i := range normalized.Changes {
+			normalized.Changes[i].Rank = ""
+		}
 	}
 	sort.Slice(normalized.Changes, func(i, j int) bool {
 		return normalized.Changes[i].UserID < normalized.Changes[j].UserID
@@ -541,6 +551,10 @@ func (s *Store) Settle(ctx context.Context, requested settlement.MatchResult) (s
 	if err != nil {
 		return settlement.MatchResult{}, fmt.Errorf("hash settlement: %w", err)
 	}
+	legacyRequestHash, err := legacySettlementHash(requested)
+	if err != nil {
+		return settlement.MatchResult{}, fmt.Errorf("hash legacy settlement: %w", err)
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return settlement.MatchResult{}, fmt.Errorf("begin settlement: %w", err)
@@ -558,7 +572,7 @@ func (s *Store) Settle(ctx context.Context, requested settlement.MatchResult) (s
 		if err != nil {
 			return settlement.MatchResult{}, err
 		}
-		if storedHash != requestHash {
+		if storedHash != requestHash && storedHash != legacyRequestHash {
 			return settlement.MatchResult{}, ErrSettlementConflict
 		}
 		return existing, nil
