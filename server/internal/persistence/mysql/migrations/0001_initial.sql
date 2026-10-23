@@ -1,4 +1,4 @@
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id VARCHAR(64) NOT NULL PRIMARY KEY,
     phone VARCHAR(32) NULL UNIQUE,
     email VARCHAR(254) NULL UNIQUE,
@@ -9,18 +9,19 @@ CREATE TABLE users (
     CONSTRAINT chk_users_status CHECK (status IN ('ACTIVE', 'DISABLED'))
 ) ENGINE=InnoDB;
 
-CREATE TABLE player_profiles (
+CREATE TABLE IF NOT EXISTS player_profiles (
     user_id VARCHAR(64) NOT NULL PRIMARY KEY,
     nickname VARCHAR(64) NOT NULL,
     avatar VARCHAR(512) NOT NULL DEFAULT '',
     points BIGINT NOT NULL DEFAULT 0,
-    rank VARCHAR(32) NOT NULL DEFAULT '青铜',
+    rank_name VARCHAR(32) NOT NULL DEFAULT '青铜',
     updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
     CONSTRAINT chk_player_profiles_points CHECK (points >= 0),
+    CONSTRAINT chk_player_profiles_rank CHECK (rank_name <> ''),
     CONSTRAINT fk_player_profiles_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
-CREATE TABLE sessions (
+CREATE TABLE IF NOT EXISTS sessions (
     id VARCHAR(64) NOT NULL PRIMARY KEY,
     user_id VARCHAR(64) NOT NULL,
     token_hash BINARY(32) NOT NULL,
@@ -32,7 +33,7 @@ CREATE TABLE sessions (
     CONSTRAINT fk_sessions_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
-CREATE TABLE friendships (
+CREATE TABLE IF NOT EXISTS friendships (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
     user_id VARCHAR(64) NOT NULL,
     friend_id VARCHAR(64) NOT NULL,
@@ -46,7 +47,7 @@ CREATE TABLE friendships (
     CONSTRAINT fk_friendships_friend FOREIGN KEY (friend_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
-CREATE TABLE rooms (
+CREATE TABLE IF NOT EXISTS rooms (
     id VARCHAR(64) NOT NULL PRIMARY KEY,
     hall_id VARCHAR(32) NOT NULL,
     owner_id VARCHAR(64) NOT NULL,
@@ -59,7 +60,7 @@ CREATE TABLE rooms (
     CONSTRAINT fk_rooms_owner FOREIGN KEY (owner_id) REFERENCES users(id)
 ) ENGINE=InnoDB;
 
-CREATE TABLE room_members (
+CREATE TABLE IF NOT EXISTS room_members (
     room_id VARCHAR(64) NOT NULL,
     user_id VARCHAR(64) NOT NULL,
     seat_no TINYINT UNSIGNED NULL,
@@ -69,11 +70,14 @@ CREATE TABLE room_members (
     UNIQUE KEY uq_room_members_seat (room_id, seat_no),
     CONSTRAINT chk_room_members_seat CHECK (seat_no IS NULL OR seat_no BETWEEN 1 AND 4),
     CONSTRAINT chk_room_members_role CHECK (role IN ('PLAYER', 'SPECTATOR')),
+    CONSTRAINT chk_room_members_role_seat CHECK (
+        (role = 'PLAYER' AND seat_no IS NOT NULL) OR (role = 'SPECTATOR' AND seat_no IS NULL)
+    ),
     CONSTRAINT fk_room_members_room FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
     CONSTRAINT fk_room_members_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
-CREATE TABLE game_sessions (
+CREATE TABLE IF NOT EXISTS game_sessions (
     id VARCHAR(64) NOT NULL PRIMARY KEY,
     room_id VARCHAR(64) NOT NULL,
     config_version BIGINT UNSIGNED NOT NULL,
@@ -88,7 +92,7 @@ CREATE TABLE game_sessions (
     CONSTRAINT fk_game_sessions_room FOREIGN KEY (room_id) REFERENCES rooms(id)
 ) ENGINE=InnoDB;
 
-CREATE TABLE hands (
+CREATE TABLE IF NOT EXISTS hands (
     id VARCHAR(64) NOT NULL PRIMARY KEY,
     game_session_id VARCHAR(64) NOT NULL,
     hand_no INT UNSIGNED NOT NULL,
@@ -102,7 +106,7 @@ CREATE TABLE hands (
     CONSTRAINT fk_hands_session FOREIGN KEY (game_session_id) REFERENCES game_sessions(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
-CREATE TABLE game_events (
+CREATE TABLE IF NOT EXISTS game_events (
     game_session_id VARCHAR(64) NOT NULL,
     seq BIGINT UNSIGNED NOT NULL,
     hand_id VARCHAR(64) NULL,
@@ -118,7 +122,7 @@ CREATE TABLE game_events (
     CONSTRAINT fk_game_events_actor FOREIGN KEY (actor_id) REFERENCES users(id)
 ) ENGINE=InnoDB;
 
-CREATE TABLE match_results (
+CREATE TABLE IF NOT EXISTS match_results (
     game_session_id VARCHAR(64) NOT NULL PRIMARY KEY,
     winner VARCHAR(16) NOT NULL,
     level_difference TINYINT UNSIGNED NOT NULL,
@@ -132,13 +136,13 @@ CREATE TABLE match_results (
     CONSTRAINT fk_match_results_session FOREIGN KEY (game_session_id) REFERENCES game_sessions(id)
 ) ENGINE=InnoDB;
 
-CREATE TABLE point_ledger (
+CREATE TABLE IF NOT EXISTS point_ledger (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
     game_session_id VARCHAR(64) NOT NULL,
     user_id VARCHAR(64) NOT NULL,
     delta BIGINT NOT NULL,
     balance_after BIGINT NOT NULL,
-    rank VARCHAR(32) NOT NULL,
+    rank_name VARCHAR(32) NOT NULL,
     config_version BIGINT UNSIGNED NOT NULL,
     created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     UNIQUE KEY uq_point_ledger_game_user (game_session_id, user_id),
@@ -148,7 +152,7 @@ CREATE TABLE point_ledger (
     CONSTRAINT fk_point_ledger_user FOREIGN KEY (user_id) REFERENCES users(id)
 ) ENGINE=InnoDB;
 
-CREATE TABLE chat_messages (
+CREATE TABLE IF NOT EXISTS chat_messages (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
     room_id VARCHAR(64) NULL,
     sender_id VARCHAR(64) NOT NULL,
@@ -162,7 +166,7 @@ CREATE TABLE chat_messages (
     CONSTRAINT fk_chat_recipient FOREIGN KEY (recipient_id) REFERENCES users(id)
 ) ENGINE=InnoDB;
 
-CREATE TABLE config_versions (
+CREATE TABLE IF NOT EXISTS config_versions (
     version BIGINT UNSIGNED NOT NULL,
     config_key VARCHAR(128) NOT NULL,
     value JSON NOT NULL,
@@ -173,7 +177,7 @@ CREATE TABLE config_versions (
     CONSTRAINT fk_config_versions_operator FOREIGN KEY (operator_id) REFERENCES users(id)
 ) ENGINE=InnoDB;
 
-CREATE TABLE outbox_events (
+CREATE TABLE IF NOT EXISTS outbox_events (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
     event_type VARCHAR(64) NOT NULL,
     aggregate_id VARCHAR(64) NOT NULL,

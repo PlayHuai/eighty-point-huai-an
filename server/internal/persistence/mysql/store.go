@@ -93,13 +93,30 @@ func ApplyMigrations(ctx context.Context, db *sql.DB) error {
 		return fmt.Errorf("close migration versions: %w", err)
 	}
 
-	known := make(map[uint64]bool, len(migrations))
+	known := make(map[uint64]migration, len(migrations))
 	for _, item := range migrations {
-		known[item.version] = true
-		if previous, ok := applied[item.version]; ok {
-			if previous.name != item.name || previous.checksum != item.checksum {
-				return fmt.Errorf("applied migration %d (%s) does not match embedded migration", item.version, item.name)
-			}
+		known[item.version] = item
+	}
+	for version, previous := range applied {
+		item, ok := known[version]
+		if !ok {
+			return fmt.Errorf("database contains unknown migration version %d", version)
+		}
+		if previous.name != item.name || previous.checksum != item.checksum {
+			return fmt.Errorf("applied migration %d (%s) does not match embedded migration", item.version, item.name)
+		}
+	}
+	missingVersion := false
+	for _, item := range migrations {
+		_, exists := applied[item.version]
+		if !exists {
+			missingVersion = true
+		} else if missingVersion {
+			return fmt.Errorf("database migration history has a gap before version %d", item.version)
+		}
+	}
+	for _, item := range migrations {
+		if _, ok := applied[item.version]; ok {
 			continue
 		}
 		for _, statement := range strings.Split(item.sql, ";") {
@@ -115,11 +132,6 @@ func ApplyMigrations(ctx context.Context, db *sql.DB) error {
 			"INSERT INTO schema_migrations (version, name, checksum) VALUES (?, ?, ?)",
 			item.version, item.name, item.checksum[:]); err != nil {
 			return fmt.Errorf("record migration %d (%s): %w", item.version, item.name, err)
-		}
-	}
-	for version := range applied {
-		if !known[version] {
-			return fmt.Errorf("database contains unknown migration version %d", version)
 		}
 	}
 	return nil
@@ -140,7 +152,7 @@ func loadMigrations() ([]migration, error) {
 			return nil, fmt.Errorf("invalid migration filename %q", base)
 		}
 		version, err := strconv.ParseUint(parts[0], 10, 64)
-		if err != nil || version == 0 || version <= previous {
+		if err != nil || version == 0 || version != previous+1 {
 			return nil, fmt.Errorf("invalid migration version in %q", base)
 		}
 		content, err := migrationFiles.ReadFile(filename)
@@ -167,19 +179,19 @@ func (s *Store) FindByUsername(ctx context.Context, username string) (auth.Crede
 func (s *Store) FindProfile(ctx context.Context, userID string) (player.Profile, error) {
 	var profile player.Profile
 	err := s.db.QueryRowContext(ctx,
-		"SELECT user_id, points, rank FROM player_profiles WHERE user_id = ?",
+		"SELECT user_id, points, rank_name FROM player_profiles WHERE user_id = ?",
 		userID,
 	).Scan(&profile.UserID, &profile.Points, &profile.Rank)
 	return profile, err
 }
 
 func (s *Store) SaveProfile(ctx context.Context, profile player.Profile) error {
-	if profile.UserID == "" || profile.Points < 0 {
+	if profile.UserID == "" || profile.Points < 0 || profile.Rank == "" {
 		return errors.New("invalid player profile")
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO player_profiles (user_id, nickname, points, rank)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO player_profiles (user_id, nickname, points, rank_name)
 		VALUES (?, ?, ?, ?)
-		ON DUPLICATE KEY UPDATE points = VALUES(points), rank = VALUES(rank)`,
+		ON DUPLICATE KEY UPDATE points = VALUES(points), rank_name = VALUES(rank_name)`,
 		profile.UserID, profile.UserID, profile.Points, profile.Rank)
 	return err
 }
@@ -187,7 +199,7 @@ func (s *Store) SaveProfile(ctx context.Context, profile player.Profile) error {
 func (s *Store) CommitGameUpdate(ctx context.Context, expectedVersion uint64, state coordinator.GameState, event coordinator.GameEvent) error {
 	if state.SessionID == "" || event.SessionID != state.SessionID ||
 		(state.Status != "ACTIVE" && state.Status != "ABORTED") ||
-		!json.Valid(event.Payload) || expectedVersion == math.MaxUint64 {
+		event.Type == "" || !json.Valid(event.Payload) || expectedVersion == math.MaxUint64 {
 		return errors.New("invalid game update")
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -347,14 +359,24 @@ func (s *Store) Settle(ctx context.Context, requested settlement.MatchResult) (s
 		return settlement.MatchResult{}, fmt.Errorf("insert match result: %w", err)
 	}
 
-	actual := requested
-	actual.Changes = make([]settlement.PointChange, 0, len(requested.Changes))
-	for _, change := range requested.Changes {
+	type playerBalance struct {
+		change  settlement.PointChange
+		balance int64
+		delta   int64
+	}
+	players := make([]playerBalance, 0, len(requested.Changes))
+	changes := append([]settlement.PointChange(nil), requested.Changes...)
+	sort.Slice(changes, func(i, j int) bool { return changes[i].UserID < changes[j].UserID })
+	var actualTotal int64
+	for _, change := range changes {
 		var balance int64
 		if err := tx.QueryRowContext(ctx,
 			"SELECT points FROM player_profiles WHERE user_id = ? FOR UPDATE", change.UserID,
 		).Scan(&balance); err != nil {
 			return settlement.MatchResult{}, err
+		}
+		if balance < 0 {
+			return settlement.MatchResult{}, ErrInvalidSettlement
 		}
 		delta := change.Delta
 		if delta < 0 && delta < -balance {
@@ -363,19 +385,51 @@ func (s *Store) Settle(ctx context.Context, requested settlement.MatchResult) (s
 		if delta > 0 && balance > math.MaxInt64-delta {
 			return settlement.MatchResult{}, ErrInvalidSettlement
 		}
-		balanceAfter := balance + delta
-		if _, err := tx.ExecContext(ctx, `UPDATE player_profiles SET points = ?, rank = ? WHERE user_id = ?`,
-			balanceAfter, change.Rank, change.UserID); err != nil {
-			return settlement.MatchResult{}, fmt.Errorf("update player profile %q: %w", change.UserID, err)
+		if (delta > 0 && actualTotal > math.MaxInt64-delta) ||
+			(delta < 0 && actualTotal < math.MinInt64-delta) {
+			return settlement.MatchResult{}, ErrInvalidSettlement
+		}
+		actualTotal += delta
+		players = append(players, playerBalance{change: change, balance: balance, delta: delta})
+	}
+	if actualTotal < 0 {
+		return settlement.MatchResult{}, ErrInvalidSettlement
+	}
+	for i := range players {
+		if actualTotal == 0 {
+			break
+		}
+		if players[i].delta <= 0 {
+			continue
+		}
+		trim := players[i].delta
+		if trim > actualTotal {
+			trim = actualTotal
+		}
+		players[i].delta -= trim
+		actualTotal -= trim
+	}
+	if actualTotal != 0 {
+		return settlement.MatchResult{}, ErrInvalidSettlement
+	}
+
+	actual := requested
+	actual.Changes = make([]settlement.PointChange, 0, len(players))
+	for _, player := range players {
+		balanceAfter := player.balance + player.delta
+		if _, err := tx.ExecContext(ctx, `UPDATE player_profiles SET points = ?, rank_name = ? WHERE user_id = ?`,
+			balanceAfter, player.change.Rank, player.change.UserID); err != nil {
+			return settlement.MatchResult{}, fmt.Errorf("update player profile %q: %w", player.change.UserID, err)
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO point_ledger
-			(game_session_id, user_id, delta, balance_after, rank, config_version)
+			(game_session_id, user_id, delta, balance_after, rank_name, config_version)
 			VALUES (?, ?, ?, ?, ?, ?)`,
-			requested.GameSessionID, change.UserID, delta, balanceAfter, change.Rank, requested.ConfigVersion); err != nil {
-			return settlement.MatchResult{}, fmt.Errorf("insert point ledger for %q: %w", change.UserID, err)
+			requested.GameSessionID, player.change.UserID, player.delta, balanceAfter,
+			player.change.Rank, requested.ConfigVersion); err != nil {
+			return settlement.MatchResult{}, fmt.Errorf("insert point ledger for %q: %w", player.change.UserID, err)
 		}
 		actual.Changes = append(actual.Changes, settlement.PointChange{
-			UserID: change.UserID, Delta: delta, Rank: change.Rank,
+			UserID: player.change.UserID, Delta: player.delta, Rank: player.change.Rank,
 		})
 	}
 
@@ -415,7 +469,7 @@ func readSettlement(ctx context.Context, tx *sql.Tx, sessionID string) (settleme
 	var storedHash [32]byte
 	copy(storedHash[:], hashBytes)
 	rows, err := tx.QueryContext(ctx,
-		"SELECT user_id, delta, rank FROM point_ledger WHERE game_session_id = ? ORDER BY user_id", sessionID)
+		"SELECT user_id, delta, rank_name FROM point_ledger WHERE game_session_id = ? ORDER BY user_id", sessionID)
 	if err != nil {
 		return settlement.MatchResult{}, [32]byte{}, err
 	}
