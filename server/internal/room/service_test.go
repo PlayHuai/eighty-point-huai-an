@@ -1,0 +1,188 @@
+package room
+
+import (
+	"errors"
+	"sync"
+	"testing"
+
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/lobby"
+)
+
+func TestRoomAdmissionSeatingAndStart(t *testing.T) {
+	manager := NewManager()
+	created, err := manager.CreateRoom(lobby.HallOrdinary, "owner", 9000, Settings{
+		Name: "private table", MinimumPoints: 8000, Password: "correct horse",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Room.OccupiedSeats != 0 || len(created.Members) != 0 {
+		t.Fatalf("new room is not empty: %+v", created)
+	}
+
+	if _, err := manager.JoinRoom(created.Room.ID, "below-room-gate", 7999, "correct horse", created.Version); !errors.Is(err, ErrAdmissionDenied) {
+		t.Fatalf("JoinRoom below room gate: got %v, want ErrAdmissionDenied", err)
+	}
+	if _, err := manager.JoinRoom(created.Room.ID, "underqualified", -1, "correct horse", created.Version); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("JoinRoom with invalid points: got %v, want ErrInvalidInput", err)
+	}
+	if _, err := manager.JoinRoom(created.Room.ID, "wrong-password", 9000, "wrong", created.Version); !errors.Is(err, ErrInvalidPassword) {
+		t.Fatalf("JoinRoom with wrong password: got %v, want ErrInvalidPassword", err)
+	}
+
+	current := created
+	for _, userID := range []string{"owner", "player-2", "player-3", "player-4"} {
+		current, err = manager.JoinRoom(created.Room.ID, userID, 9000, "correct horse", current.Version)
+		if err != nil {
+			t.Fatalf("JoinRoom(%q): %v", userID, err)
+		}
+	}
+	if current.Room.OccupiedSeats != 4 {
+		t.Fatalf("occupied seats = %d, want 4", current.Room.OccupiedSeats)
+	}
+	for seat, member := range current.Members {
+		if member.Role != RolePlayer || member.Seat != uint32(seat+1) {
+			t.Fatalf("members are not seated in order: %+v", current.Members)
+		}
+	}
+
+	started, err := manager.Start(created.Room.ID, "player-2", current.Version)
+	if !errors.Is(err, ErrOwnerRequired) {
+		t.Fatalf("Start by non-owner: got %v, want ErrOwnerRequired", err)
+	}
+	started, err = manager.Start(created.Room.ID, "owner", current.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if started.Room.Status != StatusPlaying {
+		t.Fatalf("room status = %q, want %q", started.Room.Status, StatusPlaying)
+	}
+	if _, err := manager.ChangeSeat(created.Room.ID, "owner", 2, started.Version); !errors.Is(err, ErrRoomStarted) {
+		t.Fatalf("ChangeSeat after start: got %v, want ErrRoomStarted", err)
+	}
+}
+
+func TestRoomSpectatingAndHallIsolation(t *testing.T) {
+	manager := NewManager()
+	ordinary, err := manager.CreateRoom(lobby.HallOrdinary, "ordinary-owner", 0, Settings{
+		Name: "ordinary", AllowSpectators: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	advanced, err := manager.CreateRoom(lobby.HallAdvanced, "advanced-owner", 10000, Settings{
+		Name: "advanced", AllowSpectators: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rooms, err := manager.ListRooms(lobby.HallOrdinary, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rooms) != 1 || rooms[0].ID != ordinary.Room.ID {
+		t.Fatalf("ordinary room list leaked another hall: %+v", rooms)
+	}
+	if _, err := manager.ListRooms(lobby.HallAdvanced, 9999); !errors.Is(err, ErrAdmissionDenied) {
+		t.Fatalf("ListRooms for an ineligible hall: got %v, want ErrAdmissionDenied", err)
+	}
+	if _, err := manager.JoinSpectator(advanced.Room.ID, "spectator", 9999, 1, advanced.Version); !errors.Is(err, ErrAdmissionDenied) {
+		t.Fatalf("cross-hall spectating: got %v, want ErrAdmissionDenied", err)
+	}
+
+	details, err := manager.JoinSpectator(ordinary.Room.ID, "spectator", 0, 2, ordinary.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spectator := memberFor(t, details, "spectator")
+	if spectator.Role != RoleSpectator || spectator.ViewSeat != 2 || spectator.Seat != 0 {
+		t.Fatalf("unexpected spectator state: %+v", spectator)
+	}
+	if _, err := manager.SetHandVisibility(ordinary.Room.ID, "spectator", true, details.Version); !errors.Is(err, ErrNotMember) {
+		t.Fatalf("spectator changed a player's hand visibility: got %v, want ErrNotMember", err)
+	}
+}
+
+func TestRoomMutationsUseOptimisticVersioning(t *testing.T) {
+	manager := NewManager()
+	created, err := manager.CreateRoom(lobby.HallOrdinary, "owner", 0, Settings{Name: "table"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	for _, userID := range []string{"player-a", "player-b"} {
+		wg.Add(1)
+		go func(userID string) {
+			defer wg.Done()
+			_, err := manager.JoinRoom(created.Room.ID, userID, 0, "", created.Version)
+			errs <- err
+		}(userID)
+	}
+	wg.Wait()
+	close(errs)
+
+	successes, conflicts := 0, 0
+	for err := range errs {
+		switch {
+		case err == nil:
+			successes++
+		case errors.Is(err, ErrVersionConflict):
+			conflicts++
+		default:
+			t.Fatalf("unexpected concurrent join error: %v", err)
+		}
+	}
+	if successes != 1 || conflicts != 1 {
+		t.Fatalf("concurrent joins: successes=%d conflicts=%d, want 1 each", successes, conflicts)
+	}
+
+	second, err := manager.CreateRoom(lobby.HallOrdinary, "second-owner", 0, Settings{Name: "other table"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.JoinRoom(second.Room.ID, "isolated-player", 0, "", second.Version); err != nil {
+		t.Fatalf("mutation in another room was affected: %v", err)
+	}
+}
+
+func TestRoomSupportsSpectatorConversionAndPreGameSeatChanges(t *testing.T) {
+	manager := NewManager()
+	created, err := manager.CreateRoom(lobby.HallOrdinary, "owner", 0, Settings{
+		Name: "table", AllowSpectators: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	spectator, err := manager.JoinSpectator(created.Room.ID, "guest", 0, 4, created.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sat, err := manager.SitDown(created.Room.ID, "guest", 2, 0, spectator.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := memberFor(t, sat, "guest"); got.Role != RolePlayer || got.Seat != 2 || got.ViewSeat != 0 {
+		t.Fatalf("unexpected seated member: %+v", got)
+	}
+	moved, err := manager.ChangeSeat(created.Room.ID, "guest", 3, sat.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := memberFor(t, moved, "guest").Seat; got != 3 {
+		t.Fatalf("seat after change = %d, want 3", got)
+	}
+}
+
+func memberFor(t *testing.T, details Details, userID string) Member {
+	t.Helper()
+	for _, member := range details.Members {
+		if member.UserID == userID {
+			return member
+		}
+	}
+	t.Fatalf("user %q not in room details", userID)
+	return Member{}
+}
