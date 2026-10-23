@@ -89,7 +89,7 @@ func (s *Service) Register(ctx context.Context, account, password, nickname stri
 
 func (s *Service) Login(ctx context.Context, account, password, deviceID string) (Result, error) {
 	normalized, isEmail, err := normalizeAccount(account)
-	if err != nil || !validPassword(password) {
+	if err != nil || !validExistingPassword(password) {
 		return Result{}, ErrInvalidCredentials
 	}
 	if len(deviceID) > 128 || strings.ContainsAny(deviceID, "\x00\r\n") || !utf8.ValidString(deviceID) {
@@ -155,7 +155,7 @@ func (s *Service) Logout(ctx context.Context, refreshToken string) error {
 }
 
 func (s *Service) ChangePassword(ctx context.Context, userID, currentPassword, newPassword string) error {
-	if userID == "" || !validPassword(currentPassword) || !validPassword(newPassword) {
+	if userID == "" || !validExistingPassword(currentPassword) || !validPassword(newPassword) {
 		return ErrInvalidInput
 	}
 	credential, err := s.repository.FindByUserID(ctx, userID)
@@ -233,7 +233,7 @@ func normalizeAccount(account string) (string, bool, error) {
 }
 
 func validPassword(password string) bool {
-	if len(password) < 8 || len(password) > 128 || !utf8.ValidString(password) {
+	if !validExistingPassword(password) || !utf8.ValidString(password) {
 		return false
 	}
 	hasLetter, hasDigit := false, false
@@ -242,6 +242,10 @@ func validPassword(password string) bool {
 		hasDigit = hasDigit || unicode.IsDigit(character)
 	}
 	return hasLetter && hasDigit
+}
+
+func validExistingPassword(password string) bool {
+	return len(password) >= 8 && len(password) <= 128
 }
 
 func validNickname(nickname string) bool {

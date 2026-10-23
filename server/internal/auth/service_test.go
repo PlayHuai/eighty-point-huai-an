@@ -166,6 +166,31 @@ func TestRegisterLoginAndPasswordStorage(t *testing.T) {
 	}
 }
 
+func TestLegacyPasswordLoginAndChange(t *testing.T) {
+	const legacyPassword = "correct horse battery"
+	repository := newTestRepository()
+	legacyHash, err := hashPassword(legacyPassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository.credentials["username:alice"] = Credential{
+		UserID: "legacy-user", Nickname: "Alice", PasswordHash: legacyHash,
+		CreatedAt: time.Now().UTC(),
+	}
+	service := newTestService(t, repository)
+	ctx := context.Background()
+
+	if _, err := service.Login(ctx, "alice", legacyPassword, "phone"); err != nil {
+		t.Fatalf("login with legacy password: %v", err)
+	}
+	if err := service.ChangePassword(ctx, "legacy-user", legacyPassword, "new password 123"); err != nil {
+		t.Fatalf("change password using legacy password: %v", err)
+	}
+	if _, err := service.Login(ctx, "alice", "new password 123", ""); err != nil {
+		t.Fatalf("login with replacement password: %v", err)
+	}
+}
+
 func TestRefreshRotatesTokensAndLogoutRevokesSession(t *testing.T) {
 	repository := newTestRepository()
 	service := newTestService(t, repository)
