@@ -132,6 +132,7 @@ message RoomSummary {
   uint32 occupied_seats = 5;
   uint32 capacity = 6;
   bool has_password = 7;
+  uint64 version = 8;
 }
 
 message ListRoomsRequest {
