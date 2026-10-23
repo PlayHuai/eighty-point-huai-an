@@ -292,7 +292,7 @@ func (c *memoryConn) QueryContext(_ context.Context, query string, args []driver
 			values: [][]driver.Value{{args[0].Value, session.roomID, session.status,
 				int64(session.version), session.snapshot}},
 		}, nil
-	case strings.HasPrefix(query, "SELECT seq, hand_id, event_type, payload, actor_id, request_id FROM game_events WHERE game_session_id = ? AND seq > ?"):
+	case query == "SELECT seq, hand_id, event_type, payload, actor_id, request_id FROM game_events WHERE game_session_id = ? AND seq > ? ORDER BY seq":
 		sessionID, after := args[0].Value.(string), int(args[1].Value.(int64))
 		values := make([][]driver.Value, 0)
 		for i, event := range state.events[sessionID] {
@@ -634,7 +634,7 @@ func TestCommitGameUpdateRollsBackWhenEventInsertFails(t *testing.T) {
 
 func TestGameEventLookupAndPagination(t *testing.T) {
 	store, _ := newTestStore(t, testMemoryState())
-	for i := 0; i < 2; i++ {
+	for i := 0; i < 3; i++ {
 		event := coordinator.GameEvent{
 			SessionID: "game-1", Type: "PLAY", Payload: []byte(fmt.Sprintf(`{"play":%d}`, i)),
 			RequestID: fmt.Sprintf("request-%d", i),
@@ -654,8 +654,9 @@ func TestGameEventLookupAndPagination(t *testing.T) {
 	if _, err := store.FindGameEventByRequest(context.Background(), "game-1", "missing"); !errors.Is(err, coordinator.ErrEventNotFound) {
 		t.Fatalf("missing event lookup: got %v", err)
 	}
-	events, err := store.LoadGameEventsAfter(context.Background(), "game-1", 1, 1)
-	if err != nil || len(events) != 1 || events[0].Seq != 2 || events[0].RequestID != "request-1" {
+	events, err := store.LoadGameEventsAfter(context.Background(), "game-1", 0, 2)
+	if err != nil || len(events) != 2 || events[0].Seq != 1 || events[0].RequestID != "request-0" ||
+		events[1].Seq != 2 || events[1].RequestID != "request-1" {
 		t.Fatalf("event pagination = (%+v, %v)", events, err)
 	}
 }

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -77,7 +79,7 @@ func (c *Coordinator) Recover(ctx context.Context, sessionID string) (RecoverySt
 		return RecoveryState{}, err
 	}
 	if recovery.SessionID != sessionID || recovery.RoomID == "" ||
-		(recovery.Status != "ACTIVE" && recovery.Status != "ABORTED") {
+		(recovery.Status != "ACTIVE" && recovery.Status != "ABORTED" && recovery.Status != "SETTLED") {
 		return RecoveryState{}, errors.New("invalid recovered game state")
 	}
 	lock := c.roomLock(recovery.RoomID)
@@ -88,7 +90,7 @@ func (c *Coordinator) Recover(ctx context.Context, sessionID string) (RecoverySt
 		return RecoveryState{}, err
 	}
 	if recovery.SessionID != sessionID || recovery.RoomID == "" ||
-		(recovery.Status != "ACTIVE" && recovery.Status != "ABORTED") {
+		(recovery.Status != "ACTIVE" && recovery.Status != "ABORTED" && recovery.Status != "SETTLED") {
 		return RecoveryState{}, errors.New("invalid recovered game state")
 	}
 	c.mu.Lock()
@@ -221,7 +223,7 @@ func (c *Coordinator) processLocked(
 		event, findErr := c.repository.FindGameEventByRequest(ctx, action.SessionID, requestID)
 		if findErr == nil {
 			if event.Type != eventType || event.ActorID != eventActor || event.HandID != action.HandID ||
-				string(event.Payload) != string(eventPayload) {
+				!equalJSON(event.Payload, eventPayload) {
 				return ActionResult{}, ErrRequestConflict
 			}
 			state, err := c.loadDurableState(ctx, action.SessionID)
@@ -296,11 +298,15 @@ func (c *Coordinator) loadState(ctx context.Context, sessionID string) (GameStat
 		return GameState{}, err
 	}
 	if recovery.SessionID != sessionID || recovery.RoomID == "" ||
-		(recovery.Status != "ACTIVE" && recovery.Status != "ABORTED") {
+		(recovery.Status != "ACTIVE" && recovery.Status != "ABORTED" && recovery.Status != "SETTLED") {
 		return GameState{}, errors.New("invalid recovered game state")
 	}
 	state := cloneState(recovery.GameState)
 	c.mu.Lock()
+	if cached, ok := c.states[sessionID]; ok {
+		c.mu.Unlock()
+		return cloneState(cached), nil
+	}
 	c.states[sessionID] = state
 	c.mu.Unlock()
 	return cloneState(state), nil
@@ -312,7 +318,7 @@ func (c *Coordinator) loadDurableState(ctx context.Context, sessionID string) (G
 		return GameState{}, err
 	}
 	if recovery.SessionID != sessionID || recovery.RoomID == "" ||
-		(recovery.Status != "ACTIVE" && recovery.Status != "ABORTED") {
+		(recovery.Status != "ACTIVE" && recovery.Status != "ABORTED" && recovery.Status != "SETTLED") {
 		return GameState{}, errors.New("invalid recovered game state")
 	}
 	state := cloneState(recovery.GameState)
@@ -337,15 +343,47 @@ func validateAction(action Action, requireRequestID bool) error {
 	if strings.TrimSpace(action.SessionID) == "" || strings.TrimSpace(action.ActorID) == "" ||
 		strings.TrimSpace(action.Type) == "" || !json.Valid(action.Payload) ||
 		(requireRequestID && strings.TrimSpace(action.RequestID) == "") ||
-		len(action.RequestID) > 128 {
+		len(action.RequestID) > 128 ||
+		(requireRequestID && hasServerRequestIDPrefix(action.RequestID)) {
 		return ErrInvalidAction
 	}
 	return nil
 }
 
+func hasServerRequestIDPrefix(requestID string) bool {
+	const prefix = "autoplay:"
+	return len(requestID) >= len(prefix) && strings.EqualFold(requestID[:len(prefix)], prefix)
+}
+
 func mustJSON(action Action) []byte {
 	payload, _ := json.Marshal(action)
 	return payload
+}
+
+func equalJSON(left, right []byte) bool {
+	decode := func(payload []byte) (any, error) {
+		decoder := json.NewDecoder(strings.NewReader(string(payload)))
+		decoder.UseNumber()
+		var value any
+		if err := decoder.Decode(&value); err != nil {
+			return nil, err
+		}
+		var extra any
+		if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+			if err == nil {
+				return nil, errors.New("multiple JSON values")
+			}
+			return nil, err
+		}
+		return value, nil
+	}
+
+	leftValue, err := decode(left)
+	if err != nil {
+		return false
+	}
+	rightValue, err := decode(right)
+	return err == nil && reflect.DeepEqual(leftValue, rightValue)
 }
 
 func cloneState(state GameState) GameState {
