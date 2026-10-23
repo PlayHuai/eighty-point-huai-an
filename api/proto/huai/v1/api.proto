@@ -1,0 +1,408 @@
+syntax = "proto3";
+
+package huai.v1;
+
+option go_package = "github.com/Derek0120/eighty-point-huai-an/server/gen/huai/v1;huaiv1";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/any.proto";
+
+message Empty {}
+
+message PageRequest {
+  string page_token = 1;
+  uint32 page_size = 2;
+}
+
+message PageInfo {
+  string next_page_token = 1;
+}
+
+message UserProfile {
+  string user_id = 1;
+  string nickname = 2;
+  string avatar_url = 3;
+  google.protobuf.Timestamp created_at = 4;
+}
+
+message AuthTokens {
+  string access_token = 1;
+  string refresh_token = 2;
+  google.protobuf.Timestamp access_token_expires_at = 3;
+}
+
+message RegisterRequest {
+  string account = 1;
+  string password = 2;
+  string nickname = 3;
+}
+
+message LoginRequest {
+  string account = 1;
+  string password = 2;
+  string device_id = 3;
+}
+
+message AuthResponse {
+  AuthTokens tokens = 1;
+  UserProfile profile = 2;
+}
+
+message RefreshSessionRequest {
+  string refresh_token = 1;
+}
+
+message LogoutRequest {
+  string refresh_token = 1;
+}
+
+message ChangePasswordRequest {
+  string current_password = 1;
+  string new_password = 2;
+}
+
+service AuthService {
+  rpc Register(RegisterRequest) returns (AuthResponse);
+  rpc Login(LoginRequest) returns (AuthResponse);
+  rpc RefreshSession(RefreshSessionRequest) returns (AuthResponse);
+  rpc Logout(LogoutRequest) returns (Empty);
+  rpc ChangePassword(ChangePasswordRequest) returns (Empty);
+}
+
+message GetProfileRequest {
+  string user_id = 1;
+}
+
+message UpdateProfileRequest {
+  string nickname = 1;
+  string avatar_url = 2;
+}
+
+message PlayerStatistics {
+  int64 total_games = 1;
+  int64 wins = 2;
+  int64 losses = 3;
+  int64 points = 4;
+  string rank = 5;
+}
+
+message GameResult {
+  string game_session_id = 1;
+  bool won = 2;
+  int64 points_delta = 3;
+  google.protobuf.Timestamp ended_at = 4;
+}
+
+message ListRecentResultsResponse {
+  repeated GameResult results = 1;
+  PageInfo page = 2;
+}
+
+service PlayerService {
+  rpc GetProfile(GetProfileRequest) returns (UserProfile);
+  rpc UpdateProfile(UpdateProfileRequest) returns (UserProfile);
+  rpc GetStatistics(Empty) returns (PlayerStatistics);
+  rpc ListRecentResults(PageRequest) returns (ListRecentResultsResponse);
+}
+
+enum RoomStatus {
+  ROOM_STATUS_UNSPECIFIED = 0;
+  ROOM_STATUS_WAITING = 1;
+  ROOM_STATUS_PLAYING = 2;
+  ROOM_STATUS_CLOSED = 3;
+}
+
+message Hall {
+  string hall_id = 1;
+  string name = 2;
+  int64 minimum_points = 3;
+  int64 maximum_points = 4;
+  int32 multiplier_basis_points = 5;
+}
+
+message ListHallsResponse {
+  repeated Hall halls = 1;
+}
+
+message RoomSummary {
+  string room_id = 1;
+  string hall_id = 2;
+  string name = 3;
+  RoomStatus status = 4;
+  uint32 occupied_seats = 5;
+  uint32 capacity = 6;
+  bool has_password = 7;
+}
+
+message ListRoomsRequest {
+  string hall_id = 1;
+  PageRequest page = 2;
+}
+
+message ListRoomsResponse {
+  repeated RoomSummary rooms = 1;
+  PageInfo page = 2;
+}
+
+message CreateRoomRequest {
+  string hall_id = 1;
+  string name = 2;
+  string password = 3;
+}
+
+message RoomRequest {
+  string room_id = 1;
+}
+
+message JoinByCodeRequest {
+  string room_code = 1;
+  string password = 2;
+}
+
+service LobbyService {
+  rpc ListHalls(Empty) returns (ListHallsResponse);
+  rpc ListRooms(ListRoomsRequest) returns (ListRoomsResponse);
+  rpc CreateRoom(CreateRoomRequest) returns (RoomSummary);
+  rpc JoinRoom(RoomRequest) returns (RoomSummary);
+  rpc LeaveRoom(RoomRequest) returns (Empty);
+  rpc JoinByCode(JoinByCodeRequest) returns (RoomSummary);
+}
+
+enum RoomMemberRole {
+  ROOM_MEMBER_ROLE_UNSPECIFIED = 0;
+  ROOM_MEMBER_ROLE_PLAYER = 1;
+  ROOM_MEMBER_ROLE_SPECTATOR = 2;
+}
+
+message RoomMember {
+  string user_id = 1;
+  RoomMemberRole role = 2;
+  uint32 seat_no = 3;
+  UserProfile profile = 4;
+}
+
+message RoomDetails {
+  RoomSummary room = 1;
+  repeated RoomMember members = 2;
+  uint64 version = 3;
+}
+
+message SeatRequest {
+  string room_id = 1;
+  uint32 seat_no = 2;
+  uint64 expected_version = 3;
+}
+
+message InviteFriendRequest {
+  string room_id = 1;
+  string friend_id = 2;
+}
+
+message SpectatorViewRequest {
+  string room_id = 1;
+  bool show_hand = 2;
+  uint64 expected_version = 3;
+}
+
+service RoomService {
+  rpc GetRoom(RoomRequest) returns (RoomDetails);
+  rpc SitDown(SeatRequest) returns (RoomDetails);
+  rpc ChangeSeat(SeatRequest) returns (RoomDetails);
+  rpc StandUp(RoomRequest) returns (RoomDetails);
+  rpc InviteFriend(InviteFriendRequest) returns (Empty);
+  rpc SetSpectatorView(SpectatorViewRequest) returns (RoomDetails);
+  rpc SetHandVisibility(SpectatorViewRequest) returns (RoomDetails);
+  rpc StartGame(RoomRequest) returns (GameSnapshot);
+}
+
+message DeclareTrumpAction {
+  string suit = 1;
+  repeated string cards = 2;
+}
+
+message BuryCardsAction {
+  repeated string cards = 1;
+}
+
+message PlayCardsAction {
+  repeated string cards = 1;
+}
+
+message ConfirmAutoplayAction {
+  bool accept = 1;
+}
+
+message GameAction {
+  oneof payload {
+    DeclareTrumpAction declare_trump = 1;
+    DeclareTrumpAction counter_trump = 2;
+    DeclareTrumpAction redeclare_trump = 3;
+    BuryCardsAction bury_cards = 4;
+    PlayCardsAction play_cards = 5;
+    ConfirmAutoplayAction confirm_autoplay = 6;
+  }
+}
+
+message SubmitActionRequest {
+  string game_session_id = 1;
+  string hand_id = 2;
+  string request_id = 3;
+  uint64 expected_version = 4;
+  GameAction action = 5;
+}
+
+message SubmitActionResponse {
+  bool accepted = 1;
+  string error_code = 2;
+  uint64 state_version = 3;
+}
+
+message GameSnapshotRequest {
+  string game_session_id = 1;
+}
+
+message GameSnapshot {
+  string game_session_id = 1;
+  string hand_id = 2;
+  uint64 state_version = 3;
+  string phase = 4;
+  string current_turn_user_id = 5;
+  repeated string visible_hand = 6;
+  repeated string public_cards = 7;
+  int64 captured_points = 8;
+}
+
+message ListEventsAfterRequest {
+  string game_session_id = 1;
+  uint64 last_seen_seq = 2;
+  uint32 page_size = 3;
+}
+
+message GameEvent {
+  string event_id = 1;
+  uint64 seq = 2;
+  string type = 3;
+  string game_session_id = 4;
+  string hand_id = 5;
+  uint64 state_version = 6;
+  google.protobuf.Any payload = 7;
+  google.protobuf.Timestamp created_at = 8;
+}
+
+message ListEventsAfterResponse {
+  repeated GameEvent events = 1;
+  uint64 latest_seq = 2;
+}
+
+message RequestReconnectRequest {
+  string game_session_id = 1;
+  uint64 last_seen_seq = 2;
+}
+
+message RequestReconnectResponse {
+  GameSnapshot snapshot = 1;
+  repeated GameEvent events = 2;
+}
+
+service GameService {
+  rpc SubmitAction(SubmitActionRequest) returns (SubmitActionResponse);
+  rpc GetGameSnapshot(GameSnapshotRequest) returns (GameSnapshot);
+  rpc ListEventsAfter(ListEventsAfterRequest) returns (ListEventsAfterResponse);
+  rpc RequestReconnect(RequestReconnectRequest) returns (RequestReconnectResponse);
+}
+
+message SearchPlayersRequest {
+  string query = 1;
+  PageRequest page = 2;
+}
+
+message SearchPlayersResponse {
+  repeated UserProfile players = 1;
+  PageInfo page = 2;
+}
+
+message FriendRequest {
+  string target_user_id = 1;
+}
+
+message RespondFriendRequest {
+  string requester_user_id = 1;
+  bool accept = 2;
+}
+
+message Friend {
+  UserProfile profile = 1;
+  google.protobuf.Timestamp friends_since = 2;
+}
+
+message ListFriendsResponse {
+  repeated Friend friends = 1;
+  PageInfo page = 2;
+}
+
+message SendRoomInviteRequest {
+  string room_id = 1;
+  string friend_id = 2;
+}
+
+service FriendService {
+  rpc SearchPlayers(SearchPlayersRequest) returns (SearchPlayersResponse);
+  rpc SendRequest(FriendRequest) returns (Empty);
+  rpc RespondRequest(RespondFriendRequest) returns (Empty);
+  rpc ListFriends(PageRequest) returns (ListFriendsResponse);
+  rpc RemoveFriend(FriendRequest) returns (Empty);
+  rpc SendRoomInvite(SendRoomInviteRequest) returns (Empty);
+}
+
+message SendRoomMessageRequest {
+  string room_id = 1;
+  string request_id = 2;
+  string body = 3;
+}
+
+message ListRoomMessagesRequest {
+  string room_id = 1;
+  PageRequest page = 2;
+}
+
+message SendPrivateMessageRequest {
+  string recipient_user_id = 1;
+  string request_id = 2;
+  string body = 3;
+}
+
+message ListPrivateMessagesRequest {
+  string peer_user_id = 1;
+  PageRequest page = 2;
+}
+
+message ChatMessage {
+  string message_id = 1;
+  string room_id = 2;
+  string sender_user_id = 3;
+  string body = 4;
+  google.protobuf.Timestamp created_at = 5;
+}
+
+message ListMessagesResponse {
+  repeated ChatMessage messages = 1;
+  PageInfo page = 2;
+}
+
+service ChatService {
+  rpc SendRoomMessage(SendRoomMessageRequest) returns (ChatMessage);
+  rpc ListRoomMessages(ListRoomMessagesRequest) returns (ListMessagesResponse);
+  rpc SendPrivateMessage(SendPrivateMessageRequest) returns (ChatMessage);
+  rpc ListPrivateMessages(ListPrivateMessagesRequest) returns (ListMessagesResponse);
+}
+
+message PublicConfig {
+  string version = 1;
+  int64 minimum_client_version = 2;
+  int64 maximum_client_version = 3;
+  uint32 reconnect_grace_seconds = 4;
+}
+
+service ConfigService {
+  rpc GetPublicConfig(Empty) returns (PublicConfig);
+}
