@@ -20,8 +20,13 @@ go run ./cmd/server
 ```
 
 The command currently verifies the executable scaffold only; transports and
-application services are introduced by their respective tasks. No database or
-external services are required for these checks.
+application wiring are introduced by their respective tasks. The game
+coordinator serializes actions per room, commits snapshots with events, restores
+committed state, supports event catch-up, and records disconnect autoplay with
+server attribution. It receives game transitions and autoplay decisions through
+the `coordinator.Rules` interface; the deterministic engine remains independent
+of storage and network code. No database or external services are required for
+these checks.
 
 ## MySQL persistence
 
