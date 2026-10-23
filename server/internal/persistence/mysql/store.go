@@ -489,6 +489,9 @@ func (s *Store) LoadGameEventsAfter(ctx context.Context, sessionID string, seq u
 func settlementHash(result settlement.MatchResult) ([32]byte, error) {
 	normalized := result
 	normalized.Changes = append([]settlement.PointChange(nil), result.Changes...)
+	for i := range normalized.Changes {
+		normalized.Changes[i].Rank = ""
+	}
 	sort.Slice(normalized.Changes, func(i, j int) bool {
 		return normalized.Changes[i].UserID < normalized.Changes[j].UserID
 	})
@@ -501,25 +504,30 @@ func settlementHash(result settlement.MatchResult) ([32]byte, error) {
 
 func validateSettlement(result settlement.MatchResult) error {
 	if result.GameSessionID == "" || (result.Winner != "DEALER" && result.Winner != "DEFENDER") ||
-		result.LevelDifference < 1 || result.LevelDifference > 12 ||
-		result.EndType == "" || result.HallMultiplierBP == 0 ||
-		len(result.Changes) != 4 {
+		result.EndType == "" || len(result.Changes) != 4 {
+		return ErrInvalidSettlement
+	}
+	expectedPoints, err := settlement.PointsFor(result.LevelDifference, result.EndType, result.HallMultiplierBP)
+	if err != nil {
 		return ErrInvalidSettlement
 	}
 	seen := make(map[string]bool, len(result.Changes))
-	var total int64
+	winners, losers := 0, 0
 	for _, change := range result.Changes {
-		if change.UserID == "" || change.Rank == "" || seen[change.UserID] {
+		if change.UserID == "" || seen[change.UserID] {
 			return ErrInvalidSettlement
 		}
 		seen[change.UserID] = true
-		if (change.Delta > 0 && total > math.MaxInt64-change.Delta) ||
-			(change.Delta < 0 && total < math.MinInt64-change.Delta) {
+		switch change.Delta {
+		case expectedPoints:
+			winners++
+		case -expectedPoints:
+			losers++
+		default:
 			return ErrInvalidSettlement
 		}
-		total += change.Delta
 	}
-	if total != 0 {
+	if winners != 2 || losers != 2 {
 		return ErrInvalidSettlement
 	}
 	return nil
@@ -575,7 +583,7 @@ func (s *Store) Settle(ctx context.Context, requested settlement.MatchResult) (s
 	players := make([]playerBalance, 0, len(requested.Changes))
 	changes := append([]settlement.PointChange(nil), requested.Changes...)
 	sort.Slice(changes, func(i, j int) bool { return changes[i].UserID < changes[j].UserID })
-	var actualTotal int64
+	var totalLoss int64
 	for _, change := range changes {
 		var balance int64
 		if err := tx.QueryRowContext(ctx,
@@ -590,54 +598,48 @@ func (s *Store) Settle(ctx context.Context, requested settlement.MatchResult) (s
 		if delta < 0 && delta < -balance {
 			delta = -balance
 		}
-		if delta > 0 && balance > math.MaxInt64-delta {
-			return settlement.MatchResult{}, ErrInvalidSettlement
+		if delta < 0 {
+			totalLoss -= delta
 		}
-		if (delta > 0 && actualTotal > math.MaxInt64-delta) ||
-			(delta < 0 && actualTotal < math.MinInt64-delta) {
-			return settlement.MatchResult{}, ErrInvalidSettlement
-		}
-		actualTotal += delta
 		players = append(players, playerBalance{change: change, balance: balance, delta: delta})
 	}
-	if actualTotal < 0 {
-		return settlement.MatchResult{}, ErrInvalidSettlement
-	}
+
+	award, remainder := totalLoss/2, totalLoss%2
 	for i := range players {
-		if actualTotal == 0 {
-			break
-		}
-		if players[i].delta <= 0 {
+		if players[i].change.Delta <= 0 {
 			continue
 		}
-		trim := players[i].delta
-		if trim > actualTotal {
-			trim = actualTotal
+		players[i].delta = award
+		if remainder > 0 {
+			players[i].delta++
+			remainder--
 		}
-		players[i].delta -= trim
-		actualTotal -= trim
-	}
-	if actualTotal != 0 {
-		return settlement.MatchResult{}, ErrInvalidSettlement
 	}
 
 	actual := requested
 	actual.Changes = make([]settlement.PointChange, 0, len(players))
 	for _, player := range players {
+		if player.delta > 0 && player.balance > math.MaxInt64-player.delta {
+			return settlement.MatchResult{}, ErrInvalidSettlement
+		}
 		balanceAfter := player.balance + player.delta
+		rank, err := settlement.RankForPoints(balanceAfter)
+		if err != nil {
+			return settlement.MatchResult{}, ErrInvalidSettlement
+		}
 		if _, err := tx.ExecContext(ctx, `UPDATE player_profiles SET points = ?, rank_name = ? WHERE user_id = ?`,
-			balanceAfter, player.change.Rank, player.change.UserID); err != nil {
+			balanceAfter, rank, player.change.UserID); err != nil {
 			return settlement.MatchResult{}, fmt.Errorf("update player profile %q: %w", player.change.UserID, err)
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO point_ledger
 			(game_session_id, user_id, delta, balance_after, rank_name, config_version)
 			VALUES (?, ?, ?, ?, ?, ?)`,
 			requested.GameSessionID, player.change.UserID, player.delta, balanceAfter,
-			player.change.Rank, requested.ConfigVersion); err != nil {
+			rank, requested.ConfigVersion); err != nil {
 			return settlement.MatchResult{}, fmt.Errorf("insert point ledger for %q: %w", player.change.UserID, err)
 		}
 		actual.Changes = append(actual.Changes, settlement.PointChange{
-			UserID: player.change.UserID, Delta: player.delta, Rank: player.change.Rank,
+			UserID: player.change.UserID, Delta: player.delta, Rank: rank,
 		})
 	}
 

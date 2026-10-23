@@ -438,10 +438,10 @@ func testSettlement() settlement.MatchResult {
 		GameSessionID: "game-1", Winner: "DEALER", LevelDifference: 2,
 		EndType: "NORMAL", HallMultiplierBP: 10000, ConfigVersion: 1,
 		Changes: []settlement.PointChange{
-			{UserID: "p1", Delta: 100, Rank: "白银"},
-			{UserID: "p2", Delta: 100, Rank: "白银"},
-			{UserID: "p3", Delta: -100, Rank: "青铜"},
-			{UserID: "p4", Delta: -100, Rank: "青铜"},
+			{UserID: "p1", Delta: 10, Rank: "伪造段位"},
+			{UserID: "p2", Delta: 10, Rank: "伪造段位"},
+			{UserID: "p3", Delta: -10, Rank: "伪造段位"},
+			{UserID: "p4", Delta: -10, Rank: "伪造段位"},
 		},
 	}
 }
@@ -533,9 +533,9 @@ func TestSettleCommitsOnceAndPreservesPointConstraints(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := first.Changes; len(got) != 4 || got[0].Delta != 0 || got[1].Delta != 40 ||
-		got[2].Delta != -20 || got[3].Delta != -20 {
-		t.Fatalf("unexpected clamped settlement changes: %+v", got)
+	if got := first.Changes; len(got) != 4 || got[0].Delta != 10 || got[1].Delta != 10 ||
+		got[2].Delta != -10 || got[3].Delta != -10 {
+		t.Fatalf("unexpected settlement changes: %+v", got)
 	}
 	var total int64
 	for _, change := range first.Changes {
@@ -555,14 +555,58 @@ func TestSettleCommitsOnceAndPreservesPointConstraints(t *testing.T) {
 	if got := len(db.state.ledger["game-1"]); got != 4 {
 		t.Fatalf("retry duplicated ledger rows: got %d", got)
 	}
-	if db.state.profiles["p3"].points != 0 || db.state.profiles["p4"].points != 0 {
-		t.Fatalf("negative points were not capped: %+v", db.state.profiles)
+	if db.state.profiles["p1"].rank != "青铜" || db.state.profiles["p1"].points != 30 {
+		t.Fatalf("profile rank was not derived from updated points: %+v", db.state.profiles["p1"])
 	}
 
-	request.Changes[0].Delta++
-	request.Changes[2].Delta--
+	request.ConfigVersion++
 	if _, err := store.Settle(context.Background(), request); !errors.Is(err, ErrSettlementConflict) {
 		t.Fatalf("expected idempotency conflict, got %v", err)
+	}
+}
+
+func TestSettleCapsLossesAndBalancesAwards(t *testing.T) {
+	state := testMemoryState()
+	state.profiles["p3"] = memoryProfile{points: 0, rank: "青铜"}
+	state.profiles["p4"] = memoryProfile{points: 5, rank: "青铜"}
+	store, db := newTestStore(t, state)
+
+	result, err := store.Settle(context.Background(), testSettlement())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := result.Changes; len(got) != 4 || got[0].Delta != 3 || got[1].Delta != 2 ||
+		got[2].Delta != 0 || got[3].Delta != -5 {
+		t.Fatalf("unexpected capped settlement changes: %+v", got)
+	}
+	if db.state.profiles["p1"].points != 23 || db.state.profiles["p2"].points != 22 ||
+		db.state.profiles["p3"].points != 0 || db.state.profiles["p4"].points != 0 {
+		t.Fatalf("unexpected balances after capped settlement: %+v", db.state.profiles)
+	}
+}
+
+func TestSettleUpdatesRankAtThreshold(t *testing.T) {
+	state := testMemoryState()
+	state.profiles["p1"] = memoryProfile{points: 995, rank: "青铜"}
+	store, db := newTestStore(t, state)
+
+	result, err := store.Settle(context.Background(), testSettlement())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if db.state.profiles["p1"].points != 1005 || db.state.profiles["p1"].rank != "白银" ||
+		result.Changes[0].Rank != "白银" {
+		t.Fatalf("rank did not advance with points: profile=%+v changes=%+v",
+			db.state.profiles["p1"], result.Changes)
+	}
+}
+
+func TestSettleRejectsPointsThatDoNotMatchRules(t *testing.T) {
+	store, _ := newTestStore(t, testMemoryState())
+	request := testSettlement()
+	request.Changes[0].Delta++
+	if _, err := store.Settle(context.Background(), request); !errors.Is(err, ErrInvalidSettlement) {
+		t.Fatalf("expected invalid settlement, got %v", err)
 	}
 }
 
