@@ -3,6 +3,7 @@ module github.com/Derek0120/eighty-point-huai-an/server
 go 1.25.0
 
 require (
+	golang.org/x/crypto v0.55.0
 	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12
 )
