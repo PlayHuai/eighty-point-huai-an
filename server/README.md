@@ -7,7 +7,7 @@ of network and storage code.
 
 ## Prerequisites
 
-- Go 1.24 or newer
+- Go 1.25 or newer
 
 ## Commands
 
