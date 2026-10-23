@@ -340,7 +340,7 @@ func (m *Manager) LeaveRoom(roomID, userID string, expectedVersion uint64) (Deta
 	if !exists {
 		return Details{}, ErrNotMember
 	}
-	if member.Role == RolePlayer && state.summary.Status == StatusPlaying {
+	if member.Role == RolePlayer && member.Seat != 0 && state.summary.Status == StatusPlaying {
 		return Details{}, ErrRoomStarted
 	}
 	delete(state.members, userID)

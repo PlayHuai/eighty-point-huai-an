@@ -230,6 +230,37 @@ func TestRoomSupportsStandingUpAndSittingDownAgain(t *testing.T) {
 	}
 }
 
+func TestStandingPlayerCanLeaveDuringPlay(t *testing.T) {
+	manager := NewManager()
+	created, err := manager.CreateRoom(lobby.HallOrdinary, "owner", 0, Settings{Name: "table"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	current := created
+	for _, userID := range []string{"owner", "player-2", "player-3", "player-4"} {
+		current, err = manager.JoinRoom(created.Room.ID, userID, 0, "", current.Version)
+		if err != nil {
+			t.Fatalf("JoinRoom(%q): %v", userID, err)
+		}
+	}
+	current, err = manager.StandUp(created.Room.ID, "owner", current.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err = manager.JoinRoom(created.Room.ID, "replacement", 0, "", current.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err = manager.Start(created.Room.ID, "owner", current.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.LeaveRoom(created.Room.ID, "owner", current.Version); err != nil {
+		t.Fatalf("LeaveRoom for standing player during play: %v", err)
+	}
+}
+
 func TestMembersCanLeaveClosedRoomsAndClosedRoomsAreEvicted(t *testing.T) {
 	manager := NewManager()
 	created, err := manager.CreateRoom(lobby.HallOrdinary, "owner", 0, Settings{Name: "table"})
