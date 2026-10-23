@@ -26,7 +26,7 @@ import (
 var migrationFiles embed.FS
 
 var (
-	ErrVersionConflict    = errors.New("game state version conflict")
+	ErrVersionConflict    = coordinator.ErrVersionConflict
 	ErrInvalidSettlement  = errors.New("invalid settlement")
 	ErrSettlementConflict = errors.New("game session already settled with different result")
 	ErrGameNotActive      = errors.New("game session is not active")
@@ -410,7 +410,7 @@ func (s *Store) LoadRecoveryState(ctx context.Context, sessionID string) (coordi
 	if err != nil {
 		return coordinator.RecoveryState{}, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT hand_id, event_type, payload, actor_id, request_id
+	rows, err := s.db.QueryContext(ctx, `SELECT seq, hand_id, event_type, payload, actor_id, request_id
 		FROM game_events WHERE game_session_id = ? AND seq > ? ORDER BY seq`,
 		sessionID, state.Version)
 	if err != nil {
@@ -420,7 +420,7 @@ func (s *Store) LoadRecoveryState(ctx context.Context, sessionID string) (coordi
 	for rows.Next() {
 		var event coordinator.GameEvent
 		var handID, actorID, requestID sql.NullString
-		if err := rows.Scan(&handID, &event.Type, &event.Payload, &actorID, &requestID); err != nil {
+		if err := rows.Scan(&event.Seq, &handID, &event.Type, &event.Payload, &actorID, &requestID); err != nil {
 			return coordinator.RecoveryState{}, fmt.Errorf("scan game event: %w", err)
 		}
 		event.SessionID = sessionID
@@ -433,6 +433,57 @@ func (s *Store) LoadRecoveryState(ctx context.Context, sessionID string) (coordi
 		return coordinator.RecoveryState{}, fmt.Errorf("load game events: %w", err)
 	}
 	return state, nil
+}
+
+func (s *Store) FindGameEventByRequest(ctx context.Context, sessionID, requestID string) (coordinator.GameEvent, error) {
+	var event coordinator.GameEvent
+	var handID, actorID, storedRequestID sql.NullString
+	err := s.db.QueryRowContext(ctx, `SELECT seq, hand_id, event_type, payload, actor_id, request_id
+		FROM game_events WHERE game_session_id = ? AND request_id = ?`,
+		sessionID, requestID).Scan(
+		&event.Seq, &handID, &event.Type, &event.Payload, &actorID, &storedRequestID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return coordinator.GameEvent{}, coordinator.ErrEventNotFound
+	}
+	if err != nil {
+		return coordinator.GameEvent{}, fmt.Errorf("find game event by request: %w", err)
+	}
+	event.SessionID = sessionID
+	event.HandID = handID.String
+	event.ActorID = actorID.String
+	event.RequestID = storedRequestID.String
+	return event, nil
+}
+
+func (s *Store) LoadGameEventsAfter(ctx context.Context, sessionID string, seq uint64, limit uint32) ([]coordinator.GameEvent, error) {
+	if sessionID == "" || limit == 0 || limit > 500 {
+		return nil, errors.New("invalid game event query")
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT seq, hand_id, event_type, payload, actor_id, request_id
+		FROM game_events WHERE game_session_id = ? AND seq > ? ORDER BY seq LIMIT ?`,
+		sessionID, seq, limit)
+	if err != nil {
+		return nil, fmt.Errorf("load game events: %w", err)
+	}
+	defer rows.Close()
+
+	events := make([]coordinator.GameEvent, 0)
+	for rows.Next() {
+		var event coordinator.GameEvent
+		var handID, actorID, requestID sql.NullString
+		if err := rows.Scan(&event.Seq, &handID, &event.Type, &event.Payload, &actorID, &requestID); err != nil {
+			return nil, fmt.Errorf("scan game event: %w", err)
+		}
+		event.SessionID = sessionID
+		event.HandID = handID.String
+		event.ActorID = actorID.String
+		event.RequestID = requestID.String
+		events = append(events, event)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("load game events: %w", err)
+	}
+	return events, nil
 }
 
 func settlementHash(result settlement.MatchResult) ([32]byte, error) {

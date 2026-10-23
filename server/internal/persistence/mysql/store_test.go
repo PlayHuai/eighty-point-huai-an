@@ -292,8 +292,50 @@ func (c *memoryConn) QueryContext(_ context.Context, query string, args []driver
 			values: [][]driver.Value{{args[0].Value, session.roomID, session.status,
 				int64(session.version), session.snapshot}},
 		}, nil
-	case strings.HasPrefix(query, "SELECT hand_id, event_type"):
-		return &memoryRows{columns: []string{"hand_id", "event_type", "payload", "actor_id", "request_id"}}, nil
+	case strings.HasPrefix(query, "SELECT seq, hand_id, event_type, payload, actor_id, request_id FROM game_events WHERE game_session_id = ? AND seq > ?"):
+		sessionID, after := args[0].Value.(string), int(args[1].Value.(int64))
+		values := make([][]driver.Value, 0)
+		for i, event := range state.events[sessionID] {
+			if i >= after {
+				values = append(values, []driver.Value{int64(i + 1), event.handID, event.eventType,
+					event.payload, event.actorID, event.requestID})
+			}
+		}
+		return &memoryRows{
+			columns: []string{"seq", "hand_id", "event_type", "payload", "actor_id", "request_id"},
+			values:  values,
+		}, nil
+	case strings.HasPrefix(query, "SELECT seq, hand_id, event_type, payload, actor_id, request_id FROM game_events WHERE game_session_id = ? AND request_id = ?"):
+		sessionID, requestID := args[0].Value.(string), args[1].Value.(string)
+		for i, event := range state.events[sessionID] {
+			if event.requestID == requestID {
+				return &memoryRows{
+					columns: []string{"seq", "hand_id", "event_type", "payload", "actor_id", "request_id"},
+					values:  [][]driver.Value{{int64(i + 1), event.handID, event.eventType, event.payload, event.actorID, event.requestID}},
+				}, nil
+			}
+		}
+		return &memoryRows{columns: []string{"seq", "hand_id", "event_type", "payload", "actor_id", "request_id"}}, nil
+	case strings.HasPrefix(query, "SELECT seq, hand_id, event_type, payload, actor_id, request_id FROM game_events"):
+		sessionID, after := args[0].Value.(string), int(args[1].Value.(int64))
+		limit := int(args[2].Value.(int64))
+		values := make([][]driver.Value, 0)
+		for i, event := range state.events[sessionID] {
+			if i < after {
+				continue
+			}
+			values = append(values, []driver.Value{int64(i + 1), event.handID, event.eventType,
+				event.payload, event.actorID, event.requestID})
+			if len(values) == limit {
+				break
+			}
+		}
+		return &memoryRows{
+			columns: []string{"seq", "hand_id", "event_type", "payload", "actor_id", "request_id"},
+			values:  values,
+		}, nil
+	case strings.HasPrefix(query, "SELECT seq, hand_id, event_type, payload, actor_id, request_id"):
+		return &memoryRows{columns: []string{"seq", "hand_id", "event_type", "payload", "actor_id", "request_id"}}, nil
 	default:
 		return nil, fmt.Errorf("unexpected query %q", query)
 	}
@@ -587,6 +629,34 @@ func TestCommitGameUpdateRollsBackWhenEventInsertFails(t *testing.T) {
 	}
 	if db.state.sessions["game-1"].version != 0 || string(db.state.sessions["game-1"].snapshot) != `{"turn":0}` {
 		t.Fatalf("snapshot update was not rolled back: %+v", db.state.sessions["game-1"])
+	}
+}
+
+func TestGameEventLookupAndPagination(t *testing.T) {
+	store, _ := newTestStore(t, testMemoryState())
+	for i := 0; i < 2; i++ {
+		event := coordinator.GameEvent{
+			SessionID: "game-1", Type: "PLAY", Payload: []byte(fmt.Sprintf(`{"play":%d}`, i)),
+			RequestID: fmt.Sprintf("request-%d", i),
+		}
+		if err := store.CommitGameUpdate(context.Background(), uint64(i), coordinator.GameState{
+			SessionID: "game-1", RoomID: "room-1", Status: "ACTIVE",
+			Snapshot: []byte(fmt.Sprintf(`{"version":%d}`, i+1)),
+		}, event); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	event, err := store.FindGameEventByRequest(context.Background(), "game-1", "request-0")
+	if err != nil || event.Seq != 1 || event.Type != "PLAY" || event.RequestID != "request-0" {
+		t.Fatalf("event lookup = (%+v, %v)", event, err)
+	}
+	if _, err := store.FindGameEventByRequest(context.Background(), "game-1", "missing"); !errors.Is(err, coordinator.ErrEventNotFound) {
+		t.Fatalf("missing event lookup: got %v", err)
+	}
+	events, err := store.LoadGameEventsAfter(context.Background(), "game-1", 1, 1)
+	if err != nil || len(events) != 1 || events[0].Seq != 2 || events[0].RequestID != "request-1" {
+		t.Fatalf("event pagination = (%+v, %v)", events, err)
 	}
 }
 
