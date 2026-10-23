@@ -169,6 +169,8 @@ func (c *memoryConn) ExecContext(_ context.Context, query string, args []driver.
 		return memoryResultRows(0), nil
 	case strings.HasPrefix(query, "CREATE TABLE IF NOT EXISTS"):
 		state.ddlCount++
+	case strings.HasPrefix(query, "ALTER TABLE"):
+		state.ddlCount++
 	case strings.HasPrefix(query, "INSERT INTO schema_migrations"):
 		if state.migrations == nil {
 			state.migrations = make(map[uint64]memoryMigration)
@@ -407,7 +409,7 @@ func TestLoadMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 1 || migrations[0].version != 1 {
+	if len(migrations) != 2 || migrations[0].version != 1 || migrations[1].version != 2 {
 		t.Fatalf("unexpected migrations: %#v", migrations)
 	}
 	for _, required := range []string{
@@ -419,6 +421,14 @@ func TestLoadMigrations(t *testing.T) {
 	} {
 		if !strings.Contains(migrations[0].sql, required) {
 			t.Errorf("migration missing %q", required)
+		}
+	}
+	for _, required := range []string{
+		"access_token_hash BINARY(32)", "access_expires_at TIMESTAMP(6)",
+		"uq_sessions_refresh_token", "uq_sessions_access_token",
+	} {
+		if !strings.Contains(migrations[1].sql, required) {
+			t.Errorf("session migration missing %q", required)
 		}
 	}
 }
@@ -439,7 +449,8 @@ func TestApplyMigrationsRecordsVersionsAndIsIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	firstDDLCount := db.state.ddlCount
-	if len(db.state.migrations) != 1 || db.state.migrations[1].name != "0001_initial.sql" {
+	if len(db.state.migrations) != 2 || db.state.migrations[1].name != "0001_initial.sql" ||
+		db.state.migrations[2].name != "0002_session_access_tokens.sql" {
 		t.Fatalf("migration version was not recorded: %+v", db.state.migrations)
 	}
 	if err := ApplyMigrations(context.Background(), sqlDB); err != nil {

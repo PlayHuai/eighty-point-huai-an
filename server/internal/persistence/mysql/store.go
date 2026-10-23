@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/auth"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/game/coordinator"
@@ -167,13 +168,169 @@ func loadMigrations() ([]migration, error) {
 	return migrations, nil
 }
 
-func (s *Store) FindByUsername(ctx context.Context, username string) (auth.Credential, error) {
+func (s *Store) FindByAccount(ctx context.Context, account string, email bool) (auth.Credential, error) {
+	column := "username"
+	if email {
+		column = "email"
+	}
 	var credential auth.Credential
-	err := s.db.QueryRowContext(ctx,
-		"SELECT id, username, password_hash FROM users WHERE username = ? AND status = 'ACTIVE'",
-		username,
-	).Scan(&credential.UserID, &credential.Username, &credential.PasswordHash)
+	err := s.db.QueryRowContext(ctx, `SELECT u.id, p.nickname, u.password_hash, u.created_at
+		FROM users u JOIN player_profiles p ON p.user_id = u.id
+		WHERE u.`+column+` = ? AND u.status = 'ACTIVE'`, account).Scan(
+		&credential.UserID, &credential.Nickname, &credential.PasswordHash, &credential.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return auth.Credential{}, auth.ErrCredentialNotFound
+	}
 	return credential, err
+}
+
+func (s *Store) FindByUserID(ctx context.Context, userID string) (auth.Credential, error) {
+	var credential auth.Credential
+	err := s.db.QueryRowContext(ctx, `SELECT u.id, p.nickname, u.password_hash, u.created_at
+		FROM users u JOIN player_profiles p ON p.user_id = u.id
+		WHERE u.id = ? AND u.status = 'ACTIVE'`, userID).Scan(
+		&credential.UserID, &credential.Nickname, &credential.PasswordHash, &credential.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return auth.Credential{}, auth.ErrCredentialNotFound
+	}
+	return credential, err
+}
+
+func (s *Store) CreateAccount(ctx context.Context, account auth.NewAccount) error {
+	if account.UserID == "" || account.Account == "" || account.Nickname == "" || len(account.PasswordHash) == 0 {
+		return errors.New("invalid account")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin account creation: %w", err)
+	}
+	defer tx.Rollback()
+
+	var email, username any
+	if account.Email {
+		email = account.Account
+	} else {
+		username = account.Account
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO users (id, email, username, password_hash)
+		VALUES (?, ?, ?, ?)`, account.UserID, email, username, account.PasswordHash); err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
+			return auth.ErrAccountExists
+		}
+		return fmt.Errorf("insert user account: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO player_profiles (user_id, nickname, points, rank_name)
+		VALUES (?, ?, 0, '青铜')`, account.UserID, account.Nickname); err != nil {
+		return fmt.Errorf("insert initial player profile: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit account creation: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) UpdatePasswordAndRevokeSessions(ctx context.Context, userID string, passwordHash []byte, now time.Time) error {
+	if userID == "" || len(passwordHash) == 0 {
+		return errors.New("invalid password update")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin password update: %w", err)
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, "UPDATE users SET password_hash = ? WHERE id = ? AND status = 'ACTIVE'", passwordHash, userID)
+	if err != nil {
+		return fmt.Errorf("update password hash: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("check password update: %w", err)
+	}
+	if affected != 1 {
+		return auth.ErrInvalidCredentials
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL", now, userID); err != nil {
+		return fmt.Errorf("revoke sessions after password change: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit password update: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) CreateSession(ctx context.Context, session auth.Session) error {
+	if session.ID == "" || session.UserID == "" || session.ExpiresAt.IsZero() || session.AccessTokenExpiresAt.IsZero() {
+		return errors.New("invalid session")
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO sessions
+		(id, user_id, token_hash, access_token_hash, expires_at, access_expires_at, device_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		session.ID, session.UserID, session.RefreshTokenHash[:], session.AccessTokenHash[:],
+		session.ExpiresAt, session.AccessTokenExpiresAt, session.DeviceID)
+	if err != nil {
+		return fmt.Errorf("insert session: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) RotateSession(ctx context.Context, refreshTokenHash [32]byte, replacement auth.Session, now time.Time) (auth.Session, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return auth.Session{}, fmt.Errorf("begin session refresh: %w", err)
+	}
+	defer tx.Rollback()
+	var session auth.Session
+	err = tx.QueryRowContext(ctx, `SELECT s.id, s.user_id, s.device_id, p.nickname, u.created_at
+		FROM sessions s JOIN users u ON u.id = s.user_id
+		JOIN player_profiles p ON p.user_id = s.user_id
+		WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ?
+		AND u.status = 'ACTIVE' FOR UPDATE`,
+		refreshTokenHash[:], now).Scan(
+		&session.ID, &session.UserID, &session.DeviceID, &session.Nickname, &session.UserCreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return auth.Session{}, auth.ErrInvalidSession
+	}
+	if err != nil {
+		return auth.Session{}, fmt.Errorf("find refresh session: %w", err)
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE sessions
+		SET token_hash = ?, access_token_hash = ?, expires_at = ?, access_expires_at = ?
+		WHERE id = ? AND token_hash = ? AND revoked_at IS NULL`,
+		replacement.RefreshTokenHash[:], replacement.AccessTokenHash[:],
+		replacement.ExpiresAt, replacement.AccessTokenExpiresAt, session.ID, refreshTokenHash[:])
+	if err != nil {
+		return auth.Session{}, fmt.Errorf("rotate session tokens: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return auth.Session{}, fmt.Errorf("check refreshed session: %w", err)
+	}
+	if affected != 1 {
+		return auth.Session{}, auth.ErrInvalidSession
+	}
+	if err := tx.Commit(); err != nil {
+		return auth.Session{}, fmt.Errorf("commit session refresh: %w", err)
+	}
+	return session, nil
+}
+
+func (s *Store) RevokeSession(ctx context.Context, refreshTokenHash [32]byte, now time.Time) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET revoked_at = ?
+		WHERE token_hash = ? AND revoked_at IS NULL`, now, refreshTokenHash[:])
+	if err != nil {
+		return fmt.Errorf("revoke session: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) AuthenticateAccess(ctx context.Context, accessTokenHash [32]byte, now time.Time) (string, error) {
+	var userID string
+	err := s.db.QueryRowContext(ctx, `SELECT s.user_id FROM sessions s
+		JOIN users u ON u.id = s.user_id
+		WHERE s.access_token_hash = ? AND s.access_expires_at > ?
+		AND s.expires_at > ? AND s.revoked_at IS NULL AND u.status = 'ACTIVE'`,
+		accessTokenHash[:], now, now).Scan(&userID)
+	return userID, err
 }
 
 func (s *Store) FindProfile(ctx context.Context, userID string) (player.Profile, error) {
@@ -488,8 +645,8 @@ func readSettlement(ctx context.Context, tx *sql.Tx, sessionID string) (settleme
 }
 
 var (
-	_ auth.CredentialRepository = (*Store)(nil)
-	_ player.ProfileRepository  = (*Store)(nil)
-	_ coordinator.Repository    = (*Store)(nil)
-	_ settlement.Repository     = (*Store)(nil)
+	_ auth.Repository          = (*Store)(nil)
+	_ player.ProfileRepository = (*Store)(nil)
+	_ coordinator.Repository   = (*Store)(nil)
+	_ settlement.Repository    = (*Store)(nil)
 )
