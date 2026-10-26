@@ -378,9 +378,9 @@ func TestResolveMandatoryLevels(t *testing.T) {
 		nextDealer  Side
 		gameWon     bool
 	}{
-		{"2 and 0 advances by full table amount", RankTwo, 0, RankTen, RankTwo, DealerSide, false},
-		{"2 and 70 advances one", RankTwo, 70, RankThree, RankTwo, DealerSide, false},
-		{"2 and 75 advances one", RankTwo, 75, RankThree, RankTwo, DealerSide, false},
+		{"2 and 0 advances by full table amount plus natural level", RankTwo, 0, RankJack, RankTwo, DealerSide, false},
+		{"2 and 70 advances one plus natural level", RankTwo, 70, RankFour, RankTwo, DealerSide, false},
+		{"2 and 75 advances one plus natural level", RankTwo, 75, RankFour, RankTwo, DealerSide, false},
 		{"2 and 80 exchanges but stays at 2", RankTwo, 80, RankTwo, RankTwo, DefenderSide, false},
 		{"J and 75 stays", RankJack, 75, RankJack, RankTwo, DealerSide, false},
 		{"J and 90 exchanges but stays at J", RankJack, 90, RankJack, RankJack, DefenderSide, false},
@@ -399,6 +399,88 @@ func TestResolveMandatoryLevels(t *testing.T) {
 			}
 			if got.DealerLevel != test.dealerLevel || got.DefenderLevel != test.defender ||
 				got.NextDealer != test.nextDealer || got.GameWon != test.gameWon {
+				t.Fatalf("ResolveHand() = %+v", got)
+			}
+		})
+	}
+}
+
+func TestResolveNaturalLevel(t *testing.T) {
+	tenKingFive := []Card{
+		card(Clubs, RankFive, 0),
+		card(Clubs, RankTen, 0),
+		card(Clubs, RankKing, 0),
+	}
+	tests := []struct {
+		name        string
+		input       HandInput
+		dealerLevel Rank
+		winner      Side
+		nextDealer  Side
+		triggered   bool
+	}{
+		{
+			name: "adds one after normal progression at zero",
+			input: HandInput{
+				DealerLevel: RankTwo, DefenderLevel: RankTwo, DefenderScore: 0,
+			},
+			dealerLevel: RankJack, winner: DealerSide, nextDealer: DealerSide, triggered: true,
+		},
+		{
+			name: "adds one after normal progression at 75",
+			input: HandInput{
+				DealerLevel: RankTwo, DefenderLevel: RankTwo, DefenderScore: 75,
+			},
+			dealerLevel: RankFour, winner: DealerSide, nextDealer: DealerSide, triggered: true,
+		},
+		{
+			name: "does not trigger at 80",
+			input: HandInput{
+				DealerLevel: RankTwo, DefenderLevel: RankTwo, DefenderScore: 80,
+			},
+			dealerLevel: RankTwo, winner: DefenderSide, nextDealer: DefenderSide,
+		},
+		{
+			name: "does not trigger outside level two",
+			input: HandInput{
+				DealerLevel: RankThree, DefenderLevel: RankTwo, DefenderScore: 70,
+			},
+			dealerLevel: RankFour, winner: DealerSide, nextDealer: DealerSide,
+		},
+		{
+			name: "defender 510k bottom capture blocks natural level",
+			input: HandInput{
+				DealerLevel: RankTwo, DefenderLevel: RankTwo, DefenderScore: 70,
+				FinalTrick: tenKingFive, FinalTrickWinner: DefenderSide, BottomCaptured: true,
+			},
+			dealerLevel: RankThree, winner: DealerSide, nextDealer: DealerSide,
+		},
+		{
+			name: "defender bottom capture without 510k still triggers",
+			input: HandInput{
+				DealerLevel: RankTwo, DefenderLevel: RankTwo, DefenderScore: 70,
+				FinalTrick: []Card{card(Clubs, RankAce, 0)}, FinalTrickWinner: DefenderSide, BottomCaptured: true,
+			},
+			dealerLevel: RankFour, winner: DealerSide, nextDealer: DealerSide, triggered: true,
+		},
+		{
+			name: "510k without defender bottom capture does not block",
+			input: HandInput{
+				DealerLevel: RankTwo, DefenderLevel: RankTwo, DefenderScore: 70,
+				FinalTrick: tenKingFive, FinalTrickWinner: DefenderSide,
+			},
+			dealerLevel: RankFour, winner: DealerSide, nextDealer: DealerSide, triggered: true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := ResolveHand(test.input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.DealerLevel != test.dealerLevel || got.Winner != test.winner ||
+				got.NextDealer != test.nextDealer || got.NaturalLevel != test.triggered ||
+				got.DefenderLevel != test.input.DefenderLevel || got.GameWon || got.Comeback {
 				t.Fatalf("ResolveHand() = %+v", got)
 			}
 		})
