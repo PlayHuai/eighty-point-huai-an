@@ -640,6 +640,7 @@ type HandResolution struct {
 	Winner        Side
 	GameWon       bool
 	Comeback      bool
+	NaturalLevel  bool
 }
 
 func ResolveHand(input HandInput) (HandResolution, error) {
@@ -685,6 +686,11 @@ func ResolveHand(input HandInput) (HandResolution, error) {
 			result.NextDealer = DefenderSide
 			result.Winner = DefenderSide
 		}
+	}
+	if input.DealerLevel == RankTwo && result.Winner == DealerSide && input.DefenderScore < 80 &&
+		!(input.BottomCaptured && input.FinalTrickWinner == DefenderSide && Has510K(input.FinalTrick)) {
+		result.DealerLevel = advanceLevel(result.DealerLevel, 1)
+		result.NaturalLevel = true
 	}
 	return result, nil
 }
