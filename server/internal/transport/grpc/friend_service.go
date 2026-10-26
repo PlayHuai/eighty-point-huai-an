@@ -88,6 +88,28 @@ func (s *friendServer) ListFriends(ctx context.Context, request *huaiv1.PageRequ
 	return response, nil
 }
 
+func (s *friendServer) ListFriendRequests(ctx context.Context, request *huaiv1.PageRequest) (*huaiv1.ListFriendRequestsResponse, error) {
+	userID, err := authenticatedUserID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	page, err := s.service.ListFriendRequests(ctx, userID, request.GetPageToken(), request.GetPageSize())
+	if err != nil {
+		return nil, socialError(err)
+	}
+	response := &huaiv1.ListFriendRequestsResponse{Page: &huaiv1.PageInfo{NextPageToken: page.NextPageToken}}
+	for _, item := range page.Items {
+		response.Requests = append(response.Requests, &huaiv1.PendingFriendRequest{
+			Requester: &huaiv1.UserProfile{
+				UserId: item.UserID, Nickname: item.Nickname, AvatarUrl: item.AvatarURL,
+				CreatedAt: timestamppb.New(item.CreatedAt),
+			},
+			RequestedAt: timestamppb.New(item.RequestedAt),
+		})
+	}
+	return response, nil
+}
+
 func (s *friendServer) RemoveFriend(ctx context.Context, request *huaiv1.FriendRequest) (*huaiv1.Empty, error) {
 	userID, err := authenticatedUserID(ctx)
 	if err != nil {
@@ -108,6 +130,28 @@ func (s *friendServer) SendRoomInvite(ctx context.Context, request *huaiv1.SendR
 		return nil, socialError(err)
 	}
 	return &huaiv1.Empty{}, nil
+}
+
+func (s *friendServer) ListRoomInvitations(ctx context.Context, request *huaiv1.PageRequest) (*huaiv1.ListRoomInvitationsResponse, error) {
+	userID, err := authenticatedUserID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	page, err := s.service.ListRoomInvitations(ctx, userID, request.GetPageToken(), request.GetPageSize())
+	if err != nil {
+		return nil, socialError(err)
+	}
+	response := &huaiv1.ListRoomInvitationsResponse{Page: &huaiv1.PageInfo{NextPageToken: page.NextPageToken}}
+	for _, invitation := range page.Items {
+		response.Invitations = append(response.Invitations, &huaiv1.RoomInvitation{
+			Inviter: &huaiv1.UserProfile{
+				UserId: invitation.Inviter.UserID, Nickname: invitation.Inviter.Nickname,
+				AvatarUrl: invitation.Inviter.AvatarURL, CreatedAt: timestamppb.New(invitation.Inviter.CreatedAt),
+			},
+			RoomId: invitation.RoomID, InvitedAt: timestamppb.New(invitation.InvitedAt),
+		})
+	}
+	return response, nil
 }
 
 func authenticatedUserID(ctx context.Context) (string, error) {

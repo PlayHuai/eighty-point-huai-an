@@ -164,7 +164,7 @@ GameSession 结束时转入 `SESSION_RESULT → SETTLED`。异常结束必须进
 | `LobbyService` | `ListHalls`、`ListRooms`、`CreateRoom`、`JoinRoom`、`LeaveRoom`、`JoinByCode` |
 | `RoomService` | `GetRoom`、`SitDown`、`ChangeSeat`、`StandUp`、`InviteFriend`、`SetSpectatorView`、`SetHandVisibility`、`StartGame` |
 | `GameService` | `SubmitAction`、`GetGameSnapshot`、`ListEventsAfter`、`RequestReconnect` |
-| `FriendService` | `SearchPlayers`、`SendRequest`、`RespondRequest`、`ListFriends`、`RemoveFriend`、`SendRoomInvite` |
+| `FriendService` | `SearchPlayers`、`SendRequest`、`RespondRequest`、`ListFriendRequests`、`ListFriends`、`RemoveFriend`、`SendRoomInvite`、`ListRoomInvitations` |
 | `ChatService` | `SendRoomMessage`、`ListRoomMessages`、`SendPrivateMessage`、`ListPrivateMessages` |
 | `ConfigService` | 客户端可读公开配置；管理配置写接口只对授权运营身份开放，且必须审计 |
 

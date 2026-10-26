@@ -554,6 +554,33 @@ func (s *Store) RespondFriendRequest(ctx context.Context, requesterID, recipient
 	return nil
 }
 
+func (s *Store) ListFriendRequests(ctx context.Context, userID string, offset, limit uint32) ([]social.PendingFriendRequest, error) {
+	if userID == "" || limit == 0 || limit > 101 {
+		return nil, social.ErrInvalidInput
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT u.id, p.nickname, p.avatar, u.created_at, f.created_at
+		FROM friendships f JOIN users u ON u.id = f.user_id
+		JOIN player_profiles p ON p.user_id = f.user_id
+		WHERE f.friend_id = ? AND f.status = 'PENDING' AND u.status = 'ACTIVE'
+		ORDER BY f.created_at DESC, f.user_id LIMIT ? OFFSET ?`, userID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list friend requests: %w", err)
+	}
+	defer rows.Close()
+	requests := make([]social.PendingFriendRequest, 0, limit)
+	for rows.Next() {
+		var request social.PendingFriendRequest
+		if err := rows.Scan(&request.UserID, &request.Nickname, &request.AvatarURL, &request.CreatedAt, &request.RequestedAt); err != nil {
+			return nil, fmt.Errorf("scan friend request: %w", err)
+		}
+		requests = append(requests, request)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read friend requests: %w", err)
+	}
+	return requests, nil
+}
+
 func (s *Store) ListFriends(ctx context.Context, userID string, offset, limit uint32) ([]social.Friend, error) {
 	if userID == "" || limit == 0 || limit > 101 {
 		return nil, social.ErrInvalidInput
@@ -642,6 +669,38 @@ func (s *Store) CreateRoomInvite(ctx context.Context, userID, roomID, friendID s
 		return fmt.Errorf("commit room invitation: %w", err)
 	}
 	return nil
+}
+
+func (s *Store) ListRoomInvitations(ctx context.Context, userID string, offset, limit uint32) ([]social.RoomInvitation, error) {
+	if userID == "" || limit == 0 || limit > 101 {
+		return nil, social.ErrInvalidInput
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT p.user_id, p.nickname, p.avatar, u.created_at,
+		JSON_UNQUOTE(JSON_EXTRACT(e.payload, '$.room_id')), e.created_at
+		FROM outbox_events e
+		JOIN player_profiles p ON p.user_id = JSON_UNQUOTE(JSON_EXTRACT(e.payload, '$.inviter_user_id'))
+		JOIN users u ON u.id = p.user_id
+		WHERE e.aggregate_id = ? AND e.event_type = 'FRIEND_ROOM_INVITE' AND u.status = 'ACTIVE'
+		ORDER BY e.id DESC LIMIT ? OFFSET ?`, userID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list room invitations: %w", err)
+	}
+	defer rows.Close()
+	invitations := make([]social.RoomInvitation, 0, limit)
+	for rows.Next() {
+		var invitation social.RoomInvitation
+		if err := rows.Scan(
+			&invitation.Inviter.UserID, &invitation.Inviter.Nickname, &invitation.Inviter.AvatarURL,
+			&invitation.Inviter.CreatedAt, &invitation.RoomID, &invitation.InvitedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan room invitation: %w", err)
+		}
+		invitations = append(invitations, invitation)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read room invitations: %w", err)
+	}
+	return invitations, nil
 }
 
 func (s *Store) CommitGameUpdate(ctx context.Context, expectedVersion uint64, state coordinator.GameState, event coordinator.GameEvent) error {

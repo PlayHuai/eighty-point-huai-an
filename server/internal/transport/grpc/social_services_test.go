@@ -27,9 +27,12 @@ func (r *profileRepositoryStub) UpdatePublicProfile(_ context.Context, userID, n
 }
 
 type socialRepositoryStub struct {
-	senderID string
-	targetID string
-	err      error
+	senderID    string
+	targetID    string
+	listUserID  string
+	requests    []social.PendingFriendRequest
+	invitations []social.RoomInvitation
+	err         error
 }
 
 func (*socialRepositoryStub) SearchPlayers(context.Context, string, string, uint32, uint32) ([]social.Player, error) {
@@ -45,6 +48,11 @@ func (*socialRepositoryStub) RespondFriendRequest(context.Context, string, strin
 	return nil
 }
 
+func (r *socialRepositoryStub) ListFriendRequests(_ context.Context, userID string, _, _ uint32) ([]social.PendingFriendRequest, error) {
+	r.listUserID = userID
+	return r.requests, r.err
+}
+
 func (*socialRepositoryStub) ListFriends(context.Context, string, uint32, uint32) ([]social.Friend, error) {
 	return nil, nil
 }
@@ -55,6 +63,11 @@ func (*socialRepositoryStub) RemoveFriend(context.Context, string, string) error
 
 func (*socialRepositoryStub) CreateRoomInvite(context.Context, string, string, string) error {
 	return nil
+}
+
+func (r *socialRepositoryStub) ListRoomInvitations(_ context.Context, userID string, _, _ uint32) ([]social.RoomInvitation, error) {
+	r.listUserID = userID
+	return r.invitations, r.err
 }
 
 func TestPlayerAndFriendRPCsUseAuthenticatedIdentity(t *testing.T) {
@@ -84,6 +97,18 @@ func TestPlayerAndFriendRPCsUseAuthenticatedIdentity(t *testing.T) {
 		socialRepo.senderID != "authenticated-user" || socialRepo.targetID != "friend" {
 		t.Fatalf("SendRequest() error = %v; repository = %+v", err, socialRepo)
 	}
+	socialRepo.requests = []social.PendingFriendRequest{{Player: social.Player{UserID: "requester"}}}
+	requests, err := friendRPC.ListFriendRequests(ctx, &huaiv1.PageRequest{})
+	if err != nil || socialRepo.listUserID != "authenticated-user" || requests.GetRequests()[0].GetRequester().GetUserId() != "requester" {
+		t.Fatalf("ListFriendRequests() = %+v, %v; repository = %+v", requests, err, socialRepo)
+	}
+	socialRepo.invitations = []social.RoomInvitation{{RoomID: "room", Inviter: social.Player{UserID: "inviter"}}}
+	invitations, err := friendRPC.ListRoomInvitations(ctx, &huaiv1.PageRequest{})
+	if err != nil || socialRepo.listUserID != "authenticated-user" ||
+		invitations.GetInvitations()[0].GetRoomId() != "room" ||
+		invitations.GetInvitations()[0].GetInviter().GetUserId() != "inviter" {
+		t.Fatalf("ListRoomInvitations() = %+v, %v; repository = %+v", invitations, err, socialRepo)
+	}
 }
 
 func TestPlayerAndFriendRPCsRejectMissingIdentity(t *testing.T) {
@@ -103,6 +128,14 @@ func TestPlayerAndFriendRPCsRejectMissingIdentity(t *testing.T) {
 	if _, err := (&friendServer{service: socialService}).SendRequest(
 		context.Background(), &huaiv1.FriendRequest{TargetUserId: "friend"}); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("unauthenticated SendRequest error = %v", err)
+	}
+	if _, err := (&friendServer{service: socialService}).ListFriendRequests(
+		context.Background(), &huaiv1.PageRequest{}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("unauthenticated ListFriendRequests error = %v", err)
+	}
+	if _, err := (&friendServer{service: socialService}).ListRoomInvitations(
+		context.Background(), &huaiv1.PageRequest{}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("unauthenticated ListRoomInvitations error = %v", err)
 	}
 }
 

@@ -10,6 +10,8 @@ import (
 type repositoryStub struct {
 	players        []Player
 	friends        []Friend
+	requests       []PendingFriendRequest
+	invitations    []RoomInvitation
 	query          string
 	excludedUserID string
 	offset         uint32
@@ -45,6 +47,18 @@ func (r *repositoryStub) RespondFriendRequest(_ context.Context, requesterID, re
 	return r.err
 }
 
+func (r *repositoryStub) ListFriendRequests(_ context.Context, userID string, offset, limit uint32) ([]PendingFriendRequest, error) {
+	r.userID, r.offset, r.limit = userID, offset, limit
+	if r.err != nil {
+		return nil, r.err
+	}
+	end := min(uint64(offset)+uint64(limit), uint64(len(r.requests)))
+	if uint64(offset) > uint64(len(r.requests)) {
+		return nil, nil
+	}
+	return r.requests[offset:uint32(end)], nil
+}
+
 func (r *repositoryStub) ListFriends(_ context.Context, userID string, offset, limit uint32) ([]Friend, error) {
 	r.userID, r.offset, r.limit = userID, offset, limit
 	if r.err != nil {
@@ -65,6 +79,18 @@ func (r *repositoryStub) RemoveFriend(_ context.Context, userID, friendID string
 func (r *repositoryStub) CreateRoomInvite(_ context.Context, userID, roomID, friendID string) error {
 	r.userID, r.roomID, r.targetUserID = userID, roomID, friendID
 	return r.err
+}
+
+func (r *repositoryStub) ListRoomInvitations(_ context.Context, userID string, offset, limit uint32) ([]RoomInvitation, error) {
+	r.userID, r.offset, r.limit = userID, offset, limit
+	if r.err != nil {
+		return nil, r.err
+	}
+	end := min(uint64(offset)+uint64(limit), uint64(len(r.invitations)))
+	if uint64(offset) > uint64(len(r.invitations)) {
+		return nil, nil
+	}
+	return r.invitations[offset:uint32(end)], nil
 }
 
 func TestServiceSearchAndListFriendsUseOpaqueOffsets(t *testing.T) {
@@ -91,6 +117,32 @@ func TestServiceSearchAndListFriendsUseOpaqueOffsets(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(friendPage.Items, repository.friends[2:]) ||
 		friendPage.NextPageToken != "" || repository.offset != 2 {
 		t.Fatalf("ListFriends() = %+v, %v; repository = %+v", friendPage, err, repository)
+	}
+}
+
+func TestServiceListsIncomingRequestsAndInvitationsWithOpaqueOffsets(t *testing.T) {
+	repository := &repositoryStub{
+		requests: []PendingFriendRequest{{Player: Player{UserID: "requester-1"}}, {Player: Player{UserID: "requester-2"}}},
+		invitations: []RoomInvitation{
+			{Inviter: Player{UserID: "inviter-1"}, RoomID: "room-1"},
+			{Inviter: Player{UserID: "inviter-2"}, RoomID: "room-2"},
+		},
+	}
+	service, err := NewService(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	requests, err := service.ListFriendRequests(ctx, "recipient", "", 1)
+	if err != nil || len(requests.Items) != 1 || requests.Items[0].UserID != "requester-1" ||
+		requests.NextPageToken != "1" || repository.userID != "recipient" || repository.limit != 2 {
+		t.Fatalf("ListFriendRequests() = %+v, %v; repository = %+v", requests, err, repository)
+	}
+	invitations, err := service.ListRoomInvitations(ctx, "recipient", "1", 1)
+	if err != nil || len(invitations.Items) != 1 || invitations.Items[0].RoomID != "room-2" ||
+		invitations.NextPageToken != "" || repository.userID != "recipient" || repository.offset != 1 {
+		t.Fatalf("ListRoomInvitations() = %+v, %v; repository = %+v", invitations, err, repository)
 	}
 }
 

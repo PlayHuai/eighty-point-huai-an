@@ -66,6 +66,26 @@ func (s *Service) RespondFriendRequest(ctx context.Context, userID, requesterID 
 	return s.repository.RespondFriendRequest(ctx, requesterID, userID, accept)
 }
 
+func (s *Service) ListFriendRequests(ctx context.Context, userID, pageToken string, pageSize uint32) (Page[PendingFriendRequest], error) {
+	if !validID(userID) {
+		return Page[PendingFriendRequest]{}, ErrInvalidInput
+	}
+	offset, limit, err := pageWindow(pageToken, pageSize)
+	if err != nil {
+		return Page[PendingFriendRequest]{}, err
+	}
+	requests, err := s.repository.ListFriendRequests(ctx, userID, offset, limit+1)
+	if err != nil {
+		return Page[PendingFriendRequest]{}, err
+	}
+	var next string
+	if uint32(len(requests)) > limit {
+		requests = requests[:limit]
+		next = strconv.FormatUint(uint64(offset+limit), 10)
+	}
+	return Page[PendingFriendRequest]{Items: requests, NextPageToken: next}, nil
+}
+
 func (s *Service) ListFriends(ctx context.Context, userID, pageToken string, pageSize uint32) (Page[Friend], error) {
 	if !validID(userID) {
 		return Page[Friend]{}, ErrInvalidInput
@@ -98,6 +118,26 @@ func (s *Service) SendRoomInvite(ctx context.Context, userID, roomID, friendID s
 		return ErrInvalidInput
 	}
 	return s.repository.CreateRoomInvite(ctx, userID, roomID, friendID)
+}
+
+func (s *Service) ListRoomInvitations(ctx context.Context, userID, pageToken string, pageSize uint32) (Page[RoomInvitation], error) {
+	if !validID(userID) {
+		return Page[RoomInvitation]{}, ErrInvalidInput
+	}
+	offset, limit, err := pageWindow(pageToken, pageSize)
+	if err != nil {
+		return Page[RoomInvitation]{}, err
+	}
+	invitations, err := s.repository.ListRoomInvitations(ctx, userID, offset, limit+1)
+	if err != nil {
+		return Page[RoomInvitation]{}, err
+	}
+	var next string
+	if uint32(len(invitations)) > limit {
+		invitations = invitations[:limit]
+		next = strconv.FormatUint(uint64(offset+limit), 10)
+	}
+	return Page[RoomInvitation]{Items: invitations, NextPageToken: next}, nil
 }
 
 func pageWindow(token string, requestedSize uint32) (uint32, uint32, error) {

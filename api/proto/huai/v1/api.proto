@@ -341,9 +341,30 @@ message ListFriendsResponse {
   PageInfo page = 2;
 }
 
+message PendingFriendRequest {
+  UserProfile requester = 1;
+  google.protobuf.Timestamp requested_at = 2;
+}
+
+message ListFriendRequestsResponse {
+  repeated PendingFriendRequest requests = 1;
+  PageInfo page = 2;
+}
+
 message SendRoomInviteRequest {
   string room_id = 1;
   string friend_id = 2;
+}
+
+message RoomInvitation {
+  UserProfile inviter = 1;
+  string room_id = 2;
+  google.protobuf.Timestamp invited_at = 3;
+}
+
+message ListRoomInvitationsResponse {
+  repeated RoomInvitation invitations = 1;
+  PageInfo page = 2;
 }
 
 service FriendService {
@@ -353,6 +374,8 @@ service FriendService {
   rpc ListFriends(PageRequest) returns (ListFriendsResponse);
   rpc RemoveFriend(FriendRequest) returns (Empty);
   rpc SendRoomInvite(SendRoomInviteRequest) returns (Empty);
+  rpc ListFriendRequests(PageRequest) returns (ListFriendRequestsResponse);
+  rpc ListRoomInvitations(PageRequest) returns (ListRoomInvitationsResponse);
 }
 
 message SendRoomMessageRequest {

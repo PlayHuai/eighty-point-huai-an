@@ -1365,12 +1365,14 @@ var GameService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	FriendService_SearchPlayers_FullMethodName  = "/huai.v1.FriendService/SearchPlayers"
-	FriendService_SendRequest_FullMethodName    = "/huai.v1.FriendService/SendRequest"
-	FriendService_RespondRequest_FullMethodName = "/huai.v1.FriendService/RespondRequest"
-	FriendService_ListFriends_FullMethodName    = "/huai.v1.FriendService/ListFriends"
-	FriendService_RemoveFriend_FullMethodName   = "/huai.v1.FriendService/RemoveFriend"
-	FriendService_SendRoomInvite_FullMethodName = "/huai.v1.FriendService/SendRoomInvite"
+	FriendService_SearchPlayers_FullMethodName       = "/huai.v1.FriendService/SearchPlayers"
+	FriendService_SendRequest_FullMethodName         = "/huai.v1.FriendService/SendRequest"
+	FriendService_RespondRequest_FullMethodName      = "/huai.v1.FriendService/RespondRequest"
+	FriendService_ListFriends_FullMethodName         = "/huai.v1.FriendService/ListFriends"
+	FriendService_RemoveFriend_FullMethodName        = "/huai.v1.FriendService/RemoveFriend"
+	FriendService_SendRoomInvite_FullMethodName      = "/huai.v1.FriendService/SendRoomInvite"
+	FriendService_ListFriendRequests_FullMethodName  = "/huai.v1.FriendService/ListFriendRequests"
+	FriendService_ListRoomInvitations_FullMethodName = "/huai.v1.FriendService/ListRoomInvitations"
 )
 
 // FriendServiceClient is the client API for FriendService service.
@@ -1383,6 +1385,8 @@ type FriendServiceClient interface {
 	ListFriends(ctx context.Context, in *PageRequest, opts ...grpc.CallOption) (*ListFriendsResponse, error)
 	RemoveFriend(ctx context.Context, in *FriendRequest, opts ...grpc.CallOption) (*Empty, error)
 	SendRoomInvite(ctx context.Context, in *SendRoomInviteRequest, opts ...grpc.CallOption) (*Empty, error)
+	ListFriendRequests(ctx context.Context, in *PageRequest, opts ...grpc.CallOption) (*ListFriendRequestsResponse, error)
+	ListRoomInvitations(ctx context.Context, in *PageRequest, opts ...grpc.CallOption) (*ListRoomInvitationsResponse, error)
 }
 
 type friendServiceClient struct {
@@ -1453,6 +1457,26 @@ func (c *friendServiceClient) SendRoomInvite(ctx context.Context, in *SendRoomIn
 	return out, nil
 }
 
+func (c *friendServiceClient) ListFriendRequests(ctx context.Context, in *PageRequest, opts ...grpc.CallOption) (*ListFriendRequestsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListFriendRequestsResponse)
+	err := c.cc.Invoke(ctx, FriendService_ListFriendRequests_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *friendServiceClient) ListRoomInvitations(ctx context.Context, in *PageRequest, opts ...grpc.CallOption) (*ListRoomInvitationsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListRoomInvitationsResponse)
+	err := c.cc.Invoke(ctx, FriendService_ListRoomInvitations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // FriendServiceServer is the server API for FriendService service.
 // All implementations must embed UnimplementedFriendServiceServer
 // for forward compatibility.
@@ -1463,6 +1487,8 @@ type FriendServiceServer interface {
 	ListFriends(context.Context, *PageRequest) (*ListFriendsResponse, error)
 	RemoveFriend(context.Context, *FriendRequest) (*Empty, error)
 	SendRoomInvite(context.Context, *SendRoomInviteRequest) (*Empty, error)
+	ListFriendRequests(context.Context, *PageRequest) (*ListFriendRequestsResponse, error)
+	ListRoomInvitations(context.Context, *PageRequest) (*ListRoomInvitationsResponse, error)
 	mustEmbedUnimplementedFriendServiceServer()
 }
 
@@ -1490,6 +1516,12 @@ func (UnimplementedFriendServiceServer) RemoveFriend(context.Context, *FriendReq
 }
 func (UnimplementedFriendServiceServer) SendRoomInvite(context.Context, *SendRoomInviteRequest) (*Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SendRoomInvite not implemented")
+}
+func (UnimplementedFriendServiceServer) ListFriendRequests(context.Context, *PageRequest) (*ListFriendRequestsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListFriendRequests not implemented")
+}
+func (UnimplementedFriendServiceServer) ListRoomInvitations(context.Context, *PageRequest) (*ListRoomInvitationsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListRoomInvitations not implemented")
 }
 func (UnimplementedFriendServiceServer) mustEmbedUnimplementedFriendServiceServer() {}
 func (UnimplementedFriendServiceServer) testEmbeddedByValue()                       {}
@@ -1620,6 +1652,42 @@ func _FriendService_SendRoomInvite_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _FriendService_ListFriendRequests_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FriendServiceServer).ListFriendRequests(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FriendService_ListFriendRequests_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FriendServiceServer).ListFriendRequests(ctx, req.(*PageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FriendService_ListRoomInvitations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FriendServiceServer).ListRoomInvitations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FriendService_ListRoomInvitations_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FriendServiceServer).ListRoomInvitations(ctx, req.(*PageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // FriendService_ServiceDesc is the grpc.ServiceDesc for FriendService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1650,6 +1718,14 @@ var FriendService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SendRoomInvite",
 			Handler:    _FriendService_SendRoomInvite_Handler,
+		},
+		{
+			MethodName: "ListFriendRequests",
+			Handler:    _FriendService_ListFriendRequests_Handler,
+		},
+		{
+			MethodName: "ListRoomInvitations",
+			Handler:    _FriendService_ListRoomInvitations_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
