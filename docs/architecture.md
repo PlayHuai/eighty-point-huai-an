@@ -65,7 +65,7 @@ flowchart TB
 | 模块 | 职责与边界 |
 |---|---|
 | 账号与会话 | 注册、登录、密码/验证码验证、会话签发和撤销、账号状态。密码哈希和用户凭据不可出现在玩家 API 响应中。 |
-| 玩家与社交 | 昵称/头像、好友关系、好友邀请、房间及私聊消息。私聊持久化策略需确认。 |
+| 玩家与社交 | 昵称/头像、好友关系、好友邀请及玩家资料。私聊和房间聊天分别实现，持久化策略需确认后方可开放。 |
 | 大厅与房间 | 大厅准入、房间生命周期、房主、座位、旁观者、观战许可、房间成员变化。 |
 | 牌局编排 | 房间内游戏生命周期和每手状态；一个房间内的状态变更串行化；断线恢复与托管计时器。 |
 | 规则引擎 | 纯 Go 领域逻辑：牌力比较、跟牌/毙牌、拖拉机、510k、抽筋、抄底、翻盘、必打级、自然级、升级、上天入地与春天判定。自然级按单手判定且最多触发一次；不得依赖网络、数据库、Redis 或客户端代码。 |
@@ -164,7 +164,7 @@ GameSession 结束时转入 `SESSION_RESULT → SETTLED`。异常结束必须进
 | `LobbyService` | `ListHalls`、`ListRooms`、`CreateRoom`、`JoinRoom`、`LeaveRoom`、`JoinByCode` |
 | `RoomService` | `GetRoom`、`SitDown`、`ChangeSeat`、`StandUp`、`InviteFriend`、`SetSpectatorView`、`SetHandVisibility`、`StartGame` |
 | `GameService` | `SubmitAction`、`GetGameSnapshot`、`ListEventsAfter`、`RequestReconnect` |
-| `FriendService` | `SearchPlayers`、`SendRequest`、`RespondRequest`、`ListFriends`、`RemoveFriend`、`SendRoomInvite` |
+| `FriendService` | `SearchPlayers`、`SendRequest`、`RespondRequest`、`ListFriendRequests`、`ListFriends`、`RemoveFriend`、`SendRoomInvite`、`ListRoomInvitations` |
 | `ChatService` | `SendRoomMessage`、`ListRoomMessages`、`SendPrivateMessage`、`ListPrivateMessages` |
 | `ConfigService` | 客户端可读公开配置；管理配置写接口只对授权运营身份开放，且必须审计 |
 
@@ -268,7 +268,7 @@ T01 已确认采用下列默认方案。具体配置值和技术兼容性按表�
 | # | 已确认决策 | 实施与上线门槛 | 影响 |
 |---|---|---|---|
 | 1 | 允许同一账号多端共存；Access Token 沿用需求默认 7 天并支持滑动续期，Refresh Session 可撤销 | 每个设备/会话独立管理；退出、改密、封禁或注销时立即撤销相关会话 | 会话表、会话撤销和设备管理 |
-| 2 | 聊天采用可配置留存期；建立举报/审计策略后再开放私聊 | 私聊上线前必须配置留存期限、删除规则及举报处理流程；房间聊天同样遵循配置的留存策略 | 存储成本、隐私与运营流程 |
+| 2 | 好友私聊（T23）与房间聊天（T24）分开实现；按确认后的策略留存 | 私聊上线前必须配置留存期限、删除规则及举报处理流程；房间聊天上线前必须确认留存期限及删除规则 | 存储成本、隐私与运营流程 |
 | 3 | 观战默认不展示牌面；仅在玩家明确授权且房间规则允许时展示 | 服务端按观战者权限过滤每条 WebSocket 状态投影；未授权牌面始终不可见 | WebSocket 权限投影及作弊风险 |
 | 4 | MVP 使用单台 Linux 主机上的 Docker Compose 部署 | 生产发布前明确在线人数、备份频率和 RPO/RTO；达到目标或容量瓶颈后再评估多实例/多可用区 | 部署拓扑、MySQL/Redis 高可用、预算 |
 | 5 | Web 优先验证 Flutter/Dart gRPC-Web 插件并在技术验证中确定支持的浏览器 | 若插件无法满足验证要求，Web RPC 改用 HTTP/JSON 网关；WebSocket 保持不变 | Web 客户端 API 生成、Envoy 配置和兼容测试 |

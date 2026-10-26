@@ -105,6 +105,7 @@ func (s *memoryState) clone() *memoryState {
 type memoryDB struct {
 	mu            sync.Mutex
 	state         *memoryState
+	lastExecQuery string
 	failLedgerFor string
 	failEvent     bool
 }
@@ -165,6 +166,12 @@ func (c *memoryConn) ExecContext(_ context.Context, query string, args []driver.
 	query = strings.Join(strings.Fields(query), " ")
 	state := c.current()
 	switch {
+	case strings.HasPrefix(query, "DELETE FROM friendships"):
+		c.db.lastExecQuery = query
+		if !strings.Contains(query, "WHERE status = 'ACCEPTED'") {
+			return nil, errors.New("friendship removal must preserve blocked rows")
+		}
+		return memoryResultRows(1), nil
 	case strings.HasPrefix(query, "CREATE TABLE IF NOT EXISTS schema_migrations"):
 		return memoryResultRows(0), nil
 	case strings.HasPrefix(query, "CREATE TABLE IF NOT EXISTS"):
@@ -743,5 +750,16 @@ func TestNewRequiresDatabase(t *testing.T) {
 	}
 	if err := ApplyMigrations(context.Background(), nil); err == nil {
 		t.Fatal("expected nil database migration error")
+	}
+}
+
+func TestRemoveFriendDeletesOnlyAcceptedRelationships(t *testing.T) {
+	store, db := newTestStore(t, testMemoryState())
+	if err := store.RemoveFriend(context.Background(), "caller", "friend"); err != nil {
+		t.Fatalf("RemoveFriend() error = %v", err)
+	}
+	if !strings.Contains(db.lastExecQuery, "WHERE status = 'ACCEPTED'") ||
+		!strings.Contains(db.lastExecQuery, "(user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)") {
+		t.Fatalf("RemoveFriend query can delete non-accepted relationships: %q", db.lastExecQuery)
 	}
 }

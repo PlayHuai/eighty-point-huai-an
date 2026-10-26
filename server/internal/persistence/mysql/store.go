@@ -15,11 +15,14 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/auth"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/game/coordinator"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/player"
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/room"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/settlement"
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/social"
 )
 
 //go:embed migrations/*.sql
@@ -33,7 +36,8 @@ var (
 )
 
 type Store struct {
-	db *sql.DB
+	db          *sql.DB
+	roomManager *room.Manager
 }
 
 type migration struct {
@@ -48,6 +52,13 @@ func New(db *sql.DB) (*Store, error) {
 		return nil, errors.New("mysql database is required")
 	}
 	return &Store{db: db}, nil
+}
+
+func NewWithRoomManager(db *sql.DB, roomManager *room.Manager) (*Store, error) {
+	if db == nil || roomManager == nil {
+		return nil, errors.New("mysql database and room manager are required")
+	}
+	return &Store{db: db, roomManager: roomManager}, nil
 }
 
 func ApplyMigrations(ctx context.Context, db *sql.DB) error {
@@ -351,6 +362,345 @@ func (s *Store) SaveProfile(ctx context.Context, profile player.Profile) error {
 		ON DUPLICATE KEY UPDATE points = VALUES(points), rank_name = VALUES(rank_name)`,
 		profile.UserID, profile.UserID, profile.Points, profile.Rank)
 	return err
+}
+
+func (s *Store) GetPublicProfile(ctx context.Context, userID string) (player.PublicProfile, error) {
+	var profile player.PublicProfile
+	err := s.db.QueryRowContext(ctx, `SELECT p.user_id, p.nickname, p.avatar, u.created_at
+		FROM player_profiles p JOIN users u ON u.id = p.user_id
+		WHERE p.user_id = ? AND u.status = 'ACTIVE'`, userID).Scan(
+		&profile.UserID, &profile.Nickname, &profile.AvatarURL, &profile.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return player.PublicProfile{}, player.ErrProfileNotFound
+	}
+	return profile, err
+}
+
+func (s *Store) UpdatePublicProfile(ctx context.Context, userID, nickname, avatarURL string) (player.PublicProfile, error) {
+	if userID == "" || nickname == "" || utf8.RuneCountInString(nickname) > 64 ||
+		utf8.RuneCountInString(avatarURL) > 512 {
+		return player.PublicProfile{}, player.ErrInvalidProfile
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE player_profiles p JOIN users u ON u.id = p.user_id
+		SET p.nickname = ?, p.avatar = ?
+		WHERE p.user_id = ? AND u.status = 'ACTIVE'`, nickname, avatarURL, userID)
+	if err != nil {
+		return player.PublicProfile{}, fmt.Errorf("update player profile: %w", err)
+	}
+	return s.GetPublicProfile(ctx, userID)
+}
+
+func (s *Store) SearchPlayers(ctx context.Context, query, excludedUserID string, offset, limit uint32) ([]social.Player, error) {
+	if strings.TrimSpace(query) == "" || excludedUserID == "" || limit == 0 || limit > 101 {
+		return nil, social.ErrInvalidInput
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT u.id, p.nickname, p.avatar, u.created_at
+		FROM users u JOIN player_profiles p ON p.user_id = u.id
+		WHERE u.status = 'ACTIVE' AND u.id <> ?
+		AND (LOCATE(?, u.id) > 0 OR LOCATE(?, p.nickname) > 0 OR LOCATE(?, COALESCE(u.phone, '')) > 0)
+		ORDER BY p.nickname, u.id LIMIT ? OFFSET ?`,
+		excludedUserID, query, query, query, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("search players: %w", err)
+	}
+	defer rows.Close()
+	players := make([]social.Player, 0, limit)
+	for rows.Next() {
+		var result social.Player
+		if err := rows.Scan(&result.UserID, &result.Nickname, &result.AvatarURL, &result.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan player search result: %w", err)
+		}
+		players = append(players, result)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read player search results: %w", err)
+	}
+	return players, nil
+}
+
+func (s *Store) SendFriendRequest(ctx context.Context, userID, targetUserID string) error {
+	if userID == "" || targetUserID == "" || userID == targetUserID {
+		return social.ErrInvalidInput
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin friend request: %w", err)
+	}
+	defer tx.Rollback()
+	var target string
+	if err := tx.QueryRowContext(ctx, "SELECT id FROM users WHERE id = ? AND status = 'ACTIVE'", targetUserID).Scan(&target); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return social.ErrPlayerNotFound
+		}
+		return fmt.Errorf("find friend request target: %w", err)
+	}
+	var status string
+	err = tx.QueryRowContext(ctx, `SELECT status FROM friendships
+		WHERE user_id = ? AND friend_id = ? FOR UPDATE`, userID, targetUserID).Scan(&status)
+	if err == nil {
+		switch status {
+		case "ACCEPTED":
+			return social.ErrAlreadyFriends
+		case "PENDING":
+			return social.ErrFriendRequestExists
+		default:
+			return social.ErrNotFriends
+		}
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("read friend request state: %w", err)
+	}
+	err = tx.QueryRowContext(ctx, `SELECT status FROM friendships
+		WHERE user_id = ? AND friend_id = ? FOR UPDATE`, targetUserID, userID).Scan(&status)
+	if err == nil {
+		switch status {
+		case "ACCEPTED":
+			return social.ErrAlreadyFriends
+		case "PENDING":
+			return social.ErrFriendRequestExists
+		default:
+			return social.ErrNotFriends
+		}
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("read reverse friend request state: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO friendships (user_id, friend_id, status)
+		VALUES (?, ?, 'PENDING')`, userID, targetUserID); err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
+			return social.ErrFriendRequestExists
+		}
+		return fmt.Errorf("insert friend request: %w", err)
+	}
+	payload, err := json.Marshal(struct {
+		RequesterID string `json:"requester_user_id"`
+		RecipientID string `json:"recipient_user_id"`
+	}{userID, targetUserID})
+	if err != nil {
+		return fmt.Errorf("encode friend request event: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO outbox_events (event_type, aggregate_id, payload)
+		VALUES ('FRIEND_REQUEST_CREATED', ?, ?)`, targetUserID, payload); err != nil {
+		return fmt.Errorf("store friend request event: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit friend request: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) RespondFriendRequest(ctx context.Context, requesterID, recipientID string, accept bool) error {
+	if requesterID == "" || recipientID == "" || requesterID == recipientID {
+		return social.ErrInvalidInput
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin friend request response: %w", err)
+	}
+	defer tx.Rollback()
+	var status string
+	err = tx.QueryRowContext(ctx, `SELECT status FROM friendships
+		WHERE user_id = ? AND friend_id = ? FOR UPDATE`, requesterID, recipientID).Scan(&status)
+	if errors.Is(err, sql.ErrNoRows) {
+		return social.ErrFriendRequestMissing
+	}
+	if err != nil {
+		return fmt.Errorf("read friend request: %w", err)
+	}
+	if status != "PENDING" {
+		if status == "ACCEPTED" {
+			return social.ErrAlreadyFriends
+		}
+		return social.ErrFriendRequestMissing
+	}
+	if accept {
+		var reverseStatus string
+		err := tx.QueryRowContext(ctx, `SELECT status FROM friendships
+			WHERE user_id = ? AND friend_id = ? FOR UPDATE`, recipientID, requesterID).Scan(&reverseStatus)
+		if err == nil && reverseStatus == "BLOCKED" {
+			return social.ErrNotFriends
+		}
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("read reverse friendship state: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE friendships SET status = 'ACCEPTED'
+			WHERE user_id = ? AND friend_id = ? AND status = 'PENDING'`, requesterID, recipientID); err != nil {
+			return fmt.Errorf("accept friend request: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO friendships (user_id, friend_id, status)
+			VALUES (?, ?, 'ACCEPTED')
+			ON DUPLICATE KEY UPDATE status = 'ACCEPTED', updated_at = CURRENT_TIMESTAMP(6)`,
+			recipientID, requesterID); err != nil {
+			return fmt.Errorf("create reciprocal friendship: %w", err)
+		}
+	} else if _, err := tx.ExecContext(ctx, `DELETE FROM friendships
+		WHERE user_id = ? AND friend_id = ? AND status = 'PENDING'`, requesterID, recipientID); err != nil {
+		return fmt.Errorf("decline friend request: %w", err)
+	}
+	payload, err := json.Marshal(struct {
+		RequesterID string `json:"requester_user_id"`
+		RecipientID string `json:"recipient_user_id"`
+		Accepted    bool   `json:"accepted"`
+	}{requesterID, recipientID, accept})
+	if err != nil {
+		return fmt.Errorf("encode friend response event: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO outbox_events (event_type, aggregate_id, payload)
+		VALUES ('FRIEND_REQUEST_RESPONDED', ?, ?)`, requesterID, payload); err != nil {
+		return fmt.Errorf("store friend response event: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit friend request response: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ListFriendRequests(ctx context.Context, userID string, offset, limit uint32) ([]social.PendingFriendRequest, error) {
+	if userID == "" || limit == 0 || limit > 101 {
+		return nil, social.ErrInvalidInput
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT u.id, p.nickname, p.avatar, u.created_at, f.created_at
+		FROM friendships f JOIN users u ON u.id = f.user_id
+		JOIN player_profiles p ON p.user_id = f.user_id
+		WHERE f.friend_id = ? AND f.status = 'PENDING' AND u.status = 'ACTIVE'
+		ORDER BY f.created_at DESC, f.user_id LIMIT ? OFFSET ?`, userID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list friend requests: %w", err)
+	}
+	defer rows.Close()
+	requests := make([]social.PendingFriendRequest, 0, limit)
+	for rows.Next() {
+		var request social.PendingFriendRequest
+		if err := rows.Scan(&request.UserID, &request.Nickname, &request.AvatarURL, &request.CreatedAt, &request.RequestedAt); err != nil {
+			return nil, fmt.Errorf("scan friend request: %w", err)
+		}
+		requests = append(requests, request)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read friend requests: %w", err)
+	}
+	return requests, nil
+}
+
+func (s *Store) ListFriends(ctx context.Context, userID string, offset, limit uint32) ([]social.Friend, error) {
+	if userID == "" || limit == 0 || limit > 101 {
+		return nil, social.ErrInvalidInput
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT p.user_id, p.nickname, p.avatar, u.created_at, f.updated_at
+		FROM friendships f JOIN users u ON u.id = f.friend_id
+		JOIN player_profiles p ON p.user_id = f.friend_id
+		WHERE f.user_id = ? AND f.status = 'ACCEPTED' AND u.status = 'ACTIVE'
+		ORDER BY f.updated_at DESC, f.friend_id LIMIT ? OFFSET ?`, userID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list friends: %w", err)
+	}
+	defer rows.Close()
+	friends := make([]social.Friend, 0, limit)
+	for rows.Next() {
+		var friend social.Friend
+		if err := rows.Scan(&friend.UserID, &friend.Nickname, &friend.AvatarURL, &friend.CreatedAt, &friend.FriendsSince); err != nil {
+			return nil, fmt.Errorf("scan friend: %w", err)
+		}
+		friends = append(friends, friend)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read friends: %w", err)
+	}
+	return friends, nil
+}
+
+func (s *Store) RemoveFriend(ctx context.Context, userID, friendID string) error {
+	if userID == "" || friendID == "" || userID == friendID {
+		return social.ErrInvalidInput
+	}
+	result, err := s.db.ExecContext(ctx, `DELETE FROM friendships
+		WHERE status = 'ACCEPTED' AND ((user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?))`,
+		userID, friendID, friendID, userID)
+	if err != nil {
+		return fmt.Errorf("remove friendship: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("check friendship removal: %w", err)
+	}
+	if affected == 0 {
+		return social.ErrNotFriends
+	}
+	return nil
+}
+
+func (s *Store) CreateRoomInvite(ctx context.Context, userID, roomID, friendID string) error {
+	if userID == "" || roomID == "" || friendID == "" || userID == friendID {
+		return social.ErrInvalidInput
+	}
+	if s.roomManager == nil || !s.roomManager.CanInvite(roomID, userID) {
+		return social.ErrRoomUnavailable
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin room invitation: %w", err)
+	}
+	defer tx.Rollback()
+	if !s.roomManager.CanInvite(roomID, userID) {
+		return social.ErrRoomUnavailable
+	}
+	var friendshipStatus string
+	err = tx.QueryRowContext(ctx, `SELECT f.status FROM friendships f
+		JOIN users u ON u.id = f.friend_id
+		WHERE f.user_id = ? AND f.friend_id = ? AND u.status = 'ACTIVE'`, userID, friendID).Scan(&friendshipStatus)
+	if errors.Is(err, sql.ErrNoRows) || err == nil && friendshipStatus != "ACCEPTED" {
+		return social.ErrNotFriends
+	}
+	if err != nil {
+		return fmt.Errorf("check room invitation friendship: %w", err)
+	}
+	payload, err := json.Marshal(struct {
+		InviterID string `json:"inviter_user_id"`
+		FriendID  string `json:"friend_user_id"`
+		RoomID    string `json:"room_id"`
+	}{userID, friendID, roomID})
+	if err != nil {
+		return fmt.Errorf("encode room invitation: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO outbox_events (event_type, aggregate_id, payload)
+		VALUES ('FRIEND_ROOM_INVITE', ?, ?)`, friendID, payload); err != nil {
+		return fmt.Errorf("store room invitation: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit room invitation: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ListRoomInvitations(ctx context.Context, userID string, offset, limit uint32) ([]social.RoomInvitation, error) {
+	if userID == "" || limit == 0 || limit > 101 {
+		return nil, social.ErrInvalidInput
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT p.user_id, p.nickname, p.avatar, u.created_at,
+		JSON_UNQUOTE(JSON_EXTRACT(e.payload, '$.room_id')), e.created_at
+		FROM outbox_events e
+		JOIN player_profiles p ON p.user_id = JSON_UNQUOTE(JSON_EXTRACT(e.payload, '$.inviter_user_id'))
+		JOIN users u ON u.id = p.user_id
+		WHERE e.aggregate_id = ? AND e.event_type = 'FRIEND_ROOM_INVITE' AND u.status = 'ACTIVE'
+		ORDER BY e.id DESC LIMIT ? OFFSET ?`, userID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list room invitations: %w", err)
+	}
+	defer rows.Close()
+	invitations := make([]social.RoomInvitation, 0, limit)
+	for rows.Next() {
+		var invitation social.RoomInvitation
+		if err := rows.Scan(
+			&invitation.Inviter.UserID, &invitation.Inviter.Nickname, &invitation.Inviter.AvatarURL,
+			&invitation.Inviter.CreatedAt, &invitation.RoomID, &invitation.InvitedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan room invitation: %w", err)
+		}
+		invitations = append(invitations, invitation)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read room invitations: %w", err)
+	}
+	return invitations, nil
 }
 
 func (s *Store) CommitGameUpdate(ctx context.Context, expectedVersion uint64, state coordinator.GameState, event coordinator.GameEvent) error {
@@ -712,8 +1062,10 @@ func readSettlement(ctx context.Context, tx *sql.Tx, sessionID string) (settleme
 }
 
 var (
-	_ auth.Repository          = (*Store)(nil)
-	_ player.ProfileRepository = (*Store)(nil)
-	_ coordinator.Repository   = (*Store)(nil)
-	_ settlement.Repository    = (*Store)(nil)
+	_ auth.Repository                = (*Store)(nil)
+	_ player.ProfileRepository       = (*Store)(nil)
+	_ player.PublicProfileRepository = (*Store)(nil)
+	_ coordinator.Repository         = (*Store)(nil)
+	_ social.Repository              = (*Store)(nil)
+	_ settlement.Repository          = (*Store)(nil)
 )

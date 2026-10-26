@@ -363,6 +363,44 @@ func TestClosedRoomEvictionIsSafeWithConcurrentLookups(t *testing.T) {
 	}
 }
 
+func TestCanInviteAllowsRoomOwnerAndSeatedPlayers(t *testing.T) {
+	manager := NewManager()
+	created, err := manager.CreateRoom(lobby.HallOrdinary, "owner", 9000, Settings{Name: "table"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !manager.CanInvite(created.Room.ID, "owner") {
+		t.Fatal("unseated owner cannot invite")
+	}
+	if manager.CanInvite(created.Room.ID, "outsider") {
+		t.Fatal("non-member can invite")
+	}
+	joined, err := manager.JoinRoom(created.Room.ID, "player", 9000, "", created.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	standing, err := manager.StandUp(created.Room.ID, "player", joined.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manager.CanInvite(created.Room.ID, "player") {
+		t.Fatal("unseated player can invite")
+	}
+	seated, err := manager.SitDown(created.Room.ID, "player", 1, 9000, standing.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !manager.CanInvite(created.Room.ID, "player") {
+		t.Fatal("seated player cannot invite")
+	}
+	if _, err := manager.Close(created.Room.ID, "owner", seated.Version); err != nil {
+		t.Fatal(err)
+	}
+	if manager.CanInvite(created.Room.ID, "owner") {
+		t.Fatal("owner can invite to closed room")
+	}
+}
+
 func memberFor(t *testing.T, details Details, userID string) Member {
 	t.Helper()
 	for _, member := range details.Members {
