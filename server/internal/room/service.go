@@ -455,6 +455,22 @@ func (m *Manager) GetRoom(roomID, userID string) (Details, error) {
 	return snapshotLocked(state), nil
 }
 
+func (m *Manager) CanInvite(roomID, userID string) bool {
+	state, err := m.lockRoom(roomID)
+	if err != nil {
+		return false
+	}
+	defer state.mu.Unlock()
+	if state.summary.Status != StatusWaiting && state.summary.Status != StatusPlaying {
+		return false
+	}
+	if userID == state.ownerID {
+		return true
+	}
+	member, exists := state.members[userID]
+	return exists && member.Role == RolePlayer && member.Seat != 0
+}
+
 func (s *roomState) checkVersion(expected uint64) error {
 	if expected != s.version {
 		return ErrVersionConflict

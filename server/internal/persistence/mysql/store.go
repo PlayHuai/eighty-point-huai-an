@@ -20,6 +20,7 @@ import (
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/auth"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/game/coordinator"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/player"
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/room"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/settlement"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/social"
 )
@@ -35,7 +36,8 @@ var (
 )
 
 type Store struct {
-	db *sql.DB
+	db          *sql.DB
+	roomManager *room.Manager
 }
 
 type migration struct {
@@ -50,6 +52,13 @@ func New(db *sql.DB) (*Store, error) {
 		return nil, errors.New("mysql database is required")
 	}
 	return &Store{db: db}, nil
+}
+
+func NewWithRoomManager(db *sql.DB, roomManager *room.Manager) (*Store, error) {
+	if db == nil || roomManager == nil {
+		return nil, errors.New("mysql database and room manager are required")
+	}
+	return &Store{db: db, roomManager: roomManager}, nil
 }
 
 func ApplyMigrations(ctx context.Context, db *sql.DB) error {
@@ -577,7 +586,7 @@ func (s *Store) RemoveFriend(ctx context.Context, userID, friendID string) error
 		return social.ErrInvalidInput
 	}
 	result, err := s.db.ExecContext(ctx, `DELETE FROM friendships
-		WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)`,
+		WHERE status = 'ACCEPTED' AND ((user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?))`,
 		userID, friendID, friendID, userID)
 	if err != nil {
 		return fmt.Errorf("remove friendship: %w", err)
@@ -596,26 +605,16 @@ func (s *Store) CreateRoomInvite(ctx context.Context, userID, roomID, friendID s
 	if userID == "" || roomID == "" || friendID == "" || userID == friendID {
 		return social.ErrInvalidInput
 	}
+	if s.roomManager == nil || !s.roomManager.CanInvite(roomID, userID) {
+		return social.ErrRoomUnavailable
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin room invitation: %w", err)
 	}
 	defer tx.Rollback()
-	var roomStatus string
-	err = tx.QueryRowContext(ctx, "SELECT status FROM rooms WHERE id = ? FOR UPDATE", roomID).Scan(&roomStatus)
-	if errors.Is(err, sql.ErrNoRows) || err == nil && roomStatus != "WAITING" && roomStatus != "PLAYING" {
+	if !s.roomManager.CanInvite(roomID, userID) {
 		return social.ErrRoomUnavailable
-	}
-	if err != nil {
-		return fmt.Errorf("find invitation room: %w", err)
-	}
-	var role string
-	err = tx.QueryRowContext(ctx, "SELECT role FROM room_members WHERE room_id = ? AND user_id = ?", roomID, userID).Scan(&role)
-	if errors.Is(err, sql.ErrNoRows) || err == nil && role != "PLAYER" {
-		return social.ErrRoomUnavailable
-	}
-	if err != nil {
-		return fmt.Errorf("check room inviter membership: %w", err)
 	}
 	var friendshipStatus string
 	err = tx.QueryRowContext(ctx, `SELECT f.status FROM friendships f
