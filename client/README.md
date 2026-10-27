@@ -1,7 +1,7 @@
 # Flutter client
 
-The shared Flutter application targets iOS, Windows, and Web. Initialize the
-repository submodules and configure the local Flutter SDK as described in
+The shared Flutter application targets iOS, Windows, and Web. Install the
+Flutter 3.47.8 SDK and configure the local environment as described in
 `../.agent/instructions.md`.
 
 Generate the Dart API bindings by following the instructions in

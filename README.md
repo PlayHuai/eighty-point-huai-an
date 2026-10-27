@@ -10,16 +10,10 @@
 
 ## Flutter SDK
 
-Flutter SDK 以 Git 子模块固定在当前 stable 版本（3.47.8），不依赖 Snap 安装。
+GitHub Actions 使用 `subosito/flutter-action` 安装 Flutter stable 3.47.8，并缓存 SDK 与 Pub 依赖。Flutter SDK 不再作为仓库子模块提交。
 
 ```sh
-git submodule update --init third-party/flutter
-third-party/flutter/bin/flutter --version
+flutter --version
 ```
 
-更新到 Flutter stable 分支的最新提交后，将子模块指针提交到本仓库：
-
-```sh
-git submodule update --remote third-party/flutter
-git add .gitmodules third-party/flutter
-```
+本地开发请按 Flutter 官方安装说明安装 Flutter 3.47.8，并将 Flutter SDK 的 `bin` 目录加入 `PATH`。
