@@ -1,0 +1,10 @@
+*.svg -text
+*.pdf -text
+*.png -text
+*.jpg -text
+*.jpeg -text
+*.webp -text
+*.gif -text
+*.ico -text
+*.woff -text
+*.woff2 -text
