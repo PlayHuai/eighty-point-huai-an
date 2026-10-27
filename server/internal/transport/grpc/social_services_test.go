@@ -139,6 +139,58 @@ func TestPlayerAndFriendRPCsRejectMissingIdentity(t *testing.T) {
 	}
 }
 
+func TestEveryFriendRPCRejectsMissingIdentity(t *testing.T) {
+	service, err := social.NewService(&socialRepositoryStub{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &friendServer{service: service}
+	tests := []struct {
+		name string
+		call func(context.Context) error
+	}{
+		{"SearchPlayers", func(ctx context.Context) error {
+			_, err := server.SearchPlayers(ctx, &huaiv1.SearchPlayersRequest{Query: "Alice"})
+			return err
+		}},
+		{"SendRequest", func(ctx context.Context) error {
+			_, err := server.SendRequest(ctx, &huaiv1.FriendRequest{TargetUserId: "friend"})
+			return err
+		}},
+		{"RespondRequest", func(ctx context.Context) error {
+			_, err := server.RespondRequest(ctx, &huaiv1.RespondFriendRequest{RequesterUserId: "friend"})
+			return err
+		}},
+		{"ListFriends", func(ctx context.Context) error {
+			_, err := server.ListFriends(ctx, &huaiv1.PageRequest{})
+			return err
+		}},
+		{"ListFriendRequests", func(ctx context.Context) error {
+			_, err := server.ListFriendRequests(ctx, &huaiv1.PageRequest{})
+			return err
+		}},
+		{"RemoveFriend", func(ctx context.Context) error {
+			_, err := server.RemoveFriend(ctx, &huaiv1.FriendRequest{TargetUserId: "friend"})
+			return err
+		}},
+		{"SendRoomInvite", func(ctx context.Context) error {
+			_, err := server.SendRoomInvite(ctx, &huaiv1.SendRoomInviteRequest{RoomId: "room", FriendId: "friend"})
+			return err
+		}},
+		{"ListRoomInvitations", func(ctx context.Context) error {
+			_, err := server.ListRoomInvitations(ctx, &huaiv1.PageRequest{})
+			return err
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := test.call(context.Background()); status.Code(err) != codes.Unauthenticated {
+				t.Fatalf("RPC error = %v, want Unauthenticated", err)
+			}
+		})
+	}
+}
+
 func TestFriendRPCMapsDomainErrors(t *testing.T) {
 	repository := &socialRepositoryStub{err: social.ErrAlreadyFriends}
 	service, err := social.NewService(repository)
