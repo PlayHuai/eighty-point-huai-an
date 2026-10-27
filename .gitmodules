@@ -1,3 +1,7 @@
 [submodule "playing-cards"]
 	path = third-party/playing-cards
 	url = https://github.com/Derek0120/playing-cards.git
+[submodule "flutter"]
+	path = third-party/flutter
+	url = https://github.com/flutter/flutter.git
+	branch = stable
