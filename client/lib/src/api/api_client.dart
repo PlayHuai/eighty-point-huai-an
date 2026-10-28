@@ -1,6 +1,6 @@
 import 'package:eighty_point_huai_an/src/generated/huai/v1/api.pbgrpc.dart'
     as api;
-import 'package:grpc/grpc.dart';
+import 'package:grpc/service_api.dart';
 
 import 'channel_factory.dart';
 import '../auth/auth_session.dart';

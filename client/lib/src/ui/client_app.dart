@@ -36,15 +36,22 @@ class _ClientAppState extends State<ClientApp> {
     home: AnimatedBuilder(
       animation: widget.auth,
       builder: (context, _) {
-        if (widget.auth.isLoading) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
         final session = widget.auth.session;
-        return session == null
-            ? LoginScreen(auth: widget.auth)
-            : HomeScreen(auth: widget.auth, nickname: session.nickname);
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            AbsorbPointer(
+              absorbing: widget.auth.isLoading,
+              child: session == null
+                  ? LoginScreen(auth: widget.auth)
+                  : HomeScreen(auth: widget.auth, nickname: session.nickname),
+            ),
+            if (widget.auth.isLoading) ...[
+              const ModalBarrier(dismissible: false, color: Colors.black26),
+              const Center(child: CircularProgressIndicator()),
+            ],
+          ],
+        );
       },
     ),
   );

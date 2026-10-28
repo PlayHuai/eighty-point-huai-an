@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:grpc/grpc.dart';
 
 import '../api/api_client.dart';
 import 'auth_session.dart';
@@ -15,13 +16,16 @@ class AuthController extends ChangeNotifier {
   AuthSession? _session;
   bool _isLoading = true;
   String? _error;
+  bool _canRetryRestore = false;
 
   AuthSession? get session => _session;
   bool get isLoading => _isLoading;
   String? get error => _error;
+  bool get canRetryRestore => _canRetryRestore;
 
   void clearError() {
     _error = null;
+    _canRetryRestore = false;
     notifyListeners();
   }
 
@@ -29,6 +33,8 @@ class AuthController extends ChangeNotifier {
 
   Future<void> restoreSession() async {
     _isLoading = true;
+    _error = null;
+    _canRetryRestore = false;
     notifyListeners();
     try {
       final saved = await _store.read();
@@ -36,12 +42,17 @@ class AuthController extends ChangeNotifier {
         _session = await _api.refresh(saved.refreshToken);
         await _store.write(_session!);
       }
-    } catch (_) {
+    } catch (error) {
       _session = null;
-      try {
-        await _store.clear();
-      } catch (_) {
-        _error = 'Unable to clear the saved session.';
+      if (error is GrpcError && error.code == StatusCode.unauthenticated) {
+        try {
+          await _store.clear();
+        } catch (_) {
+          _error = 'Unable to clear the saved session.';
+        }
+      } else {
+        _error = error.toString();
+        _canRetryRestore = true;
       }
     } finally {
       _isLoading = false;
@@ -67,6 +78,7 @@ class AuthController extends ChangeNotifier {
   Future<bool> _authenticate(Future<AuthSession> Function() authenticate) async {
     _isLoading = true;
     _error = null;
+    _canRetryRestore = false;
     notifyListeners();
     try {
       final session = await authenticate();

@@ -27,6 +27,21 @@ jobs:
           }
           dart --version
 
+      - name: Set up Go for API generation
+        uses: actions/setup-go@v5.5.0
+        with:
+          go-version: 1.24.0
+
+      - name: Generate Dart API bindings
+        shell: pwsh
+        run: |
+          go install github.com/bufbuild/buf/cmd/buf@v1.50.0
+          dart pub global activate protoc_plugin 21.1.2
+          $env:PATH = "$env:USERPROFILE\go\bin;$env:LOCALAPPDATA\Pub\Cache\bin;$env:PATH"
+          Push-Location api
+          buf generate --template buf.gen.dart.yaml
+          Pop-Location
+
       - name: Install dependencies
         working-directory: client
         run: flutter pub get
@@ -36,10 +51,12 @@ jobs:
         run: flutter build windows --release
 
       - name: Package Windows client as MSIX
+        if: ${{ vars.MSIX_PACKAGING_ENABLED == 'true' }}
         working-directory: client
         run: dart run msix:create --build-windows false --install-certificate false
 
       - name: Upload Windows package
+        if: ${{ vars.MSIX_PACKAGING_ENABLED == 'true' }}
         uses: actions/upload-artifact@v4.6.2
         with:
           name: windows-x64-${{ github.sha }}
