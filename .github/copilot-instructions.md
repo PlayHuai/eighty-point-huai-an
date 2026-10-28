@@ -34,6 +34,9 @@
   - `ui-design/Login/login.dart`、`Register/Register.dart`、`Lobby/Lobby.dart`、`GameTable/GameTable.dart`、`Chat/Chat.dart`、`FriendList/FriendList.dart`、`FriendProfile/FriendProfile.dart`、`CreateRoomDialog/CreateRoomDialog.dart`。
 - 新增页面时：目录名 = 功能名，文件 = 功能名 `.dart`（沿用目录内已有文件的命名风格）。
 - 实现/修改某个页面时，先读取对应子目录的 `.dart` 文件作为设计稿依据；`ui-design/` 下的 `.md` 为设计说明，不参与构建。
+- **同目录 PNG 校验**：每个 `.dart` 页面文件的**同级目录**都有一张与页面同名的 `.png` 设计截图（如 `GameTable/GameTable.png`，`Login/login.dart` 旁的 `Login.png`）。实现或修改后，**以该 png 为基准**校验 Flutter 页面与设计稿是否一致（布局、间距、配色、圆角、字体），有差异须修正到与设计一致，不得跳过。
+- **Token 变量**：`ui-design/DarkTokens.json` 是本项目需要的变量定义（`darkTokens`：color 16 / font 6 / radius 4 / spacing 6），`ui-design/export.json` 是全量变量值。所有 `.dart` 页面都引用这两个文件里的变量（而非自行定义），**禁止硬编码颜色 / 字号 / 圆角 / 间距**。
+- **最外层 Frame 尺寸**：部分页面转码时最外层 Frame 大小不一致。除**桌面版 `CreateRoomDialog`**外，其余页面默认统一采用一致的 Frame 尺寸（新增页面沿用既有页面的统一尺寸）；只有桌面版 `CreateRoomDialog` 允许保留其自有外层 Frame 尺寸。
 
 ## `ui-design/asserts/` 图标资源约定（前端唯一图标来源）
 
@@ -43,7 +46,7 @@
   2. `state=enabled.svg` / `state=disabled.svg`
 - 两种范式表示同一图标在「启用（enabled）/ 禁用（disabled）」两个状态下的 **32×32** 资源；引用图标时按当前状态选择对应文件，禁止混用两种命名。
 - **忽略其他尺寸**：目录内出现的 `16x…`、`24x…` 等非 32px 变体（例如 `ic_login/` 下的 16x/24x、`ic_settings/` 下的 16x）一律不使用，只使用 `32x` 或 `state=` 命名。
-- 特例：`ic_card/` 是**卡牌设计贴图**，不是状态图标。它包含 pdf / png / svg，描述了卡牌用到的贴图在卡牌上的位置信息（点数、花色、角标、级牌徽章、牌背纹样等）。当需要实现卡牌组件（`CardVisual` / `CardBack` / `LevelCardHighlight` / `RedFiveHighlight` / `TrumpCorner`）时，解析 `ic_card/` 下的资源（优先 svg，其次 png / pdf），按其贴图位置信息生成卡牌组件；它不套用上述 `32x` / `state=` 图标状态命名。
+- 特例：`ic_card/` 是**卡牌组件设计**，不是状态图标。它包含 `Card.dart`（卡牌的全部样式设计：不同点数、不同形态、特殊牌的标记/角标/级牌徽章/牌背纹样等，**不代表一个页面**），以及 pdf / png / svg 贴图。当需要实现卡牌组件（`CardVisual` / `CardBack` / `LevelCardHighlight` / `RedFiveHighlight` / `TrumpCorner`）时：**解析 `Card.dart`** 得到卡牌在不同点数、形态下的样式与特殊牌标记；**卡牌本体图片**从 `third-party/playing-cards/` 取对应点数 / 花色的贴图，再叠加 `Card.dart` 里的标识，据此**创建一个统一的卡牌组件**。它不套用上述 `32x` / `state=` 图标状态命名。
 - 引用图标必须从 `ui-design/asserts/ic_*` 读取，禁止自造图标名、路径或绕过该目录。
 
 ## 前端交互 / 动效 / 三端自适应要求（源自设计文档第 12 / 13 / 14 屏描述）
