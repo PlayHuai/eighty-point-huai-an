@@ -10,10 +10,10 @@
 
 ## Flutter SDK
 
-GitHub Actions 使用 `subosito/flutter-action` 安装 Flutter stable 3.47.8，并缓存 SDK 与 Pub 依赖。Flutter SDK 不再作为仓库子模块提交。
+本地开发及 Windows GitHub Actions 使用预先安装的 Flutter stable 3.47.8。Windows 工作流要求使用已安装 Flutter 的 self-hosted runner；GitHub 托管的 `windows-latest` runner 不提供本项目所需的 Flutter SDK。
 
 ```sh
 flutter --version
 ```
 
-本地开发请按 Flutter 官方安装说明安装 Flutter 3.47.8，并将 Flutter SDK 的 `bin` 目录加入 `PATH`。
+本地开发请安装 Flutter 3.47.8，并将 Flutter SDK 的 `bin` 目录加入 `PATH`。

@@ -13,18 +13,19 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: [self-hosted, windows, x64]
     steps:
       - name: Check out source
         uses: actions/checkout@v4.2.2
 
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2.19.0
-        with:
-          channel: stable
-          flutter-version: 3.47.8
-          cache: true
-          pub-cache: true
+      - name: Verify Flutter SDK
+        shell: pwsh
+        run: |
+          $version = (flutter --version | Select-Object -First 1)
+          if ($version -notmatch '^Flutter 3\.47\.8') {
+            throw "Expected Flutter 3.47.8, got: $version"
+          }
+          dart --version
 
       - name: Install dependencies
         working-directory: client
