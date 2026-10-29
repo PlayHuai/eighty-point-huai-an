@@ -81,7 +81,7 @@ void main() {
       of: find.byKey(const ValueKey('register-account-field')),
       matching: find.byType(AbsorbPointer),
     );
-    expect(tester.widget<AbsorbPointer>(formAbsorber).absorbing, isTrue);
+    expect(tester.widget<AbsorbPointer>(formAbsorber.first).absorbing, isTrue);
     expect(
       tester.widgetList<TextFormField>(find.byType(TextFormField)).map(
         (field) => field.controller!.text.trim(),
@@ -250,6 +250,7 @@ void main() {
 
   testWidgets('registration form scrolls on short viewports', (tester) async {
     await tester.binding.setSurfaceSize(const Size(320, 240));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     final auth = AuthController(
       api: _FakeApiClient(),
       store: _FakeSessionStore(),
@@ -275,6 +276,7 @@ Future<void> _enterText(
   final finder = find.byKey(ValueKey(fieldKey));
   await tester.ensureVisible(finder);
   await tester.enterText(finder, value);
+  await tester.pump();
 }
 
 class _FakeApiClient implements ApiClient {

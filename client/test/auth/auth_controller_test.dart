@@ -46,7 +46,7 @@ void main() {
   });
 }
 
-const _session = AuthSession(
+final _session = AuthSession(
   accessToken: 'access',
   refreshToken: 'refresh',
   expiresAt: DateTime.utc(2030),

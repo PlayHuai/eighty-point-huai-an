@@ -13,6 +13,104 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grpc/grpc.dart';
 
 void main() {
+  testWidgets('login matches desktop design spacing and control sizes', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1440, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final auth = AuthController(
+      api: _FakeApiClient(),
+      store: _FakeSessionStore(),
+    );
+    await auth.restoreSession();
+    await tester.pumpWidget(MaterialApp(home: LoginScreen(auth: auth)));
+    await tester.pumpAndSettle();
+
+    final panel = tester.getRect(find.byKey(const ValueKey('login-panel')));
+    final account = tester.getRect(
+      find.byKey(const ValueKey('login-account-field')),
+    );
+    final password = tester.getRect(
+      find.byKey(const ValueKey('login-password-field')),
+    );
+    final button = tester.getRect(find.byKey(const ValueKey('login-submit')));
+    expect(panel.width, 420);
+    expect(panel.center, const Offset(720, 450));
+    expect(account.left - panel.left, 40);
+    expect(account.width, 340);
+    expect(account.height, 52);
+    expect(password.height, 52);
+    expect(password.top - account.bottom, 16);
+    expect(button.height, 52);
+    expect(button.top - password.bottom, 24);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    auth.dispose();
+  });
+
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.windows]) {
+    testWidgets('login stays scrollable on $platform at compact sizes', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(320, 240));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final auth = AuthController(
+        api: _FakeApiClient(),
+        store: _FakeSessionStore(),
+      );
+      await auth.restoreSession();
+      await tester.pumpWidget(MaterialApp(home: LoginScreen(auth: auth)));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('创建账号'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(
+        tester.getSize(find.byKey(const ValueKey('login-panel'))).width,
+        lessThanOrEqualTo(320),
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      auth.dispose();
+    }, variant: TargetPlatformVariant({platform}));
+  }
+
+  testWidgets('failed lobby reads wait for explicit retry', (tester) async {
+    final api = _FakeApiClient()..failHallListing = true;
+    final auth = AuthController(api: api, store: _FakeSessionStore());
+    final login = auth.login('account', 'password');
+    api.loginCompleter.complete(_session);
+    await login;
+
+    await tester.pumpWidget(ClientApp(auth: auth));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 5));
+
+    expect(api.hallListCount, 1);
+    expect(find.text('重试'), findsOneWidget);
+    api.failHallListing = false;
+    await tester.tap(find.text('重试'));
+    await tester.pumpAndSettle();
+    expect(api.hallListCount, 2);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('ClientApp disposes its shared auth controller only once', (
+    tester,
+  ) async {
+    final api = _FakeApiClient();
+    final auth = _TrackingAuthController(api: api, store: _FakeSessionStore());
+    final login = auth.login('account', 'password');
+    api.loginCompleter.complete(_session);
+    await login;
+
+    await tester.pumpWidget(ClientApp(auth: auth));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox.shrink());
+
+    expect(auth.disposeCount, 1);
+    expect(api.closeCount, 1);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('friend chat retries with the same request ID', (tester) async {
     final api = _FakeApiClient()
       ..halls = const [
@@ -43,11 +141,19 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('聊天'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byHintText('输入消息'), '你好');
+    await tester.enterText(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField && widget.decoration?.hintText == '输入消息',
+      ),
+      '你好',
+    );
     await tester.tap(find.byTooltip('发送'));
     await tester.pumpAndSettle();
     final firstRequestId = api.chatRequestIds.single;
 
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('发送'));
     await tester.pumpAndSettle();
     expect(api.chatRequestIds, [firstRequestId, firstRequestId]);
@@ -133,12 +239,22 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('创建房间'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField).first, '周末好友局');
+    await tester.enterText(
+      find
+          .descendant(
+            of: find.byType(AlertDialog),
+            matching: find.byType(TextField),
+          )
+          .first,
+      '周末好友局',
+    );
     await tester.tap(find.widgetWithText(FilledButton, '创建'));
     await tester.pumpAndSettle();
 
     expect(find.text('邀请好友加入好友房'), findsOneWidget);
     expect(find.text('好友乙'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('发送邀请'));
     await tester.pumpAndSettle();
     expect(api.invitedRoomId, 'created-friend-room');
@@ -201,15 +317,33 @@ void main() {
 
     await tester.tap(find.widgetWithText(FilledButton, '登录'));
     await tester.pump();
-    expect(find.text('请输入账号'), findsOneWidget);
-    expect(find.text('请输入密码'), findsOneWidget);
+    expect(
+      tester.state<FormFieldState<String>>(
+        find.byKey(const ValueKey('login-account-field')),
+      ).errorText,
+      '请输入账号',
+    );
+    expect(
+      tester.state<FormFieldState<String>>(
+        find.byKey(const ValueKey('login-password-field')),
+      ).errorText,
+      '请输入密码',
+    );
 
     await tester.enterText(find.byType(TextFormField).at(0), 'account');
     await tester.enterText(find.byType(TextFormField).at(1), 'password');
     await tester.tap(find.widgetWithText(FilledButton, '登录'));
     await tester.pump();
     expect(auth.isLoading, isTrue);
-    expect(find.byType(ModalBarrier), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is ModalBarrier &&
+            !widget.dismissible &&
+            widget.color == Colors.black26,
+      ),
+      findsOneWidget,
+    );
 
     api.loginCompleter.completeError(
       GrpcError.unauthenticated('invalid credentials'),
@@ -241,6 +375,7 @@ void main() {
       api: _FakeApiClient(),
       store: _FakeSessionStore(),
     );
+    await auth.restoreSession();
     await tester.pumpWidget(MaterialApp(home: LoginScreen(auth: auth)));
 
     final passwordField = find.byKey(const ValueKey('login-password-field'));
@@ -251,7 +386,7 @@ void main() {
       isTrue,
     );
     await tester.tap(
-      find.descendant(of: passwordField, matching: find.text('显示')),
+      find.descendant(of: passwordField, matching: find.byTooltip('显示密码')),
     );
     await tester.pump();
     expect(
@@ -262,7 +397,7 @@ void main() {
     );
 
     await tester.tap(
-      find.descendant(of: passwordField, matching: find.text('隐藏')),
+      find.descendant(of: passwordField, matching: find.byTooltip('隐藏密码')),
     );
     await tester.pump();
     expect(
@@ -286,6 +421,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('创建账号'));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.widgetWithText(FilledButton, '注册'));
+    await tester.pump();
     await tester.tap(find.widgetWithText(FilledButton, '注册'));
     await tester.pump();
 
@@ -313,6 +450,8 @@ void main() {
       find.byKey(const ValueKey('register-nickname-field')),
       'nickname',
     );
+    await tester.ensureVisible(find.widgetWithText(FilledButton, '注册'));
+    await tester.pump();
     await tester.tap(find.widgetWithText(FilledButton, '注册'));
     await tester.pump();
 
@@ -321,13 +460,14 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('两次输入的密码不一致'), findsOneWidget);
-    auth.dispose();
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets('keeps registration fields mounted while the request is pending', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(400, 500));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     final api = _FakeApiClient();
     final auth = AuthController(api: api, store: _FakeSessionStore());
 
@@ -363,7 +503,7 @@ void main() {
         find.ancestor(
           of: find.byKey(const ValueKey('register-account-field')),
           matching: find.byType(AbsorbPointer),
-        ),
+        ).first,
       ).absorbing,
       isTrue,
     );
@@ -416,6 +556,8 @@ void main() {
       find.byKey(const ValueKey('register-nickname-field')),
       'Player',
     );
+    await tester.ensureVisible(find.byKey(const ValueKey('register-avatar-1')));
+    await tester.pump();
     await tester.tap(find.byKey(const ValueKey('register-avatar-1')));
     await tester.ensureVisible(find.widgetWithText(FilledButton, '注册'));
     await tester.tap(find.widgetWithText(FilledButton, '注册'));
@@ -435,6 +577,7 @@ void main() {
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(320, 240));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     final auth = AuthController(
       api: _FakeApiClient(),
       store: _FakeSessionStore(),
@@ -455,6 +598,9 @@ void main() {
 }
 
 class _FakeApiClient implements ApiClient {
+  var closeCount = 0;
+  var hallListCount = 0;
+  var failHallListing = false;
   final loginCompleter = Completer<AuthSession>();
   final registerCompleter = Completer<AuthSession>();
   final profileUpdateCompleter = Completer<void>();
@@ -506,8 +652,11 @@ class _FakeApiClient implements ApiClient {
   Future<void> logout(String refreshToken) async {}
 
   @override
-  Future<List<LobbyHall>> listHalls({required String accessToken}) async =>
-      halls;
+  Future<List<LobbyHall>> listHalls({required String accessToken}) async {
+    hallListCount++;
+    if (failHallListing) throw GrpcError.unavailable('offline');
+    return halls;
+  }
 
   @override
   Future<List<LobbyRoom>> listRooms({
@@ -677,7 +826,21 @@ class _FakeApiClient implements ApiClient {
   }
 
   @override
-  Future<void> close() async {}
+  Future<void> close() async {
+    closeCount++;
+  }
+}
+
+class _TrackingAuthController extends AuthController {
+  _TrackingAuthController({required super.api, required super.store});
+
+  var disposeCount = 0;
+
+  @override
+  void dispose() {
+    disposeCount++;
+    super.dispose();
+  }
 }
 
 class _FakeSessionStore implements SessionStore {
