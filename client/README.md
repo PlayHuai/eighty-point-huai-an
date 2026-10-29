@@ -5,7 +5,9 @@ Flutter 3.47.8 SDK and configure the local environment as described in
 `../.agent/instructions.md`.
 
 Generate the Dart API bindings by following the instructions in
-`../api/README.md`, then run `flutter pub get`.
+`../api/README.md`, then run `flutter pub get` and
+`dart run build_runner build --delete-conflicting-outputs` for Riverpod
+providers.
 
 The API endpoint defaults to `https://localhost:8443`. Override it at build or
 run time with `--dart-define=API_ENDPOINT=https://your-api.example`.

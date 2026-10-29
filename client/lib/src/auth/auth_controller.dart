@@ -13,6 +13,8 @@ class AuthController extends ChangeNotifier {
   final ApiClient _api;
   final SessionStore _store;
 
+  ApiClient get api => _api;
+
   AuthSession? _session;
   bool _isLoading = true;
   String? _error;

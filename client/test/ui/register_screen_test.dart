@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:eighty_point_huai_an/src/api/api_client.dart';
+import 'package:eighty_point_huai_an/src/api/lobby_models.dart';
 import 'package:eighty_point_huai_an/src/auth/auth_controller.dart';
 import 'package:eighty_point_huai_an/src/auth/auth_session.dart';
 import 'package:eighty_point_huai_an/src/auth/session_store.dart';
@@ -92,7 +93,7 @@ void main() {
     expect(api.profileAccessToken, 'access');
     expect(api.profileNickname, '玩家');
     expect(api.registeredAvatarUrl, 'huai-avatar://locked');
-    expect(find.text('你好，Player'), findsOneWidget);
+    expect(find.text('游戏大厅'), findsOneWidget);
   });
 
   testWidgets('registration reports post-registration failures and enters app', (
@@ -119,7 +120,7 @@ void main() {
     api.registerCompleter.complete(_session);
     await tester.pumpAndSettle();
 
-    expect(find.text('你好，Player'), findsOneWidget);
+    expect(find.text('游戏大厅'), findsOneWidget);
     expect(auth.error, contains('账号已创建，但登录状态无法保存。'));
     expect(auth.error, contains('账号已创建，但头像暂未保存。'));
   });
@@ -323,6 +324,37 @@ class _FakeApiClient implements ApiClient {
 
   @override
   Future<void> logout(String refreshToken) async {}
+
+  @override
+  Future<List<LobbyHall>> listHalls({required String accessToken}) async =>
+      const [];
+
+  @override
+  Future<List<LobbyRoom>> listRooms({
+    required String accessToken,
+    required String hallId,
+  }) async => const [];
+
+  @override
+  Future<LobbyRoom> createRoom({
+    required String accessToken,
+    required String hallId,
+    required String name,
+    required String password,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<LobbyRoom> joinRoom({
+    required String accessToken,
+    required String roomId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<LobbyRoom> joinByCode({
+    required String accessToken,
+    required String roomCode,
+    required String password,
+  }) => throw UnimplementedError();
 
   @override
   Future<void> close() async {}
