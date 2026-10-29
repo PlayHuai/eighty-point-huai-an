@@ -81,7 +81,8 @@ loopback and should be exposed externally only through a TLS reverse proxy.
 
 ## Host MySQL and Redis (systemd deployment)
 
-On Ubuntu/Debian, install the host services and start them at boot:
+On Ubuntu (or another distribution with a MySQL 8.x package), install the host
+services and start them at boot:
 
 ```sh
 sudo apt update
@@ -100,7 +101,12 @@ appendonly yes
 
 Then apply the configuration with `sudo systemctl restart redis-server`. Create
 the application database and least-privilege account in MySQL. Use the same
-unique password in `server.env`:
+unique password in `server.env`. On Ubuntu's default local root
+authentication, open a privileged MySQL console and run the SQL statements:
+
+```sh
+sudo mysql
+```
 
 ```sql
 CREATE DATABASE eighty_point CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
@@ -119,13 +125,13 @@ umask 077
 backup="mysql-$(date -u +%Y%m%dT%H%M%SZ)-$$.sql.gz"
 tmp="$backup.tmp"
 trap 'rm -f "$tmp"' EXIT
-mysqldump --single-transaction --routines --triggers --add-drop-table -u root -p eighty_point | gzip > "$tmp"
+sudo mysqldump --single-transaction --routines --triggers --add-drop-table eighty_point | gzip > "$tmp"
 gzip -t "$tmp"
 mv "$tmp" "$backup"
 trap - EXIT
 # Restore is destructive: verify the file and target database before running.
 set -o pipefail
-gzip -cd "$backup" | mysql -u root -p eighty_point
+gzip -cd "$backup" | sudo mysql eighty_point
 ```
 
 Keep backups off-host and test restores. Redis currently holds no server runtime
