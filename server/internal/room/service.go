@@ -98,6 +98,7 @@ type roomState struct {
 	invitees       map[string]struct{}
 	joinedInvites  map[string]struct{}
 	inviteRequests map[string]string
+	pendingInvites map[string]string
 	version        uint64
 }
 
@@ -139,7 +140,8 @@ func (m *Manager) CreateRoom(hallID, ownerID string, ownerPoints int64, settings
 		ownerID: ownerID, minimumPoints: settings.MinimumPoints,
 		members: make(map[string]memberState), invitees: make(map[string]struct{}),
 		joinedInvites: make(map[string]struct{}), inviteRequests: make(map[string]string),
-		version: 1,
+		pendingInvites: make(map[string]string),
+		version:        1,
 	}
 	if settings.Password != "" {
 		if _, err := rand.Read(state.passwordSalt[:]); err != nil {
@@ -272,6 +274,74 @@ func (m *Manager) InviteFriend(roomID, inviterID, friendID string) error {
 		return err
 	}
 	defer state.mu.Unlock()
+	if err := validateFriendInvitation(state, inviterID, friendID); err != nil {
+		return err
+	}
+	state.invitees[friendID] = struct{}{}
+	delete(state.joinedInvites, friendID)
+	return nil
+}
+
+func (m *Manager) ReserveFriendInvitation(roomID, inviterID, friendID string) (string, error) {
+	if inviterID == "" || friendID == "" || inviterID == friendID {
+		return "", ErrInvalidInput
+	}
+	state, err := m.lockRoom(roomID)
+	if err != nil {
+		return "", err
+	}
+	defer state.mu.Unlock()
+	if err := validateFriendInvitation(state, inviterID, friendID); err != nil {
+		return "", err
+	}
+	reservationID, err := newRoomID()
+	if err != nil {
+		return "", err
+	}
+	state.pendingInvites[reservationID] = friendID
+	return reservationID, nil
+}
+
+func (m *Manager) CommitFriendInvitation(roomID, reservationID string) {
+	state, err := m.lockRoom(roomID)
+	if err != nil {
+		return
+	}
+	defer state.mu.Unlock()
+	friendID, exists := state.pendingInvites[reservationID]
+	if !exists {
+		return
+	}
+	delete(state.pendingInvites, reservationID)
+	if state.summary.Status != StatusWaiting {
+		return
+	}
+	if _, exists := state.members[friendID]; exists {
+		return
+	}
+	state.invitees[friendID] = struct{}{}
+	delete(state.joinedInvites, friendID)
+}
+
+func (m *Manager) CancelFriendInvitation(roomID, reservationID string) {
+	state, err := m.lockRoom(roomID)
+	if err != nil {
+		return
+	}
+	defer state.mu.Unlock()
+	delete(state.pendingInvites, reservationID)
+}
+
+func (m *Manager) RevokeFriendInvitation(roomID, friendID string) {
+	state, err := m.lockRoom(roomID)
+	if err != nil {
+		return
+	}
+	defer state.mu.Unlock()
+	delete(state.invitees, friendID)
+}
+
+func validateFriendInvitation(state *roomState, inviterID, friendID string) error {
 	if state.summary.HallID != lobby.HallFriend || state.summary.Status != StatusWaiting {
 		return ErrInvitationRequired
 	}
@@ -284,18 +354,7 @@ func (m *Manager) InviteFriend(roomID, inviterID, friendID string) error {
 			return ErrOwnerRequired
 		}
 	}
-	state.invitees[friendID] = struct{}{}
-	delete(state.joinedInvites, friendID)
 	return nil
-}
-
-func (m *Manager) RevokeFriendInvitation(roomID, friendID string) {
-	state, err := m.lockRoom(roomID)
-	if err != nil {
-		return
-	}
-	defer state.mu.Unlock()
-	delete(state.invitees, friendID)
 }
 
 func (m *Manager) JoinInvitedFriendRoom(roomID, userID, password, requestID string, expectedVersion uint64) (Details, error) {
@@ -315,6 +374,9 @@ func (m *Manager) JoinInvitedFriendRoom(roomID, userID, password, requestID stri
 	if requesterID, exists := state.inviteRequests[requestID]; exists {
 		if requesterID != userID {
 			return Details{}, ErrInvitationRequestConflict
+		}
+		if _, isMember := state.members[userID]; !isMember {
+			return Details{}, ErrNotMember
 		}
 		return snapshotLocked(state), nil
 	}
@@ -362,18 +424,20 @@ func (m *Manager) SitDown(roomID, userID string, seat uint32, points int64, expe
 	if err := state.checkVersion(expectedVersion); err != nil {
 		return Details{}, err
 	}
-	if err := state.checkAdmission(userID, points); err != nil {
-		return Details{}, err
+	member, exists := state.members[userID]
+	if !exists {
+		return Details{}, ErrNotMember
+	}
+	if state.summary.HallID != lobby.HallFriend {
+		if err := state.checkAdmission(userID, points); err != nil {
+			return Details{}, err
+		}
 	}
 	if state.summary.Status != StatusWaiting {
 		return Details{}, ErrRoomStarted
 	}
 	if seat < 1 || seat > 4 {
 		return Details{}, ErrInvalidInput
-	}
-	member, exists := state.members[userID]
-	if !exists {
-		return Details{}, ErrNotMember
 	}
 	if member.Role == RolePlayer && member.Seat != 0 {
 		return Details{}, ErrAlreadyMember

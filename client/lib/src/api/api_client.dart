@@ -168,8 +168,8 @@ class GrpcApiClient implements ApiClient {
           (hall) => LobbyHall(
             id: hall.hallId,
             name: hall.name,
-            minimumPoints: hall.minimumPoints,
-            maximumPoints: hall.maximumPoints,
+            minimumPoints: hall.minimumPoints.toInt(),
+            maximumPoints: hall.maximumPoints.toInt(),
             multiplier: hall.multiplierBasisPoints / 10000,
           ),
         )
@@ -255,10 +255,10 @@ class GrpcApiClient implements ApiClient {
       options: _authenticatedOptions(accessToken),
     );
     return PlayerStatistics(
-      totalGames: response.totalGames,
-      wins: response.wins,
-      losses: response.losses,
-      points: response.points,
+      totalGames: response.totalGames.toInt(),
+      wins: response.wins.toInt(),
+      losses: response.losses.toInt(),
+      points: response.points.toInt(),
       rank: response.rank,
     );
   }
@@ -284,7 +284,7 @@ class GrpcApiClient implements ApiClient {
             (result) => RecentGameResult(
               gameSessionId: result.gameSessionId,
               won: result.won,
-              pointsDelta: result.pointsDelta,
+              pointsDelta: result.pointsDelta.toInt(),
               endedAt: result.endedAt.toDateTime(),
             ),
           )
@@ -398,7 +398,7 @@ class GrpcApiClient implements ApiClient {
     occupiedSeats: room.occupiedSeats,
     capacity: room.capacity,
     hasPassword: room.hasPassword,
-    version: room.version,
+    version: room.version.toInt(),
   );
 
   @override

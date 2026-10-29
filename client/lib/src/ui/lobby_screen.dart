@@ -12,7 +12,9 @@ import 'responsive_breakpoints.dart';
 import 'theme/app_theme.dart';
 
 final lobbyHallsProvider = FutureProvider<List<LobbyHall>>((ref) {
-  final session = ref.watch(authControllerProvider).session;
+  final session = ref.watch(
+    authControllerProvider.select((auth) => auth.session),
+  );
   if (session == null) return Future.value(const <LobbyHall>[]);
   return ref
       .watch(apiClientProvider)
@@ -23,7 +25,9 @@ final lobbyRoomsProvider = FutureProvider.family<List<LobbyRoom>, String>((
   ref,
   hallId,
 ) {
-  final session = ref.watch(authControllerProvider).session;
+  final session = ref.watch(
+    authControllerProvider.select((auth) => auth.session),
+  );
   if (session == null) return Future.value(const <LobbyRoom>[]);
   return ref
       .watch(apiClientProvider)
@@ -31,7 +35,9 @@ final lobbyRoomsProvider = FutureProvider.family<List<LobbyRoom>, String>((
 });
 
 final roomInvitationsProvider = FutureProvider<List<RoomInvitation>>((ref) {
-  final session = ref.watch(authControllerProvider).session;
+  final session = ref.watch(
+    authControllerProvider.select((auth) => auth.session),
+  );
   if (session == null) return Future.value(const <RoomInvitation>[]);
   return ref
       .watch(apiClientProvider)
@@ -85,7 +91,11 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     }
   }
 
-  Future<void> _joinByCode(String code, String password) async {
+  Future<void> _joinByCode(
+    BuildContext dialogContext,
+    String code,
+    String password,
+  ) async {
     final session = widget.auth.session;
     if (session == null || _isJoining) return;
     if (code.isEmpty) {
@@ -102,7 +112,10 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         password: password,
       );
       if (!mounted) return;
-      Navigator.of(context).pop();
+      if (dialogContext.mounted &&
+          ModalRoute.of(dialogContext)?.isCurrent == true) {
+        Navigator.of(dialogContext).pop();
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('已加入 ${room.name}（房间号 ${room.id}）')),
       );
@@ -139,7 +152,12 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     }
   }
 
-  Future<void> _createRoom(String hallId, String name, String password) async {
+  Future<void> _createRoom(
+    BuildContext dialogContext,
+    String hallId,
+    String name,
+    String password,
+  ) async {
     final session = widget.auth.session;
     if (session == null || _isCreating) return;
     if (name.isEmpty) {
@@ -157,7 +175,10 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         password: password,
       );
       if (!mounted) return;
-      Navigator.of(context).pop();
+      if (dialogContext.mounted &&
+          ModalRoute.of(dialogContext)?.isCurrent == true) {
+        Navigator.of(dialogContext).pop();
+      }
       ref.invalidate(lobbyRoomsProvider(hallId));
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('房间已创建（房间号 ${room.id}）')),
@@ -217,6 +238,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
             onPressed: _isJoining
                 ? null
                 : () => _joinByCode(
+                    dialogContext,
                     codeController.text.trim(),
                     passwordController.text,
                   ),
@@ -263,6 +285,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
             onPressed: _isCreating
                 ? null
                 : () => _createRoom(
+                    dialogContext,
                     hallId,
                     nameController.text.trim(),
                     passwordController.text,
@@ -292,11 +315,12 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
+        scrollable: true,
         title: const Text('邀请好友加入好友房'),
         content: friends.isEmpty
             ? const Text('暂无可邀请的好友。')
-            : ListView(
-                shrinkWrap: true,
+            : Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   for (final friend in friends)
                     ListTile(
@@ -349,7 +373,10 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         friendId: friendId,
       );
       if (!mounted) return;
-      Navigator.of(dialogContext).pop();
+      if (!dialogContext.mounted ||
+          ModalRoute.of(dialogContext)?.isCurrent != true) {
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('好友房邀请已发送。')),
       );
@@ -416,8 +443,8 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
               tooltip: '刷新',
               onPressed: () {
                 ref.invalidate(lobbyHallsProvider);
-                final hallId = _selectedHallId;
-                if (hallId != null) ref.invalidate(lobbyRoomsProvider(hallId));
+                ref.invalidate(lobbyRoomsProvider);
+                ref.invalidate(roomInvitationsProvider);
               },
               icon: const DesignIcon(
                 name: DesignIconName.refresh,

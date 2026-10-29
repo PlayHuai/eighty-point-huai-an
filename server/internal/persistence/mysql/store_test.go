@@ -13,6 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/game/coordinator"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/settlement"
@@ -28,6 +29,7 @@ type memorySession struct {
 	status   string
 	version  uint64
 	snapshot []byte
+	endedAt  time.Time
 }
 
 type memoryResult struct {
@@ -43,6 +45,7 @@ type memoryLedgerEntry struct {
 	userID string
 	delta  int64
 	rank   string
+	won    bool
 }
 
 type memoryEvent struct {
@@ -178,6 +181,8 @@ func (c *memoryConn) ExecContext(_ context.Context, query string, args []driver.
 		state.ddlCount++
 	case strings.HasPrefix(query, "ALTER TABLE"):
 		state.ddlCount++
+	case strings.HasPrefix(query, "UPDATE point_ledger SET won"):
+		state.ddlCount++
 	case strings.HasPrefix(query, "INSERT INTO schema_migrations"):
 		if state.migrations == nil {
 			state.migrations = make(map[uint64]memoryMigration)
@@ -208,6 +213,7 @@ func (c *memoryConn) ExecContext(_ context.Context, query string, args []driver.
 			userID: userID,
 			delta:  args[2].Value.(int64),
 			rank:   args[4].Value.(string),
+			won:    args[6].Value.(bool),
 		})
 	case strings.HasPrefix(query, "UPDATE game_sessions SET status = 'SETTLED'"):
 		sessionID := args[0].Value.(string)
@@ -265,6 +271,70 @@ func (c *memoryConn) QueryContext(_ context.Context, query string, args []driver
 			return nil, errors.New("game session not found")
 		}
 		return &memoryRows{columns: []string{"status"}, values: [][]driver.Value{{session.status}}}, nil
+	case strings.HasPrefix(query, "SELECT COUNT(DISTINCT l.game_session_id)"):
+		userID := args[0].Value.(string)
+		games := make(map[string]bool)
+		wins := int64(0)
+		for gameID, entries := range state.ledger {
+			for _, entry := range entries {
+				if entry.userID == userID {
+					games[gameID] = true
+					if entry.won {
+						wins++
+					}
+				}
+			}
+		}
+		profile, exists := state.profiles[userID]
+		if !exists {
+			return &memoryRows{columns: []string{"total", "wins", "points", "rank"}}, nil
+		}
+		return &memoryRows{
+			columns: []string{"total", "wins", "points", "rank"},
+			values:  [][]driver.Value{{int64(len(games)), wins, profile.points, profile.rank}},
+		}, nil
+	case strings.HasPrefix(query, "SELECT l.game_session_id, l.delta, l.won"):
+		userID := args[0].Value.(string)
+		type resultRow struct {
+			gameID string
+			entry  memoryLedgerEntry
+			ended  time.Time
+		}
+		var results []resultRow
+		for gameID, entries := range state.ledger {
+			session := state.sessions[gameID]
+			if session.endedAt.IsZero() {
+				continue
+			}
+			for _, entry := range entries {
+				if entry.userID == userID {
+					results = append(results, resultRow{gameID: gameID, entry: entry, ended: session.endedAt})
+				}
+			}
+		}
+		sort.Slice(results, func(i, j int) bool {
+			if results[i].ended.Equal(results[j].ended) {
+				return results[i].gameID > results[j].gameID
+			}
+			return results[i].ended.After(results[j].ended)
+		})
+		start := int(args[2].Value.(int64))
+		if start >= len(results) {
+			return &memoryRows{
+				columns: []string{"game_session_id", "delta", "won", "ended_at"},
+			}, nil
+		}
+		end := min(start+int(args[1].Value.(int64)), len(results))
+		values := make([][]driver.Value, 0, max(0, end-start))
+		for _, result := range results[start:end] {
+			values = append(values, []driver.Value{
+				result.gameID, result.entry.delta, result.entry.won, result.ended,
+			})
+		}
+		return &memoryRows{
+			columns: []string{"game_session_id", "delta", "won", "ended_at"},
+			values:  values,
+		}, nil
 	case strings.HasPrefix(query, "SELECT winner, level_difference"):
 		result, ok := state.results[args[0].Value.(string)]
 		if !ok {
@@ -458,7 +528,7 @@ func TestLoadMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 2 || migrations[0].version != 1 || migrations[1].version != 2 {
+	if len(migrations) != 3 || migrations[0].version != 1 || migrations[1].version != 2 || migrations[2].version != 3 {
 		t.Fatalf("unexpected migrations: %#v", migrations)
 	}
 	for _, required := range []string{
@@ -480,6 +550,9 @@ func TestLoadMigrations(t *testing.T) {
 			t.Errorf("session migration missing %q", required)
 		}
 	}
+	if !strings.Contains(migrations[2].sql, "ADD COLUMN won BOOLEAN") {
+		t.Fatal("player outcomes migration is missing the won column")
+	}
 }
 
 func TestApplyMigrationsRecordsVersionsAndIsIdempotent(t *testing.T) {
@@ -498,8 +571,9 @@ func TestApplyMigrationsRecordsVersionsAndIsIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	firstDDLCount := db.state.ddlCount
-	if len(db.state.migrations) != 2 || db.state.migrations[1].name != "0001_initial.sql" ||
-		db.state.migrations[2].name != "0002_session_access_tokens.sql" {
+	if len(db.state.migrations) != 3 || db.state.migrations[1].name != "0001_initial.sql" ||
+		db.state.migrations[2].name != "0002_session_access_tokens.sql" ||
+		db.state.migrations[3].name != "0003_player_result_outcomes.sql" {
 		t.Fatalf("migration version was not recorded: %+v", db.state.migrations)
 	}
 	if err := ApplyMigrations(context.Background(), sqlDB); err != nil {
@@ -565,6 +639,11 @@ func TestSettleCommitsOnceAndPreservesPointConstraints(t *testing.T) {
 	if db.state.profiles["p1"].rank != "青铜" || db.state.profiles["p1"].points != 30 {
 		t.Fatalf("profile rank was not derived from updated points: %+v", db.state.profiles["p1"])
 	}
+	for _, entry := range db.state.ledger["game-1"] {
+		if entry.won != (entry.userID == "p1" || entry.userID == "p2") {
+			t.Fatalf("winner outcome was not preserved for %s: %+v", entry.userID, entry)
+		}
+	}
 
 	request.ConfigVersion++
 	if _, err := store.Settle(context.Background(), request); !errors.Is(err, ErrSettlementConflict) {
@@ -589,7 +668,7 @@ func TestSettleRetriesLegacyRankSensitiveHash(t *testing.T) {
 	}
 	for _, change := range request.Changes {
 		state.ledger[request.GameSessionID] = append(state.ledger[request.GameSessionID], memoryLedgerEntry{
-			userID: change.UserID, delta: change.Delta, rank: change.Rank,
+			userID: change.UserID, delta: change.Delta, rank: change.Rank, won: change.Delta > 0,
 		})
 	}
 	store, db := newTestStore(t, state)
@@ -621,6 +700,58 @@ func TestSettleCapsLossesAndBalancesAwards(t *testing.T) {
 	if db.state.profiles["p1"].points != 23 || db.state.profiles["p2"].points != 22 ||
 		db.state.profiles["p3"].points != 0 || db.state.profiles["p4"].points != 0 {
 		t.Fatalf("unexpected balances after capped settlement: %+v", db.state.profiles)
+	}
+	for _, entry := range db.state.ledger["game-1"] {
+		if entry.won != (entry.userID == "p1" || entry.userID == "p2") {
+			t.Fatalf("capped settlement lost authoritative outcome for %s: %+v", entry.userID, entry)
+		}
+	}
+}
+
+func TestSettleMarksWinnersWhenNoPointsCanTransfer(t *testing.T) {
+	state := testMemoryState()
+	state.profiles["p3"] = memoryProfile{rank: "青铜"}
+	state.profiles["p4"] = memoryProfile{rank: "青铜"}
+	store, db := newTestStore(t, state)
+
+	result, err := store.Settle(context.Background(), testSettlement())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, change := range result.Changes {
+		if change.Delta != 0 {
+			t.Fatalf("zero-balance opponents unexpectedly transferred points: %+v", result.Changes)
+		}
+	}
+	for _, entry := range db.state.ledger["game-1"] {
+		if entry.won != (entry.userID == "p1" || entry.userID == "p2") {
+			t.Fatalf("zero-transfer match lost winner outcome for %s: %+v", entry.userID, entry)
+		}
+	}
+}
+
+func TestStatisticsAndRecentResultsUseStoredWinnerOutcome(t *testing.T) {
+	state := testMemoryState()
+	state.sessions["game-1"] = memorySession{status: "SETTLED", endedAt: time.Unix(1, 0)}
+	state.sessions["game-2"] = memorySession{status: "SETTLED", endedAt: time.Unix(2, 0)}
+	state.ledger["game-1"] = []memoryLedgerEntry{{userID: "p1", delta: 0, won: true}}
+	state.ledger["game-2"] = []memoryLedgerEntry{{userID: "p1", delta: 0, won: false}}
+	store, _ := newTestStore(t, state)
+
+	statistics, err := store.GetStatistics(context.Background(), "p1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if statistics.TotalGames != 2 || statistics.Wins != 1 || statistics.Losses != 1 {
+		t.Fatalf("statistics classified zero-point outcomes by transfer: %+v", statistics)
+	}
+	results, err := store.ListRecentResults(context.Background(), "p1", 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 2 || results[0].GameSessionID != "game-2" || results[0].Won ||
+		results[1].GameSessionID != "game-1" || !results[1].Won {
+		t.Fatalf("recent outcomes were inferred from point transfers: %+v", results)
 	}
 }
 

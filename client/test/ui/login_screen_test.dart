@@ -59,7 +59,6 @@ void main() {
     expect(api.joinedInvitationRequestId, matches(RegExp(r'^[0-9a-f-]{36}$')));
     expect(find.textContaining('已加入 好友房'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
-    auth.dispose();
   });
 
   testWidgets('friend-room creation offers invites from the authenticated list', (
@@ -103,7 +102,6 @@ void main() {
     expect(api.invitedFriendId, 'friend-1');
     expect(find.text('好友房邀请已发送。'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
-    auth.dispose();
   });
 
   testWidgets('lobby renders server halls and joins a waiting room', (

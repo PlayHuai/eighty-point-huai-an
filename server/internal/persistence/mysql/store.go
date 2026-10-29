@@ -398,7 +398,7 @@ func (s *Store) GetStatistics(ctx context.Context, userID string) (player.Statis
 	var statistics player.Statistics
 	err := s.db.QueryRowContext(ctx, `SELECT
 		COUNT(DISTINCT l.game_session_id),
-		COALESCE(SUM(l.delta > 0), 0),
+		COALESCE(SUM(l.won), 0),
 		p.points,
 		p.rank_name
 		FROM player_profiles p
@@ -420,7 +420,7 @@ func (s *Store) ListRecentResults(ctx context.Context, userID string, offset, li
 	if userID == "" || limit == 0 || limit > 101 {
 		return nil, player.ErrInvalidPage
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT l.game_session_id, l.delta, g.ended_at
+	rows, err := s.db.QueryContext(ctx, `SELECT l.game_session_id, l.delta, l.won, g.ended_at
 		FROM point_ledger l
 		JOIN game_sessions g ON g.id = l.game_session_id
 		WHERE l.user_id = ? AND g.ended_at IS NOT NULL
@@ -433,10 +433,9 @@ func (s *Store) ListRecentResults(ctx context.Context, userID string, offset, li
 	results := make([]player.RecentResult, 0, limit)
 	for rows.Next() {
 		var result player.RecentResult
-		if err := rows.Scan(&result.GameSessionID, &result.PointsDelta, &result.EndedAt); err != nil {
+		if err := rows.Scan(&result.GameSessionID, &result.PointsDelta, &result.Won, &result.EndedAt); err != nil {
 			return nil, fmt.Errorf("scan recent player result: %w", err)
 		}
-		result.Won = result.PointsDelta > 0
 		results = append(results, result)
 	}
 	if err := rows.Err(); err != nil {
@@ -710,6 +709,12 @@ func (s *Store) CreateRoomInvite(ctx context.Context, userID, roomID, friendID s
 		return fmt.Errorf("begin room invitation: %w", err)
 	}
 	defer tx.Rollback()
+	reservationID := ""
+	defer func() {
+		if reservationID != "" {
+			s.roomManager.CancelFriendInvitation(roomID, reservationID)
+		}
+	}()
 	if !s.roomManager.CanInvite(roomID, userID) {
 		return social.ErrRoomUnavailable
 	}
@@ -723,6 +728,12 @@ func (s *Store) CreateRoomInvite(ctx context.Context, userID, roomID, friendID s
 	if err != nil {
 		return fmt.Errorf("check room invitation friendship: %w", err)
 	}
+	if friendRoom {
+		reservationID, err = s.roomManager.ReserveFriendInvitation(roomID, userID, friendID)
+		if err != nil {
+			return social.ErrRoomUnavailable
+		}
+	}
 	payload, err := json.Marshal(struct {
 		InviterID string `json:"inviter_user_id"`
 		FriendID  string `json:"friend_user_id"`
@@ -735,16 +746,12 @@ func (s *Store) CreateRoomInvite(ctx context.Context, userID, roomID, friendID s
 		VALUES ('FRIEND_ROOM_INVITE', ?, ?)`, friendID, payload); err != nil {
 		return fmt.Errorf("store room invitation: %w", err)
 	}
-	if friendRoom {
-		if err := s.roomManager.InviteFriend(roomID, userID, friendID); err != nil {
-			return social.ErrRoomUnavailable
-		}
-	}
 	if err := tx.Commit(); err != nil {
-		if friendRoom {
-			s.roomManager.RevokeFriendInvitation(roomID, friendID)
-		}
 		return fmt.Errorf("commit room invitation: %w", err)
+	}
+	if reservationID != "" {
+		s.roomManager.CommitFriendInvitation(roomID, reservationID)
+		reservationID = ""
 	}
 	return nil
 }
@@ -753,30 +760,56 @@ func (s *Store) ListRoomInvitations(ctx context.Context, userID string, offset, 
 	if userID == "" || limit == 0 || limit > 101 {
 		return nil, social.ErrInvalidInput
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT p.user_id, p.nickname, p.avatar, u.created_at,
-		JSON_UNQUOTE(JSON_EXTRACT(e.payload, '$.room_id')), e.created_at
-		FROM outbox_events e
-		JOIN player_profiles p ON p.user_id = JSON_UNQUOTE(JSON_EXTRACT(e.payload, '$.inviter_user_id'))
-		JOIN users u ON u.id = p.user_id
-		WHERE e.aggregate_id = ? AND e.event_type = 'FRIEND_ROOM_INVITE' AND u.status = 'ACTIVE'
-		ORDER BY e.id DESC LIMIT ? OFFSET ?`, userID, limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("list room invitations: %w", err)
-	}
-	defer rows.Close()
 	invitations := make([]social.RoomInvitation, 0, limit)
-	for rows.Next() {
-		var invitation social.RoomInvitation
-		if err := rows.Scan(
-			&invitation.Inviter.UserID, &invitation.Inviter.Nickname, &invitation.Inviter.AvatarURL,
-			&invitation.Inviter.CreatedAt, &invitation.RoomID, &invitation.InvitedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan room invitation: %w", err)
+	var rawOffset uint64
+	var friendOffset uint64
+	const batchSize uint32 = 128
+	for uint32(len(invitations)) < limit {
+		rows, err := s.db.QueryContext(ctx, `SELECT p.user_id, p.nickname, p.avatar, u.created_at,
+			JSON_UNQUOTE(JSON_EXTRACT(e.payload, '$.room_id')), e.created_at
+			FROM outbox_events e
+			JOIN player_profiles p ON p.user_id = JSON_UNQUOTE(JSON_EXTRACT(e.payload, '$.inviter_user_id'))
+			JOIN users u ON u.id = p.user_id
+			WHERE e.aggregate_id = ? AND e.event_type = 'FRIEND_ROOM_INVITE' AND u.status = 'ACTIVE'
+			ORDER BY e.id DESC LIMIT ? OFFSET ?`, userID, batchSize, rawOffset)
+		if err != nil {
+			return nil, fmt.Errorf("list room invitations: %w", err)
 		}
-		invitations = append(invitations, invitation)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("read room invitations: %w", err)
+		batchCount := uint64(0)
+		for rows.Next() {
+			batchCount++
+			var invitation social.RoomInvitation
+			if err := rows.Scan(
+				&invitation.Inviter.UserID, &invitation.Inviter.Nickname, &invitation.Inviter.AvatarURL,
+				&invitation.Inviter.CreatedAt, &invitation.RoomID, &invitation.InvitedAt,
+			); err != nil {
+				rows.Close()
+				return nil, fmt.Errorf("scan room invitation: %w", err)
+			}
+			if s.roomManager == nil || !s.roomManager.IsFriendRoom(invitation.RoomID) {
+				continue
+			}
+			if friendOffset < uint64(offset) {
+				friendOffset++
+				continue
+			}
+			invitations = append(invitations, invitation)
+			friendOffset++
+			if uint32(len(invitations)) == limit {
+				break
+			}
+		}
+		rowsErr := rows.Err()
+		if err := rows.Close(); err != nil && rowsErr == nil {
+			rowsErr = err
+		}
+		if rowsErr != nil {
+			return nil, fmt.Errorf("read room invitations: %w", rowsErr)
+		}
+		rawOffset += batchCount
+		if batchCount < uint64(batchSize) || uint32(len(invitations)) == limit {
+			break
+		}
 	}
 	return invitations, nil
 }
@@ -1074,10 +1107,10 @@ func (s *Store) Settle(ctx context.Context, requested settlement.MatchResult) (s
 			return settlement.MatchResult{}, fmt.Errorf("update player profile %q: %w", player.change.UserID, err)
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO point_ledger
-			(game_session_id, user_id, delta, balance_after, rank_name, config_version)
-			VALUES (?, ?, ?, ?, ?, ?)`,
+			(game_session_id, user_id, delta, balance_after, rank_name, config_version, won)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`,
 			requested.GameSessionID, player.change.UserID, player.delta, balanceAfter,
-			rank, requested.ConfigVersion); err != nil {
+			rank, requested.ConfigVersion, player.change.Delta > 0); err != nil {
 			return settlement.MatchResult{}, fmt.Errorf("insert point ledger for %q: %w", player.change.UserID, err)
 		}
 		actual.Changes = append(actual.Changes, settlement.PointChange{

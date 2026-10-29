@@ -165,6 +165,9 @@ func TestFriendRoomBypassesRankedAdmissionOnlyForInvitedFriends(t *testing.T) {
 	if _, err := manager.JoinInvitedFriendRoom(created.Room.ID, "friend", "", "request-rejoin", 0); !errors.Is(err, ErrInvitationRequired) {
 		t.Fatalf("a consumed invitation allowed rejoining after leave: %v", err)
 	}
+	if _, err := manager.JoinInvitedFriendRoom(created.Room.ID, "friend", "", "request-friend", 0); !errors.Is(err, ErrNotMember) {
+		t.Fatalf("replayed invitation exposed a former member's room: %v", err)
+	}
 	if _, err := manager.CreateRoom(lobby.HallOrdinary, "low-point-owner", 0, Settings{Name: "ranked"}); err != nil {
 		t.Fatalf("ordinary hall admission changed: %v", err)
 	}
@@ -214,6 +217,42 @@ func TestRoomMutationsUseOptimisticVersioning(t *testing.T) {
 	}
 	if _, err := manager.JoinRoom(second.Room.ID, "isolated-player", 0, "", second.Version); err != nil {
 		t.Fatalf("mutation in another room was affected: %v", err)
+	}
+}
+
+func TestFriendInvitationReservationPublishesOnlyAfterCommit(t *testing.T) {
+	manager := NewManager()
+	created, err := manager.CreateRoom(lobby.HallFriend, "owner", 0, Settings{Name: "table"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reservation, err := manager.ReserveFriendInvitation(created.Room.ID, "owner", "friend")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.JoinInvitedFriendRoom(created.Room.ID, "friend", "", "pending", 0); !errors.Is(err, ErrInvitationRequired) {
+		t.Fatalf("uncommitted invitation was consumable: %v", err)
+	}
+	manager.CommitFriendInvitation(created.Room.ID, reservation)
+	resend, err := manager.ReserveFriendInvitation(created.Room.ID, "owner", "friend")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.CancelFriendInvitation(created.Room.ID, resend)
+	joined, err := manager.JoinInvitedFriendRoom(created.Room.ID, "friend", "", "committed", 0)
+	if err != nil {
+		t.Fatalf("canceling a resend revoked the prior committed invite: %v", err)
+	}
+	standing, err := manager.StandUp(created.Room.ID, "friend", joined.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seated, err := manager.SitDown(created.Room.ID, "friend", 2, 0, standing.Version)
+	if err != nil {
+		t.Fatalf("authorized friend could not sit down again: %v", err)
+	}
+	if memberFor(t, seated, "friend").Seat != 2 {
+		t.Fatalf("friend seat = %d, want 2", memberFor(t, seated, "friend").Seat)
 	}
 }
 
