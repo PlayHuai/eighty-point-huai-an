@@ -1,0 +1,27 @@
+groups:
+  - name: eighty-point-server
+    rules:
+      - alert: ServerHealthCheckFailed
+        expr: up{job="eighty-point-health"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: 淮安80分服务端健康检查失败
+          description: Prometheus 连续 1 分钟无法访问本机 /healthz；检查服务状态、容器日志和主机资源。
+      - alert: ServerHealthCheckTargetMissing
+        expr: absent(up{job="eighty-point-health"})
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: 淮安80分服务端监控目标缺失
+          description: Prometheus 未发现 eighty-point-health 抓取目标；检查监控配置和 Prometheus 重载状态。
+      - alert: ServerHealthCheckSlow
+        expr: scrape_duration_seconds{job="eighty-point-health"} > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 淮安80分服务端健康检查响应缓慢
+          description: /healthz 抓取耗时超过 2 秒；检查主机负载和服务日志。
