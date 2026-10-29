@@ -64,18 +64,33 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: LoginScreen(auth: auth)));
 
     final passwordField = find.byKey(const ValueKey('login-password-field'));
-    expect(tester.widget<TextFormField>(passwordField).obscureText, isTrue);
+    expect(
+      tester.widget<TextField>(
+        find.descendant(of: passwordField, matching: find.byType(TextField)),
+      ).obscureText,
+      isTrue,
+    );
     await tester.tap(
       find.descendant(of: passwordField, matching: find.text('显示')),
     );
     await tester.pump();
-    expect(tester.widget<TextFormField>(passwordField).obscureText, isFalse);
+    expect(
+      tester.widget<TextField>(
+        find.descendant(of: passwordField, matching: find.byType(TextField)),
+      ).obscureText,
+      isFalse,
+    );
 
     await tester.tap(
       find.descendant(of: passwordField, matching: find.text('隐藏')),
     );
     await tester.pump();
-    expect(tester.widget<TextFormField>(passwordField).obscureText, isTrue);
+    expect(
+      tester.widget<TextField>(
+        find.descendant(of: passwordField, matching: find.byType(TextField)),
+      ).obscureText,
+      isTrue,
+    );
 
     auth.dispose();
   });
@@ -185,7 +200,7 @@ class _FakeSessionStore implements SessionStore {
   Future<void> clear() async {}
 }
 
-const _session = AuthSession(
+final _session = AuthSession(
   accessToken: 'access',
   refreshToken: 'refresh',
   expiresAt: DateTime.utc(2030),
