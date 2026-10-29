@@ -62,80 +62,97 @@ class CardVisual extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final label = '${rank.label}${suit.symbol}';
-    Widget card = AspectRatio(
+    final card = AspectRatio(
       aspectRatio: DarkTokens.cardAspectRatio,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(DarkTokens.radiusCard),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: DarkTokens.cardFace,
-            border: Border.all(color: DarkTokens.textSecondary),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(DarkTokens.spacingS1),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  rank.label,
-                  style: TextStyle(
-                    color: suit.color,
-                    fontSize: DarkTokens.fontSizeL6,
-                    fontWeight: FontWeight.w700,
-                    height: 1,
-                  ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 64;
+            final indicators = [
+              if (isLevelCard) LevelCardHighlight(compact: compact),
+              if (isRedFive) RedFiveHighlight(compact: compact),
+              if (trumpSuit == suit && suit.symbol.isNotEmpty)
+                TrumpCorner(suit: suit, compact: compact),
+            ];
+            final rankStyle = TextStyle(
+              color: suit.color,
+              fontSize: DarkTokens.fontSizeL6,
+              fontWeight: FontWeight.w700,
+              height: 1,
+            );
+            final suitStyle = TextStyle(
+              color: suit.color,
+              fontSize: compact ? DarkTokens.fontSizeL6 : DarkTokens.fontSizeL3,
+              height: 1,
+            );
+
+            return DecoratedBox(
+              decoration: BoxDecoration(
+                color: DarkTokens.cardFace,
+                border: Border.all(
+                  color: isRedFive
+                      ? DarkTokens.redBright
+                      : DarkTokens.textSecondary,
                 ),
-                if (suit.symbol.isNotEmpty)
-                  Expanded(
-                    child: Center(
-                      child: Text(
-                        suit.symbol,
-                        style: TextStyle(
-                          color: suit.color,
-                          fontSize: DarkTokens.fontSizeL3,
-                          height: 1,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(DarkTokens.spacingS1),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (compact && indicators.isNotEmpty)
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(rank.label, style: rankStyle),
+                          if (suit.symbol.isNotEmpty)
+                            Text(suit.symbol, style: suitStyle),
+                        ],
+                      )
+                    else
+                      Text(rank.label, style: rankStyle),
+                    if (compact && indicators.isNotEmpty)
+                      const Spacer()
+                    else if (suit.symbol.isNotEmpty)
+                      Expanded(
+                        child: Center(
+                          child: Text(suit.symbol, style: suitStyle),
+                        ),
+                      )
+                    else
+                      Expanded(
+                        child: Center(
+                          child: Text(
+                            rank.label,
+                            style: TextStyle(
+                              color: suit.color,
+                              fontSize: DarkTokens.fontSizeL5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  )
-                else
-                  Expanded(
-                    child: Center(
-                      child: Text(
-                        rank.label,
-                        style: TextStyle(
-                          color: suit.color,
-                          fontSize: DarkTokens.fontSizeL5,
-                          fontWeight: FontWeight.w700,
+                    if (indicators.isNotEmpty)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            for (final indicator in indicators)
+                              indicator,
+                          ],
                         ),
                       ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
+                  ],
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
-
-    if (isLevelCard) {
-      card = LevelCardHighlight(child: card);
-    }
-    if (isRedFive) {
-      card = RedFiveHighlight(child: card);
-    }
-    if (trumpSuit == suit && suit.symbol.isNotEmpty) {
-      card = Stack(
-        children: [
-          card,
-          Positioned(
-            top: DarkTokens.spacingS1,
-            right: DarkTokens.spacingS1,
-            child: TrumpCorner(suit: suit),
-          ),
-        ],
-      );
-    }
 
     return Semantics(label: label, child: card);
   }
@@ -174,61 +191,40 @@ class CardBack extends StatelessWidget {
 }
 
 class LevelCardHighlight extends StatelessWidget {
-  const LevelCardHighlight({required this.child, super.key});
+  const LevelCardHighlight({this.compact = false, super.key});
 
-  final Widget child;
+  final bool compact;
 
   @override
-  Widget build(BuildContext context) => Stack(
-    children: [
-      child,
-      Positioned(
-        top: DarkTokens.spacingS1,
-        right: DarkTokens.spacingS1,
-        child: _CardBadge(label: '级牌', color: DarkTokens.goldDark),
-      ),
-    ],
-  );
+  Widget build(BuildContext context) =>
+      _CardBadge(
+        label: '级牌',
+        color: DarkTokens.goldDark,
+        compact: compact,
+      );
 }
 
 class RedFiveHighlight extends StatelessWidget {
-  const RedFiveHighlight({required this.child, super.key});
+  const RedFiveHighlight({this.compact = false, super.key});
 
-  final Widget child;
+  final bool compact;
 
   @override
-  Widget build(BuildContext context) => Stack(
-    children: [
-      child,
-      Positioned.fill(
-        child: IgnorePointer(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              border: Border.all(color: DarkTokens.redBright),
-              borderRadius: BorderRadius.circular(DarkTokens.radiusCard),
-            ),
-          ),
-        ),
-      ),
-      Positioned(
-        top: DarkTokens.spacingS1,
-        left: DarkTokens.spacingS1,
-        child: _CardBadge(label: '红五', color: DarkTokens.redAccent),
-      ),
-    ],
-  );
+  Widget build(BuildContext context) =>
+      _CardBadge(label: '红五', color: DarkTokens.redAccent, compact: compact);
 }
 
 class TrumpCorner extends StatelessWidget {
-  const TrumpCorner({required this.suit, super.key});
+  const TrumpCorner({required this.suit, this.compact = false, super.key});
 
   final CardSuit suit;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(
+    padding: EdgeInsets.symmetric(
       horizontal: DarkTokens.spacingS1,
-      vertical: DarkTokens.spacingS1 / 2,
+      vertical: compact ? 0 : DarkTokens.spacingS1 / 2,
     ),
     decoration: BoxDecoration(
       color: DarkTokens.goldPrimary,
@@ -246,16 +242,21 @@ class TrumpCorner extends StatelessWidget {
 }
 
 class _CardBadge extends StatelessWidget {
-  const _CardBadge({required this.label, required this.color});
+  const _CardBadge({
+    required this.label,
+    required this.color,
+    this.compact = false,
+  });
 
   final String label;
   final Color color;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(
+    padding: EdgeInsets.symmetric(
       horizontal: DarkTokens.spacingS1,
-      vertical: DarkTokens.spacingS1 / 2,
+      vertical: compact ? 0 : DarkTokens.spacingS1 / 2,
     ),
     decoration: BoxDecoration(
       color: color,
