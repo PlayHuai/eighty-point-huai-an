@@ -22,6 +22,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/app_icon.png
+    - assets/cards/
     - assets/icons/ic_add_friend/
     - assets/icons/ic_autoplay/
     - assets/icons/ic_autoplay_active/

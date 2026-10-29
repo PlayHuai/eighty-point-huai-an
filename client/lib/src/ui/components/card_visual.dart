@@ -4,15 +4,16 @@ import '../theme/app_theme.dart';
 import 'design_icon.dart';
 
 enum CardSuit {
-  spades('♠'),
-  hearts('♥'),
-  clubs('♣'),
-  diamonds('♦'),
-  joker('');
+  spades('♠', 'spades'),
+  hearts('♥', 'hearts'),
+  clubs('♣', 'clubs'),
+  diamonds('♦', 'diamonds'),
+  joker('', null);
 
-  const CardSuit(this.symbol);
+  const CardSuit(this.symbol, this.assetName);
 
   final String symbol;
+  final String? assetName;
 
   Color get color => switch (this) {
     CardSuit.hearts || CardSuit.diamonds => DarkTokens.suitRed,
@@ -22,25 +23,26 @@ enum CardSuit {
 }
 
 enum CardRank {
-  two('2'),
-  three('3'),
-  four('4'),
-  five('5'),
-  six('6'),
-  seven('7'),
-  eight('8'),
-  nine('9'),
-  ten('10'),
-  jack('J'),
-  queen('Q'),
-  king('K'),
-  ace('A'),
-  smallJoker('小王'),
-  bigJoker('大王');
+  two('2', '2'),
+  three('3', '3'),
+  four('4', '4'),
+  five('5', '5'),
+  six('6', '6'),
+  seven('7', '7'),
+  eight('8', '8'),
+  nine('9', '9'),
+  ten('10', '10'),
+  jack('J', 'jack'),
+  queen('Q', 'queen'),
+  king('K', 'king'),
+  ace('A', 'ace'),
+  smallJoker('小王', 'black_joker'),
+  bigJoker('大王', 'red_joker');
 
-  const CardRank(this.label);
+  const CardRank(this.label, this.assetName);
 
   final String label;
+  final String assetName;
 }
 
 class CardVisual extends StatelessWidget {
@@ -59,102 +61,76 @@ class CardVisual extends StatelessWidget {
   final bool isRedFive;
   final CardSuit? trumpSuit;
 
+  String get assetPath {
+    if (rank == CardRank.smallJoker || rank == CardRank.bigJoker) {
+      return 'assets/cards/${rank.assetName}.png';
+    }
+
+    final cardSuit = suit.assetName;
+    if (cardSuit == null) {
+      throw StateError('A non-joker card must have a suit.');
+    }
+    return 'assets/cards/${rank.assetName}_of_$cardSuit.png';
+  }
+
   @override
   Widget build(BuildContext context) {
     final label = '${rank.label}${suit.symbol}';
-    final card = AspectRatio(
-      aspectRatio: DarkTokens.cardAspectRatio,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(DarkTokens.radiusCard),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final compact = constraints.maxWidth < 64;
-            final indicators = [
-              if (isLevelCard) LevelCardHighlight(compact: compact),
-              if (isRedFive) RedFiveHighlight(compact: compact),
-              if (trumpSuit == suit && suit.symbol.isNotEmpty)
-                TrumpCorner(suit: suit, compact: compact),
-            ];
-            final rankStyle = TextStyle(
-              color: suit.color,
-              fontSize: DarkTokens.fontSizeL6,
-              fontWeight: FontWeight.w700,
-              height: 1,
-            );
-            final suitStyle = TextStyle(
-              color: suit.color,
-              fontSize: compact ? DarkTokens.fontSizeL6 : DarkTokens.fontSizeL3,
-              height: 1,
-            );
+    return Semantics(
+      label: label,
+      child: AspectRatio(
+        aspectRatio: DarkTokens.cardAspectRatio,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(DarkTokens.radiusCard),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 64;
+              final indicators = [
+                if (isLevelCard) LevelCardHighlight(compact: compact),
+                if (isRedFive) RedFiveHighlight(compact: compact),
+                if (trumpSuit == suit && suit.symbol.isNotEmpty)
+                  TrumpCorner(suit: suit, compact: compact),
+              ];
 
-            return DecoratedBox(
-              decoration: BoxDecoration(
-                color: DarkTokens.cardFace,
-                border: Border.all(
-                  color: isRedFive
-                      ? DarkTokens.redBright
-                      : DarkTokens.textSecondary,
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(DarkTokens.spacingS1),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (compact && indicators.isNotEmpty)
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(rank.label, style: rankStyle),
-                          if (suit.symbol.isNotEmpty)
-                            Text(suit.symbol, style: suitStyle),
-                        ],
-                      )
-                    else
-                      Text(rank.label, style: rankStyle),
-                    if (compact && indicators.isNotEmpty)
-                      const Spacer()
-                    else if (suit.symbol.isNotEmpty)
-                      Expanded(
-                        child: Center(
-                          child: Text(suit.symbol, style: suitStyle),
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.asset(
+                    assetPath,
+                    fit: BoxFit.fill,
+                    excludeFromSemantics: true,
+                  ),
+                  if (isLevelCard || isRedFive)
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: isRedFive
+                              ? DarkTokens.redBright
+                              : DarkTokens.goldDark,
+                          width: DarkTokens.spacingS1 / 2,
                         ),
-                      )
-                    else
-                      Expanded(
-                        child: Center(
-                          child: Text(
-                            rank.label,
-                            style: TextStyle(
-                              color: suit.color,
-                              fontSize: DarkTokens.fontSizeL5,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
+                        borderRadius: BorderRadius.circular(
+                          DarkTokens.radiusCard,
                         ),
                       ),
-                    if (indicators.isNotEmpty)
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            for (final indicator in indicators)
-                              indicator,
-                          ],
-                        ),
+                    ),
+                  if (indicators.isNotEmpty)
+                    Positioned(
+                      top: DarkTokens.spacingS1,
+                      right: DarkTokens.spacingS1,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: indicators,
                       ),
-                  ],
-                ),
-              ),
-            );
-          },
+                    ),
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
-
-    return Semantics(label: label, child: card);
   }
 }
 

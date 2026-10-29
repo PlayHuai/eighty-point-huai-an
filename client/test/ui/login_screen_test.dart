@@ -5,11 +5,81 @@ import 'package:eighty_point_huai_an/src/auth/auth_controller.dart';
 import 'package:eighty_point_huai_an/src/auth/auth_session.dart';
 import 'package:eighty_point_huai_an/src/auth/session_store.dart';
 import 'package:eighty_point_huai_an/src/ui/client_app.dart';
+import 'package:eighty_point_huai_an/src/ui/login_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grpc/grpc.dart';
 
 void main() {
+  testWidgets('login validates required fields and shows server errors', (
+    tester,
+  ) async {
+    final api = _FakeApiClient();
+    final auth = AuthController(api: api, store: _FakeSessionStore());
+    await tester.pumpWidget(ClientApp(auth: auth));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(FilledButton, '登录'));
+    await tester.pump();
+    expect(find.text('请输入账号'), findsOneWidget);
+    expect(find.text('请输入密码'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextFormField).at(0), 'account');
+    await tester.enterText(find.byType(TextFormField).at(1), 'password');
+    await tester.tap(find.widgetWithText(FilledButton, '登录'));
+    await tester.pump();
+    expect(auth.isLoading, isTrue);
+    expect(find.byType(ModalBarrier), findsOneWidget);
+
+    api.loginCompleter.completeError(
+      GrpcError.unauthenticated('invalid credentials'),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('invalid credentials'), findsOneWidget);
+  });
+
+  testWidgets('successful login opens the authenticated landing screen', (
+    tester,
+  ) async {
+    final api = _FakeApiClient();
+    final auth = AuthController(api: api, store: _FakeSessionStore());
+    await tester.pumpWidget(ClientApp(auth: auth));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextFormField).at(0), 'account');
+    await tester.enterText(find.byType(TextFormField).at(1), 'password');
+    await tester.tap(find.widgetWithText(FilledButton, '登录'));
+    await tester.pump();
+    api.loginCompleter.complete(_session);
+    await tester.pumpAndSettle();
+
+    expect(find.text('你好，Player'), findsOneWidget);
+  });
+
+  testWidgets('login password visibility can be toggled', (tester) async {
+    final auth = AuthController(
+      api: _FakeApiClient(),
+      store: _FakeSessionStore(),
+    );
+    await tester.pumpWidget(MaterialApp(home: LoginScreen(auth: auth)));
+
+    final passwordField = find.byKey(const ValueKey('login-password-field'));
+    expect(tester.widget<TextFormField>(passwordField).obscureText, isTrue);
+    await tester.tap(
+      find.descendant(of: passwordField, matching: find.text('显示')),
+    );
+    await tester.pump();
+    expect(tester.widget<TextFormField>(passwordField).obscureText, isFalse);
+
+    await tester.tap(
+      find.descendant(of: passwordField, matching: find.text('隐藏')),
+    );
+    await tester.pump();
+    expect(tester.widget<TextFormField>(passwordField).obscureText, isTrue);
+
+    auth.dispose();
+  });
+
   testWidgets('keeps registration fields mounted while the request is pending', (
     tester,
   ) async {
@@ -77,13 +147,14 @@ void main() {
 }
 
 class _FakeApiClient implements ApiClient {
+  final loginCompleter = Completer<AuthSession>();
   final registerCompleter = Completer<AuthSession>();
 
   @override
   Future<AuthSession> login({
     required String account,
     required String password,
-  }) => Completer<AuthSession>().future;
+  }) => loginCompleter.future;
 
   @override
   Future<AuthSession> register({
@@ -113,3 +184,11 @@ class _FakeSessionStore implements SessionStore {
   @override
   Future<void> clear() async {}
 }
+
+const _session = AuthSession(
+  accessToken: 'access',
+  refreshToken: 'refresh',
+  expiresAt: DateTime.utc(2030),
+  userId: 'user',
+  nickname: 'Player',
+);

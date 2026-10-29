@@ -1,11 +1,8 @@
-import 'dart:ui' as ui;
-
 import 'package:eighty_point_huai_an/src/ui/components/card_visual.dart';
 import 'package:eighty_point_huai_an/src/ui/components/design_icon.dart';
 import 'package:eighty_point_huai_an/src/ui/responsive_breakpoints.dart';
 import 'package:eighty_point_huai_an/src/ui/theme/app_theme.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -57,26 +54,47 @@ void main() {
     }
   });
 
-  testWidgets('card indicators remain visible at compact and desktop sizes', (
+  test('all standard cards and jokers resolve to bundled artwork', () async {
+    final standardSuits = CardSuit.values.where(
+      (suit) => suit != CardSuit.joker,
+    );
+    final standardRanks = CardRank.values.where(
+      (rank) => rank != CardRank.smallJoker && rank != CardRank.bigJoker,
+    );
+
+    for (final rank in standardRanks) {
+      for (final suit in standardSuits) {
+        final card = CardVisual(rank: rank, suit: suit);
+        expect(
+          card.assetPath,
+          endsWith('${rank.assetName}_of_${suit.assetName}.png'),
+        );
+        await rootBundle.load(card.assetPath);
+      }
+    }
+    for (final rank in [CardRank.smallJoker, CardRank.bigJoker]) {
+      final card = CardVisual(rank: rank, suit: CardSuit.joker);
+      expect(card.assetPath, 'assets/cards/${rank.assetName}.png');
+      await rootBundle.load(card.assetPath);
+    }
+  });
+
+  testWidgets('card artwork and indicators render at compact and desktop sizes', (
     tester,
   ) async {
     for (final width in [44.0, 120.0]) {
-      final boundaryKey = GlobalKey();
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
             body: Center(
-              child: RepaintBoundary(
-                key: boundaryKey,
-                child: SizedBox(
-                  width: width,
-                  child: const CardVisual(
-                    rank: CardRank.five,
-                    suit: CardSuit.hearts,
-                    isLevelCard: true,
-                    isRedFive: true,
-                    trumpSuit: CardSuit.hearts,
-                  ),
+              child: SizedBox(
+                width: width,
+                child: const CardVisual(
+                  rank: CardRank.five,
+                  suit: CardSuit.hearts,
+                  isLevelCard: true,
+                  isRedFive: true,
+                  trumpSuit: CardSuit.hearts,
                 ),
               ),
             ),
@@ -85,71 +103,35 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final boundary = tester.renderObject<RenderRepaintBoundary>(
-        find.byKey(boundaryKey),
+      final image = tester.widget<Image>(
+        find.descendant(
+          of: find.byType(CardVisual),
+          matching: find.byType(Image),
+        ),
       );
-      final boundaryRect = tester.getRect(find.byKey(boundaryKey));
-      final image = await boundary.toImage();
-      final pixels = (await image.toByteData(
-        format: ui.ImageByteFormat.rawRgba,
-      ))!;
-
-      Color pixelAt(Offset globalPosition) {
-        final x = (globalPosition.dx - boundaryRect.left).floor();
-        final y = (globalPosition.dy - boundaryRect.top).floor();
-        final offset = (y * image.width + x) * 4;
-        return Color.fromARGB(
-          pixels.getUint8(offset + 3),
-          pixels.getUint8(offset),
-          pixels.getUint8(offset + 1),
-          pixels.getUint8(offset + 2),
-        );
-      }
+      expect(
+        (image.image as AssetImage).assetName,
+        'assets/cards/5_of_hearts.png',
+      );
 
       Rect badgeRect(Finder marker) => tester.getRect(
         find.descendant(of: marker, matching: find.byType(Container)).first,
       );
 
-      final rankRect = tester.getRect(find.text('5'));
+      final cardRect = tester.getRect(find.byType(CardVisual));
       final levelRect = badgeRect(find.byType(LevelCardHighlight));
       final redFiveRect = badgeRect(find.byType(RedFiveHighlight));
       final trumpRect = badgeRect(find.byType(TrumpCorner));
 
-      for (final marker in [levelRect, redFiveRect, trumpRect]) {
-        expect(rankRect.overlaps(marker), isFalse);
-      }
-      expect(levelRect.overlaps(redFiveRect), isFalse);
-      expect(levelRect.overlaps(trumpRect), isFalse);
-      expect(redFiveRect.overlaps(trumpRect), isFalse);
-
-      expect(
-        pixelAt(Offset(levelRect.left + 1, levelRect.center.dy)),
-        DarkTokens.goldDark,
-      );
-      expect(
-        pixelAt(Offset(redFiveRect.left + 1, redFiveRect.center.dy)),
-        DarkTokens.redAccent,
-      );
-      expect(
-        pixelAt(Offset(trumpRect.left + 1, trumpRect.center.dy)),
-        DarkTokens.goldPrimary,
-      );
-
-      var rankPixelCount = 0;
-      for (var y = rankRect.top.floor(); y < rankRect.bottom.ceil(); y++) {
-        for (var x = rankRect.left.floor(); x < rankRect.right.ceil(); x++) {
-          if (pixelAt(Offset(x + 0.5, y + 0.5)) == DarkTokens.suitRed) {
-            rankPixelCount++;
-          }
-        }
-      }
-      expect(rankPixelCount, greaterThan(0));
+      expect(cardRect.contains(levelRect.topLeft), isTrue);
+      expect(cardRect.contains(redFiveRect.bottomRight), isTrue);
+      expect(cardRect.contains(trumpRect.bottomRight), isTrue);
+      expect(levelRect.bottom, lessThanOrEqualTo(redFiveRect.top));
+      expect(redFiveRect.bottom, lessThanOrEqualTo(trumpRect.top));
       expect(find.text('级牌'), findsOneWidget);
       expect(find.text('红五'), findsOneWidget);
       expect(find.byType(TrumpCorner), findsOneWidget);
       expect(tester.takeException(), isNull);
-
-      image.dispose();
     }
   });
 }
