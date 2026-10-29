@@ -15,7 +15,7 @@ func TestVersionedServiceContract(t *testing.T) {
 		"AuthService":   {"Register", "Login", "RefreshSession", "Logout", "ChangePassword"},
 		"PlayerService": {"GetProfile", "UpdateProfile", "GetStatistics", "ListRecentResults", "GetFriendStatistics", "ListFriendRecentResults"},
 		"LobbyService":  {"ListHalls", "ListRooms", "CreateRoom", "JoinRoom", "LeaveRoom", "JoinByCode"},
-		"RoomService":   {"GetRoom", "SitDown", "ChangeSeat", "StandUp", "InviteFriend", "SetSpectatorView", "SetHandVisibility", "StartGame"},
+		"RoomService":   {"GetRoom", "JoinInvitedRoom", "SitDown", "ChangeSeat", "StandUp", "InviteFriend", "SetSpectatorView", "SetHandVisibility", "StartGame"},
 		"GameService":   {"SubmitAction", "GetGameSnapshot", "ListEventsAfter", "RequestReconnect"},
 		"FriendService": {"SearchPlayers", "SendRequest", "RespondRequest", "ListFriends", "RemoveFriend", "SendRoomInvite", "ListFriendRequests", "ListRoomInvitations"},
 		"ChatService":   {"SendRoomMessage", "ListRoomMessages", "SendPrivateMessage", "ListPrivateMessages"},

@@ -123,6 +123,56 @@ func TestRoomSpectatingAndHallIsolation(t *testing.T) {
 	}
 }
 
+func TestFriendRoomBypassesRankedAdmissionOnlyForInvitedFriends(t *testing.T) {
+	manager := NewManager()
+	created, err := manager.CreateRoom(lobby.HallFriend, "owner", 0, Settings{Name: "friends"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := manager.JoinRoom(created.Room.ID, "owner", 0, "", created.Version)
+	if err != nil {
+		t.Fatalf("friend-room owner could not join at zero points: %v", err)
+	}
+	if _, err := manager.ListRooms(lobby.HallFriend, 100000); !errors.Is(err, ErrInvitationRequired) {
+		t.Fatalf("friend room appeared in public listing: %v", err)
+	}
+	if _, err := manager.JoinRoom(created.Room.ID, "stranger", 100000, "", owner.Version); !errors.Is(err, ErrInvitationRequired) {
+		t.Fatalf("non-invitee joined friend room: %v", err)
+	}
+	if err := manager.InviteFriend(created.Room.ID, "owner", "friend"); err != nil {
+		t.Fatalf("InviteFriend() error = %v", err)
+	}
+	if _, err := manager.JoinInvitedFriendRoom(created.Room.ID, "stranger", "", "request-stranger", owner.Version); !errors.Is(err, ErrInvitationRequired) {
+		t.Fatalf("uninvited user bypassed admission: %v", err)
+	}
+	friend, err := manager.JoinInvitedFriendRoom(created.Room.ID, "friend", "", "request-friend", owner.Version)
+	if err != nil {
+		t.Fatalf("invited zero-point friend could not join: %v", err)
+	}
+	if friend.Room.OccupiedSeats != 2 {
+		t.Fatalf("occupied seats = %d, want 2", friend.Room.OccupiedSeats)
+	}
+	if _, err := manager.JoinInvitedFriendRoom(created.Room.ID, "friend", "", "request-friend", 0); err != nil {
+		t.Fatalf("retrying a consumed invitation was not idempotent: %v", err)
+	}
+	if _, err := manager.JoinInvitedFriendRoom(created.Room.ID, "stranger", "", "request-friend", 0); !errors.Is(err, ErrInvitationRequestConflict) {
+		t.Fatalf("reused invitation request ID error = %v, want ErrInvitationRequestConflict", err)
+	}
+	_, err = manager.LeaveRoom(created.Room.ID, "friend", friend.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.JoinInvitedFriendRoom(created.Room.ID, "friend", "", "request-rejoin", 0); !errors.Is(err, ErrInvitationRequired) {
+		t.Fatalf("a consumed invitation allowed rejoining after leave: %v", err)
+	}
+	if _, err := manager.CreateRoom(lobby.HallOrdinary, "low-point-owner", 0, Settings{Name: "ranked"}); err != nil {
+		t.Fatalf("ordinary hall admission changed: %v", err)
+	}
+	if _, err := manager.CreateRoom(lobby.HallFriend, "owner", 0, Settings{Name: "invalid gate", MinimumPoints: 1}); !errors.Is(err, ErrAdmissionDenied) {
+		t.Fatalf("friend room accepted a misleading minimum-points gate: %v", err)
+	}
+}
+
 func TestRoomMutationsUseOptimisticVersioning(t *testing.T) {
 	manager := NewManager()
 	created, err := manager.CreateRoom(lobby.HallOrdinary, "owner", 0, Settings{Name: "table"})

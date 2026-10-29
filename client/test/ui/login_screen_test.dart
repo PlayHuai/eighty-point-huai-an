@@ -13,6 +13,99 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grpc/grpc.dart';
 
 void main() {
+  testWidgets('friend hall is invitation-only, not a public room listing', (
+    tester,
+  ) async {
+    final api = _FakeApiClient()
+      ..halls = const [
+        LobbyHall(
+          id: 'ordinary',
+          name: '普通大厅',
+          minimumPoints: 0,
+          maximumPoints: 9999,
+          multiplier: 1,
+        ),
+        LobbyHall(
+          id: friendRoomHallId,
+          name: '好友房',
+          minimumPoints: 0,
+          maximumPoints: 0,
+          multiplier: 1,
+        ),
+      ]
+      ..roomInvitations = [
+        RoomInvitation(
+          roomId: 'friend-room-1',
+          inviterUserId: 'friend-1',
+          inviterNickname: '好友甲',
+          invitedAt: DateTime.utc(2026, 1, 1),
+        ),
+      ];
+    final auth = AuthController(api: api, store: _FakeSessionStore());
+    final login = auth.login('account', 'password');
+    api.loginCompleter.complete(_session);
+    await login;
+
+    await tester.pumpWidget(ClientApp(auth: auth));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('好友房'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('好友甲 邀请你加入好友房'), findsOneWidget);
+    expect(api.requestedRoomHallIds, isNot(contains(friendRoomHallId)));
+    await tester.tap(find.text('接受邀请'));
+    await tester.pumpAndSettle();
+    expect(api.joinedInvitationRoomId, 'friend-room-1');
+    expect(api.joinedInvitationRequestId, matches(RegExp(r'^[0-9a-f-]{36}$')));
+    expect(find.textContaining('已加入 好友房'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    auth.dispose();
+  });
+
+  testWidgets('friend-room creation offers invites from the authenticated list', (
+    tester,
+  ) async {
+    final api = _FakeApiClient()
+      ..halls = const [
+        LobbyHall(
+          id: friendRoomHallId,
+          name: '好友房',
+          minimumPoints: 0,
+          maximumPoints: 0,
+          multiplier: 1,
+        ),
+      ]
+      ..friends = const [
+        PlayerFriend(
+          userId: 'friend-1',
+          nickname: '好友乙',
+          avatarUrl: '',
+        ),
+      ];
+    final auth = AuthController(api: api, store: _FakeSessionStore());
+    final login = auth.login('account', 'password');
+    api.loginCompleter.complete(_session);
+    await login;
+
+    await tester.pumpWidget(ClientApp(auth: auth));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('创建房间'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, '周末好友局');
+    await tester.tap(find.widgetWithText(FilledButton, '创建'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('邀请好友加入好友房'), findsOneWidget);
+    expect(find.text('好友乙'), findsOneWidget);
+    await tester.tap(find.byTooltip('发送邀请'));
+    await tester.pumpAndSettle();
+    expect(api.invitedRoomId, 'created-friend-room');
+    expect(api.invitedFriendId, 'friend-1');
+    expect(find.text('好友房邀请已发送。'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    auth.dispose();
+  });
+
   testWidgets('lobby renders server halls and joins a waiting room', (
     tester,
   ) async {
@@ -328,7 +421,14 @@ class _FakeApiClient implements ApiClient {
   String? updatedAvatarUrl;
   List<LobbyHall> halls = const [];
   Map<String, List<LobbyRoom>> roomsByHall = const {};
+  List<RoomInvitation> roomInvitations = const [];
+  List<PlayerFriend> friends = const [];
+  final requestedRoomHallIds = <String>[];
   String? joinedRoomId;
+  String? joinedInvitationRoomId;
+  String? joinedInvitationRequestId;
+  String? invitedFriendId;
+  String? invitedRoomId;
 
   @override
   Future<AuthSession> login({
@@ -369,7 +469,10 @@ class _FakeApiClient implements ApiClient {
   Future<List<LobbyRoom>> listRooms({
     required String accessToken,
     required String hallId,
-  }) async => roomsByHall[hallId] ?? const [];
+  }) async {
+    requestedRoomHallIds.add(hallId);
+    return roomsByHall[hallId] ?? const [];
+  }
 
   @override
   Future<LobbyRoom> createRoom({
@@ -377,7 +480,16 @@ class _FakeApiClient implements ApiClient {
     required String hallId,
     required String name,
     required String password,
-  }) => throw UnimplementedError();
+  }) async => LobbyRoom(
+    id: 'created-friend-room',
+    hallId: hallId,
+    name: name,
+    status: LobbyRoomStatus.waiting,
+    occupiedSeats: 0,
+    capacity: 4,
+    hasPassword: password.isNotEmpty,
+    version: 1,
+  );
 
   @override
   Future<LobbyRoom> joinRoom({
@@ -410,6 +522,45 @@ class _FakeApiClient implements ApiClient {
     String pageToken = '',
     int pageSize = 20,
   }) => throw UnimplementedError();
+
+  @override
+  Future<List<RoomInvitation>> listRoomInvitations({
+    required String accessToken,
+  }) async => roomInvitations;
+
+  @override
+  Future<List<PlayerFriend>> listFriends({required String accessToken}) async =>
+      friends;
+
+  @override
+  Future<void> sendRoomInvite({
+    required String accessToken,
+    required String roomId,
+    required String friendId,
+  }) async {
+    invitedRoomId = roomId;
+    invitedFriendId = friendId;
+  }
+
+  @override
+  Future<LobbyRoom> joinInvitedRoom({
+    required String accessToken,
+    required String roomId,
+    required String requestId,
+  }) async {
+    joinedInvitationRoomId = roomId;
+    joinedInvitationRequestId = requestId;
+    return LobbyRoom(
+      id: roomId,
+      hallId: friendRoomHallId,
+      name: '好友房',
+      status: LobbyRoomStatus.waiting,
+      occupiedSeats: 2,
+      capacity: 4,
+      hasPassword: false,
+      version: 3,
+    );
+  }
 
   @override
   Future<void> close() async {}
