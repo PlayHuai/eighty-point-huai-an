@@ -196,6 +196,79 @@ void main() {
     expect(find.textContaining('已加入 周末牌局'), findsOneWidget);
   });
 
+  for (final width in [599.0, 600.0, 601.0]) {
+    testWidgets(
+      'lobby room settings fit at ${width}px with wrapped text',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = Size(width, 1000);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        final api = _FakeApiClient()
+          ..halls = const [
+            LobbyHall(
+              id: 'normal',
+              name: '普通大厅',
+              minimumPoints: 0,
+              maximumPoints: 0,
+              multiplier: 1,
+            ),
+          ]
+          ..roomsByHall = const {
+            'normal': [
+              LobbyRoom(
+                id: 'room-1',
+                hallId: 'normal',
+                name: '周末牌局',
+                status: LobbyRoomStatus.waiting,
+                occupiedSeats: 2,
+                capacity: 4,
+                hasPassword: false,
+                version: 3,
+                allowSpectators: true,
+                minimumPoints: 999999999999999,
+              ),
+            ],
+          };
+        final auth = AuthController(api: api, store: _FakeSessionStore());
+        final login = auth.login('account', 'password');
+        api.loginCompleter.complete(_session);
+        await login;
+
+        await tester.pumpWidget(ClientApp(auth: auth));
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        final threshold = find.text('最低积分 999999999999999');
+        final spectators = find.text('允许观战');
+        final join = find.widgetWithText(FilledButton, '加入');
+        expect(threshold, findsOneWidget);
+        expect(spectators, findsOneWidget);
+        expect(join.hitTestable(), findsOneWidget);
+        if (width >= 600) {
+          expect(
+            tester.getTopLeft(spectators).dy,
+            greaterThan(tester.getTopLeft(threshold).dy),
+          );
+        }
+        final card = find.ancestor(of: join, matching: find.byType(Card));
+        expect(
+          tester.getBottomRight(join).dy,
+          lessThanOrEqualTo(tester.getBottomRight(card).dy),
+        );
+        await tester.tap(join);
+        await tester.pumpAndSettle();
+        expect(api.joinedRoomId, 'room-1');
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({
+        TargetPlatform.iOS,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
   testWidgets('joining a password-protected room pre-fills its room number', (
     tester,
   ) async {
