@@ -18,7 +18,7 @@ type publicProfileRepositoryStub struct {
 
 type statisticsRepositoryStub struct {
 	publicProfileRepositoryStub
-	friends   bool
+	friends    bool
 	statistics Statistics
 	results    []RecentResult
 	targetID   string
