@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../auth/auth_controller.dart';
+import 'components/design_icon.dart';
 import 'register_screen.dart';
 import 'theme/app_theme.dart';
 
@@ -56,7 +57,14 @@ class _LoginScreenState extends State<LoginScreen> {
                       const SizedBox(height: DarkTokens.spacingS5),
                       TextFormField(
                         controller: _account,
-                        decoration: const InputDecoration(labelText: '账号或邮箱'),
+                        decoration: const InputDecoration(
+                          labelText: '账号或邮箱',
+                          prefixIcon: DesignIcon(
+                            name: DesignIconName.login,
+                            enabled: true,
+                            size: DarkTokens.spacingS4 + DarkTokens.spacingS1,
+                          ),
+                        ),
                         validator: (value) => value == null || value.trim().isEmpty
                             ? '请输入账号'
                             : null,
@@ -67,6 +75,11 @@ class _LoginScreenState extends State<LoginScreen> {
                         controller: _password,
                         decoration: InputDecoration(
                           labelText: '密码',
+                          prefixIcon: const DesignIcon(
+                            name: DesignIconName.locked,
+                            enabled: true,
+                            size: DarkTokens.spacingS4 + DarkTokens.spacingS1,
+                          ),
                           suffixIcon: TextButton(
                             onPressed: () => setState(
                               () => _passwordVisible = !_passwordVisible,
@@ -108,14 +121,14 @@ class _LoginScreenState extends State<LoginScreen> {
                             ? null
                             : () {
                                 widget.auth.clearError();
-                                Navigator.of(context).push(
-                                  MaterialPageRoute<void>(
+                                Navigator.of(context).push<void>(
+                                  MaterialPageRoute(
                                     builder: (_) =>
                                         RegisterScreen(auth: widget.auth),
                                   ),
                                 );
                               },
-                        child: const Text('注册新账号'),
+                        child: const Text('创建账号'),
                       ),
                     ],
                   ),

@@ -104,15 +104,18 @@ void main() {
     );
     await tester.pumpWidget(ClientApp(auth: auth));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('注册新账号'));
+    await tester.tap(find.text('创建账号'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, '注册'));
     await tester.pump();
 
-    expect(find.text('请输入账号'), findsOneWidget);
-    expect(find.text('请输入密码'), findsOneWidget);
-    expect(find.text('请再次输入密码'), findsOneWidget);
-    expect(find.text('请输入昵称'), findsOneWidget);
+    expect(find.text('账号不能为空'), findsOneWidget);
+    expect(
+      find.text('密码须为8到128字节且需包含字母和数字'),
+      findsOneWidget,
+    );
+    expect(find.text('请确认密码'), findsOneWidget);
+    expect(find.text('昵称不能为空'), findsOneWidget);
 
     await tester.enterText(
       find.byKey(const ValueKey('register-account-field')),
@@ -133,7 +136,10 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, '注册'));
     await tester.pump();
 
-    expect(find.text('密码长度需为 8–128 位'), findsOneWidget);
+    expect(
+      find.text('密码须为8到128字节且需包含字母和数字'),
+      findsOneWidget,
+    );
     expect(find.text('两次输入的密码不一致'), findsOneWidget);
     auth.dispose();
   });
@@ -147,7 +153,7 @@ void main() {
 
     await tester.pumpWidget(ClientApp(auth: auth));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('注册新账号'));
+    await tester.tap(find.text('创建账号'));
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const ValueKey('register-account-field')),
@@ -170,13 +176,16 @@ void main() {
     await tester.pump();
 
     expect(find.text('选择头像'), findsOneWidget);
-    expect(find.byType(ModalBarrier), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsWidgets);
     expect(auth.isLoading, isTrue);
     expect(
-      tester.widget<FilledButton>(
-        find.widgetWithText(FilledButton, '注册'),
-      ).onPressed,
-      isNull,
+      tester.widget<AbsorbPointer>(
+        find.ancestor(
+          of: find.byKey(const ValueKey('register-account-field')),
+          matching: find.byType(AbsorbPointer),
+        ),
+      ).absorbing,
+      isTrue,
     );
     expect(
       tester.widgetList<TextFormField>(find.byType(TextFormField)).map(
@@ -207,8 +216,8 @@ void main() {
     final auth = AuthController(api: api, store: _FakeSessionStore());
     await tester.pumpWidget(ClientApp(auth: auth));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('注册新账号'));
-    await tester.tap(find.text('注册新账号'));
+    await tester.ensureVisible(find.text('创建账号'));
+    await tester.tap(find.text('创建账号'));
     await tester.pumpAndSettle();
 
     await tester.enterText(
@@ -227,7 +236,7 @@ void main() {
       find.byKey(const ValueKey('register-nickname-field')),
       'Player',
     );
-    await tester.tap(find.byKey(const ValueKey('register-avatar-host')));
+    await tester.tap(find.byKey(const ValueKey('register-avatar-1')));
     await tester.ensureVisible(find.widgetWithText(FilledButton, '注册'));
     await tester.tap(find.widgetWithText(FilledButton, '注册'));
     await tester.pump();
@@ -235,7 +244,7 @@ void main() {
     api.registerCompleter.complete(_session);
     await tester.pump();
     expect(api.updatedNickname, 'Player');
-    expect(api.updatedAvatarUrl, 'assets/icons/ic_host/state=enabled.svg');
+    expect(api.updatedAvatarUrl, 'huai-avatar://host');
 
     api.profileUpdateCompleter.complete();
     await tester.pumpAndSettle();
@@ -253,8 +262,8 @@ void main() {
 
     await tester.pumpWidget(ClientApp(auth: auth));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('注册新账号'));
-    await tester.tap(find.text('注册新账号'));
+    await tester.ensureVisible(find.text('创建账号'));
+    await tester.tap(find.text('创建账号'));
     await tester.pumpAndSettle();
 
     expect(find.byType(SingleChildScrollView), findsOneWidget);

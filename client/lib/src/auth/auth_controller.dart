@@ -17,7 +17,6 @@ class AuthController extends ChangeNotifier {
   bool _isLoading = true;
   String? _error;
   bool _canRetryRestore = false;
-  bool _registrationProfilePending = false;
 
   AuthSession? get session => _session;
   bool get isLoading => _isLoading;
@@ -68,34 +67,39 @@ class AuthController extends ChangeNotifier {
     String account,
     String password,
     String nickname,
-    {String avatarUrl = ''},
+    String avatarUrl,
   ) async {
-    if (!_registrationProfilePending) {
-      final registered = await _authenticate(
-        () => _api.register(
-          account: account,
-          password: password,
-          nickname: nickname,
-        ),
-      );
-      if (!registered) return false;
-      _registrationProfilePending = avatarUrl.isNotEmpty;
-    }
-
-    if (!_registrationProfilePending) return true;
-
+    if (_isLoading) return false;
     _isLoading = true;
     _error = null;
+    _canRetryRestore = false;
     notifyListeners();
     try {
-      await _api.updateProfile(
-        accessToken: _session!.accessToken,
+      final session = await _api.register(
+        account: account,
+        password: password,
         nickname: nickname,
-        avatarUrl: avatarUrl,
       );
-      _registrationProfilePending = false;
+      _session = session;
+      final warnings = <String>[];
+      try {
+        await _store.write(session);
+      } catch (_) {
+        warnings.add('账号已创建，但登录状态无法保存。');
+      }
+      try {
+        await _api.updateProfile(
+          accessToken: session.accessToken,
+          nickname: nickname,
+          avatarUrl: avatarUrl,
+        );
+      } catch (_) {
+        warnings.add('账号已创建，但头像暂未保存。');
+      }
+      _error = warnings.isEmpty ? null : warnings.join(' ');
       return true;
     } catch (error) {
+      _session = null;
       _error = error.toString();
       return false;
     } finally {
@@ -142,7 +146,6 @@ class AuthController extends ChangeNotifier {
         _error = 'Unable to clear the saved session.';
       }
       _session = null;
-      _registrationProfilePending = false;
       _isLoading = false;
       notifyListeners();
     }

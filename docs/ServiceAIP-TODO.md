@@ -11,7 +11,7 @@
 | TODO | CreateRoomDialog | `CreateRoomRequest` 目前只有大厅、名称、密码，未包含是否允许观战；原型也要求房间准入门槛设置。 | 设计创建请求的观战选项及准入门槛字段，定义与大厅准入范围的服务端校验规则，并在响应中返回实际生效设置。 |
 | TODO | Chat | `ChatMessage` 没有收件人/会话标识或离线投递状态，不能直接确认原型要求的离线送达反馈。 | 设计私聊消息中的会话/收件人和投递状态表示，以及必要的送达事件；明确重试的 `request_id` 幂等行为。 |
 | TODO | Lobby、GameTable、FriendList | 多个有副作用的请求尚无 `request_id`；房间状态变更请求也没有一致的 `expected_version`。例如 `CreateRoomRequest`、`RoomRequest`、`SeatRequest`、好友申请/删除/邀请请求。 | 逐项为变更请求补充稳定的幂等键，并为基于房间状态的变更补充 `expected_version`；明确重复请求返回行为、版本冲突错误和客户端重试复用同一 `request_id` 的约定。`GameService.SubmitAction` 已包含这两个字段，可作为游戏动作的现有参考。 |
-| TODO | Register | `PlayerService.UpdateProfile.avatar_url` 可保存头像字符串，但当前没有共享的默认头像目录或上传/公开 URL 解析约定；客户端选中的本地 SVG 资源路径不能保证其他客户端可解析。 | 定义跨客户端稳定的头像 ID/资源目录，或提供上传并返回公开头像 URL 的流程；明确 `avatar_url` 的可接受格式及其展示解析规则。 |
+| TODO | Register | `AuthService.Register` 和注册后的 `PlayerService.UpdateProfile` 都没有 `request_id`；注册成功但响应丢失时重试可能得到账号已存在，不能确认首次请求结果。 | 为注册和资料更新补充稳定的幂等键及服务端去重/重放语义；账号操作不适用 `expected_version`。 |
 
 ## 已有接口复用
 
