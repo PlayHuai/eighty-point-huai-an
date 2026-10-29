@@ -49,6 +49,9 @@ void main() {
     expect(find.text('新牌友'), findsOneWidget);
     await tester.tap(find.byTooltip('发送好友申请'));
     await tester.pumpAndSettle();
+    expect(find.text('操作失败，请检查网络后重试。'), findsOneWidget);
+    await tester.pump(tester.widget<SnackBar>(find.byType(SnackBar)).duration);
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('发送好友申请'));
     await tester.pumpAndSettle();
 
