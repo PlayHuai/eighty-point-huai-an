@@ -377,6 +377,37 @@ func (s *Store) GetPublicProfile(ctx context.Context, userID string) (player.Pub
 	return profile, err
 }
 
+func (s *Store) GetPublicProfiles(ctx context.Context, userIDs []string) (map[string]player.PublicProfile, error) {
+	profiles := make(map[string]player.PublicProfile, len(userIDs))
+	if len(userIDs) == 0 {
+		return profiles, nil
+	}
+
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(userIDs)), ",")
+	args := make([]any, len(userIDs))
+	for i, userID := range userIDs {
+		args[i] = userID
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT p.user_id, p.nickname, p.avatar, u.created_at
+		FROM player_profiles p JOIN users u ON u.id = p.user_id
+		WHERE p.user_id IN (`+placeholders+`) AND u.status = 'ACTIVE'`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var profile player.PublicProfile
+		if err := rows.Scan(&profile.UserID, &profile.Nickname, &profile.AvatarURL, &profile.CreatedAt); err != nil {
+			return nil, err
+		}
+		profiles[profile.UserID] = profile
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return profiles, nil
+}
+
 func (s *Store) AreFriends(ctx context.Context, firstUserID, secondUserID string) (bool, error) {
 	if firstUserID == "" || secondUserID == "" || firstUserID == secondUserID {
 		return false, nil

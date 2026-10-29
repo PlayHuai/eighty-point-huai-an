@@ -2,8 +2,8 @@ package grpc
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
-	"strconv"
 
 	"github.com/Derek0120/eighty-point-huai-an/server/gen/huai/v1"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/lobby"
@@ -23,7 +23,7 @@ type lobbyServer struct {
 
 type lobbyProfileRepository interface {
 	player.ProfileRepository
-	player.PublicProfileRepository
+	GetPublicProfiles(ctx context.Context, userIDs []string) (map[string]player.PublicProfile, error)
 }
 
 func RegisterLobbyService(
@@ -60,12 +60,19 @@ func (s *lobbyServer) ListRooms(
 	if err != nil {
 		return nil, err
 	}
+	afterRoomID, pageSize, err := roomPageWindow(
+		request.GetPage().GetPageToken(),
+		request.GetPage().GetPageSize(),
+	)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid room page")
+	}
 	profile, err := s.profiles.FindProfile(ctx, userID)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "could not load player profile")
 	}
 	hallID := request.GetHallId()
-	rooms, err := s.rooms.ListRooms(hallID, profile.Points)
+	rooms, hasMore, err := s.rooms.ListRoomsPage(hallID, profile.Points, afterRoomID, pageSize)
 	if err != nil {
 		switch {
 		case errors.Is(err, lobby.ErrUnknownHall):
@@ -78,28 +85,34 @@ func (s *lobbyServer) ListRooms(
 			return nil, status.Error(codes.Internal, "could not list rooms")
 		}
 	}
-	offset, limit, err := roomPageWindow(request.GetPage().GetPageToken(), request.GetPage().GetPageSize())
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid room page")
+
+	ownerIDs := make([]string, 0, len(rooms))
+	seenOwners := make(map[string]struct{}, len(rooms))
+	for _, summary := range rooms {
+		if _, seen := seenOwners[summary.OwnerID]; seen {
+			continue
+		}
+		seenOwners[summary.OwnerID] = struct{}{}
+		ownerIDs = append(ownerIDs, summary.OwnerID)
 	}
-	start := min(offset, uint64(len(rooms)))
-	end := min(start+limit, uint64(len(rooms)))
+	owners, err := s.profiles.GetPublicProfiles(ctx, ownerIDs)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "could not load room owners")
+	}
 	response := &huaiv1.ListRoomsResponse{
 		Page: &huaiv1.PageInfo{},
 	}
-	for _, summary := range rooms[int(start):int(end)] {
+	for _, summary := range rooms {
 		owner := &huaiv1.UserProfile{UserId: summary.OwnerID}
-		if profile, profileErr := s.profiles.GetPublicProfile(ctx, summary.OwnerID); profileErr == nil {
+		if profile, exists := owners[summary.OwnerID]; exists {
 			owner.Nickname = profile.Nickname
 			owner.AvatarUrl = profile.AvatarURL
 			owner.CreatedAt = timestamppb.New(profile.CreatedAt)
-		} else if !errors.Is(profileErr, player.ErrProfileNotFound) {
-			return nil, status.Error(codes.Internal, "could not load room owner")
 		}
 		response.Rooms = append(response.Rooms, roomSummaryMessage(summary, owner))
 	}
-	if end < uint64(len(rooms)) {
-		response.Page.NextPageToken = strconv.FormatUint(end, 10)
+	if hasMore && len(rooms) != 0 {
+		response.Page.NextPageToken = rooms[len(rooms)-1].ID
 	}
 	return response, nil
 }
@@ -113,23 +126,20 @@ func roomSummaryMessage(summary room.Summary, owner *huaiv1.UserProfile) *huaiv1
 	}
 }
 
-func roomPageWindow(token string, requestedSize uint32) (uint64, uint64, error) {
-	var offset uint64
+func roomPageWindow(token string, requestedSize uint32) (string, uint32, error) {
 	if token != "" {
-		value, err := strconv.ParseUint(token, 10, 32)
-		if err != nil {
-			return 0, 0, err
+		decoded, err := hex.DecodeString(token)
+		if err != nil || len(decoded) != 16 || hex.EncodeToString(decoded) != token {
+			return "", 0, errors.New("invalid room page cursor")
 		}
-		offset = value
 	}
-	limit := uint64(requestedSize)
-	if limit == 0 {
-		limit = 20
+	if requestedSize == 0 {
+		requestedSize = 20
 	}
-	if limit > 100 || offset > 1_000_000 {
-		return 0, 0, errors.New("room page is out of range")
+	if requestedSize > 100 {
+		return "", 0, errors.New("room page is out of range")
 	}
-	return offset, limit, nil
+	return token, requestedSize, nil
 }
 
 var _ huaiv1.LobbyServiceServer = (*lobbyServer)(nil)

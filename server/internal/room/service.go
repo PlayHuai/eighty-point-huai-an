@@ -103,12 +103,16 @@ type roomState struct {
 }
 
 type Manager struct {
-	mu    sync.RWMutex
-	rooms map[string]*roomState
+	mu          sync.RWMutex
+	rooms       map[string]*roomState
+	hallRoomIDs map[string][]string
 }
 
 func NewManager() *Manager {
-	return &Manager{rooms: make(map[string]*roomState)}
+	return &Manager{
+		rooms:       make(map[string]*roomState),
+		hallRoomIDs: make(map[string][]string),
+	}
 }
 
 func (m *Manager) CreateRoom(hallID, ownerID string, ownerPoints int64, settings Settings) (Details, error) {
@@ -152,24 +156,22 @@ func (m *Manager) CreateRoom(hallID, ownerID string, ownerPoints int64, settings
 
 	m.mu.Lock()
 	m.rooms[id] = state
+	m.insertRoomIDLocked(hallID, id)
 	m.mu.Unlock()
 	return snapshot(state), nil
 }
 
 func (m *Manager) ListRooms(hallID string, userPoints int64) ([]Summary, error) {
-	if _, err := lobby.FindHall(hallID); err != nil {
-		return nil, lobby.ErrUnknownHall
-	}
-	if hallID == lobby.HallFriend {
-		return nil, ErrInvitationRequired
-	}
-	if userPoints < 0 || !lobby.CanEnter(userPoints, hallID) {
-		return nil, ErrAdmissionDenied
+	if err := validateRoomListing(hallID, userPoints); err != nil {
+		return nil, err
 	}
 	m.mu.RLock()
-	rooms := make([]*roomState, 0, len(m.rooms))
-	for _, state := range m.rooms {
-		rooms = append(rooms, state)
+	ids := append([]string(nil), m.hallRoomIDs[hallID]...)
+	rooms := make([]*roomState, 0, len(ids))
+	for _, id := range ids {
+		if state := m.rooms[id]; state != nil {
+			rooms = append(rooms, state)
+		}
 	}
 	m.mu.RUnlock()
 
@@ -183,8 +185,90 @@ func (m *Manager) ListRooms(hallID string, userPoints int64) ([]Summary, error) 
 		}
 		state.mu.Unlock()
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 	return result, nil
+}
+
+func (m *Manager) ListRoomsPage(
+	hallID string,
+	userPoints int64,
+	afterRoomID string,
+	pageSize uint32,
+) ([]Summary, bool, error) {
+	if err := validateRoomListing(hallID, userPoints); err != nil {
+		return nil, false, err
+	}
+	if pageSize == 0 || pageSize > 100 {
+		return nil, false, ErrInvalidInput
+	}
+
+	result := make([]Summary, 0, pageSize+1)
+	scanAfter := afterRoomID
+	for len(result) <= int(pageSize) {
+		remaining := int(pageSize) + 1 - len(result)
+		m.mu.RLock()
+		ids := m.hallRoomIDs[hallID]
+		start := sort.Search(len(ids), func(i int) bool { return ids[i] > scanAfter })
+		end := min(start+remaining, len(ids))
+		candidates := make([]*roomState, 0, end-start)
+		candidateIDs := make([]string, 0, end-start)
+		for _, id := range ids[start:end] {
+			if state := m.rooms[id]; state != nil {
+				candidates = append(candidates, state)
+				candidateIDs = append(candidateIDs, id)
+			}
+		}
+		m.mu.RUnlock()
+		if len(candidateIDs) == 0 {
+			break
+		}
+
+		for i, state := range candidates {
+			scanAfter = candidateIDs[i]
+			state.mu.Lock()
+			if state.summary.HallID == hallID && state.summary.Status != StatusClosed {
+				summary := state.summary
+				summary.Version = state.version
+				result = append(result, summary)
+			}
+			state.mu.Unlock()
+			if len(result) > int(pageSize) {
+				return result[:pageSize], true, nil
+			}
+		}
+	}
+	return result, false, nil
+}
+
+func validateRoomListing(hallID string, userPoints int64) error {
+	if _, err := lobby.FindHall(hallID); err != nil {
+		return lobby.ErrUnknownHall
+	}
+	if hallID == lobby.HallFriend {
+		return ErrInvitationRequired
+	}
+	if userPoints < 0 || !lobby.CanEnter(userPoints, hallID) {
+		return ErrAdmissionDenied
+	}
+	return nil
+}
+
+func (m *Manager) insertRoomIDLocked(hallID, roomID string) {
+	ids := m.hallRoomIDs[hallID]
+	index := sort.SearchStrings(ids, roomID)
+	ids = append(ids, "")
+	copy(ids[index+1:], ids[index:])
+	ids[index] = roomID
+	m.hallRoomIDs[hallID] = ids
+}
+
+func (m *Manager) removeRoomIDLocked(hallID, roomID string) {
+	ids := m.hallRoomIDs[hallID]
+	index := sort.SearchStrings(ids, roomID)
+	if index == len(ids) || ids[index] != roomID {
+		return
+	}
+	copy(ids[index:], ids[index+1:])
+	m.hallRoomIDs[hallID] = ids[:len(ids)-1]
 }
 
 func (m *Manager) JoinRoom(roomID, userID string, points int64, password string, expectedVersion uint64) (Details, error) {
@@ -619,6 +703,9 @@ func (m *Manager) Close(roomID, userID string, expectedVersion uint64) (Details,
 	}
 	state.summary.Status = StatusClosed
 	state.version++
+	m.mu.Lock()
+	m.removeRoomIDLocked(state.summary.HallID, state.summary.ID)
+	m.mu.Unlock()
 	m.evictIfEmpty(state)
 	return snapshotLocked(state), nil
 }
@@ -720,6 +807,7 @@ func (m *Manager) evictIfEmpty(state *roomState) {
 	m.mu.Lock()
 	if m.rooms[state.summary.ID] == state {
 		delete(m.rooms, state.summary.ID)
+		m.removeRoomIDLocked(state.summary.HallID, state.summary.ID)
 	}
 	m.mu.Unlock()
 }
