@@ -96,7 +96,7 @@ GRANT ALL PRIVILEGES ON eighty_point.* TO 'eighty_point'@'127.0.0.1';
 以下示例会生成权限受限的压缩备份，并在压缩校验通过后再写入最终文件：
 
 ```sh
-set -o pipefail
+set -euo pipefail
 umask 077
 backup="mysql-$(date -u +%Y%m%dT%H%M%SZ)-$$.sql.gz"
 tmp="$backup.tmp"
@@ -106,7 +106,8 @@ gzip -t "$tmp"
 mv "$tmp" "$backup"
 trap - EXIT
 # 恢复会覆盖数据库中的表；执行前请确认备份文件和目标数据库。
-set -o pipefail
+set -euo pipefail
+gzip -t "$backup"
 gzip -cd "$backup" | sudo mysql eighty_point
 ```
 
