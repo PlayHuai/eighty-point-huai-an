@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:eighty_point_huai_an/src/api/api_client.dart';
+import 'package:eighty_point_huai_an/src/api/lobby_models.dart';
 import 'package:eighty_point_huai_an/src/auth/auth_controller.dart';
 import 'package:eighty_point_huai_an/src/auth/auth_session.dart';
 import 'package:eighty_point_huai_an/src/auth/session_store.dart';
@@ -11,6 +12,50 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grpc/grpc.dart';
 
 void main() {
+  testWidgets('lobby renders server halls and joins a waiting room', (
+    tester,
+  ) async {
+    final api = _FakeApiClient()
+      ..halls = const [
+        LobbyHall(
+          id: 'normal',
+          name: '普通大厅',
+          minimumPoints: 0,
+          maximumPoints: 9999,
+          multiplier: 1,
+        ),
+      ]
+      ..roomsByHall = const {
+        'normal': [
+          LobbyRoom(
+            id: 'room-1',
+            hallId: 'normal',
+            name: '周末牌局',
+            status: LobbyRoomStatus.waiting,
+            occupiedSeats: 2,
+            capacity: 4,
+            hasPassword: false,
+            version: 3,
+          ),
+        ],
+      };
+    final auth = AuthController(api: api, store: _FakeSessionStore());
+    final login = auth.login('account', 'password');
+    api.loginCompleter.complete(_session);
+    await login;
+
+    await tester.pumpWidget(ClientApp(auth: auth));
+    await tester.pumpAndSettle();
+    expect(find.text('普通大厅'), findsOneWidget);
+    expect(find.text('周末牌局'), findsOneWidget);
+    expect(find.text('2/4 人  ·  等待中'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, '加入'));
+    await tester.pumpAndSettle();
+    expect(api.joinedRoomId, 'room-1');
+    expect(find.textContaining('已加入 周末牌局'), findsOneWidget);
+  });
+
   testWidgets('login validates required fields and shows server errors', (
     tester,
   ) async {
@@ -53,7 +98,7 @@ void main() {
     api.loginCompleter.complete(_session);
     await tester.pumpAndSettle();
 
-    expect(find.text('你好，Player'), findsOneWidget);
+    expect(find.text('游戏大厅'), findsOneWidget);
   });
 
   testWidgets('login password visibility can be toggled', (tester) async {
@@ -248,7 +293,7 @@ void main() {
 
     api.profileUpdateCompleter.complete();
     await tester.pumpAndSettle();
-    expect(find.text('你好，Player'), findsOneWidget);
+    expect(find.text('游戏大厅'), findsOneWidget);
   });
 
   testWidgets('registration form remains scrollable on a short viewport', (
@@ -280,6 +325,9 @@ class _FakeApiClient implements ApiClient {
   final profileUpdateCompleter = Completer<void>();
   String? updatedNickname;
   String? updatedAvatarUrl;
+  List<LobbyHall> halls = const [];
+  Map<String, List<LobbyRoom>> roomsByHall = const {};
+  String? joinedRoomId;
 
   @override
   Future<AuthSession> login({
@@ -311,6 +359,42 @@ class _FakeApiClient implements ApiClient {
 
   @override
   Future<void> logout(String refreshToken) async {}
+
+  @override
+  Future<List<LobbyHall>> listHalls({required String accessToken}) async =>
+      halls;
+
+  @override
+  Future<List<LobbyRoom>> listRooms({
+    required String accessToken,
+    required String hallId,
+  }) async => roomsByHall[hallId] ?? const [];
+
+  @override
+  Future<LobbyRoom> createRoom({
+    required String accessToken,
+    required String hallId,
+    required String name,
+    required String password,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<LobbyRoom> joinRoom({
+    required String accessToken,
+    required String roomId,
+  }) async {
+    joinedRoomId = roomId;
+    return roomsByHall.values.expand((rooms) => rooms).firstWhere(
+      (room) => room.id == roomId,
+    );
+  }
+
+  @override
+  Future<LobbyRoom> joinByCode({
+    required String accessToken,
+    required String roomCode,
+    required String password,
+  }) => throw UnimplementedError();
 
   @override
   Future<void> close() async {}

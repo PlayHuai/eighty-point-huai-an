@@ -4,6 +4,7 @@ import 'package:grpc/service_api.dart';
 
 import 'channel_factory.dart';
 import '../auth/auth_session.dart';
+import 'lobby_models.dart';
 
 abstract interface class ApiClient {
   Future<AuthSession> login({
@@ -27,6 +28,31 @@ abstract interface class ApiClient {
 
   Future<void> logout(String refreshToken);
 
+  Future<List<LobbyHall>> listHalls({required String accessToken});
+
+  Future<List<LobbyRoom>> listRooms({
+    required String accessToken,
+    required String hallId,
+  });
+
+  Future<LobbyRoom> createRoom({
+    required String accessToken,
+    required String hallId,
+    required String name,
+    required String password,
+  });
+
+  Future<LobbyRoom> joinRoom({
+    required String accessToken,
+    required String roomId,
+  });
+
+  Future<LobbyRoom> joinByCode({
+    required String accessToken,
+    required String roomCode,
+    required String password,
+  });
+
   Future<void> close();
 }
 
@@ -39,6 +65,7 @@ class GrpcApiClient implements ApiClient {
   final ClientChannel _channel;
   late final api.AuthServiceClient _auth;
   late final api.PlayerServiceClient _player;
+  late final api.LobbyServiceClient _lobby = api.LobbyServiceClient(_channel);
 
   @override
   Future<AuthSession> login({
@@ -96,6 +123,114 @@ class GrpcApiClient implements ApiClient {
   Future<void> logout(String refreshToken) async {
     await _auth.logout(api.LogoutRequest()..refreshToken = refreshToken);
   }
+
+  @override
+  Future<List<LobbyHall>> listHalls({required String accessToken}) async {
+    final response = await _lobby.listHalls(
+      api.Empty(),
+      options: _authenticatedOptions(accessToken),
+    );
+    return response.halls
+        .map(
+          (hall) => LobbyHall(
+            id: hall.hallId,
+            name: hall.name,
+            minimumPoints: hall.minimumPoints,
+            maximumPoints: hall.maximumPoints,
+            multiplier: hall.multiplierBasisPoints / 10000,
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  @override
+  Future<List<LobbyRoom>> listRooms({
+    required String accessToken,
+    required String hallId,
+  }) async {
+    final rooms = <LobbyRoom>[];
+    final seenPageTokens = <String>{};
+    var pageToken = '';
+    do {
+      final response = await _lobby.listRooms(
+        api.ListRoomsRequest()
+          ..hallId = hallId
+          ..page = (api.PageRequest()
+            ..pageSize = 50
+            ..pageToken = pageToken),
+        options: _authenticatedOptions(accessToken),
+      );
+      rooms.addAll(response.rooms.map(_roomFrom));
+      final nextPageToken = response.page.nextPageToken;
+      if (nextPageToken.isEmpty || !seenPageTokens.add(nextPageToken)) break;
+      pageToken = nextPageToken;
+    } while (true);
+    return rooms;
+  }
+
+  @override
+  Future<LobbyRoom> createRoom({
+    required String accessToken,
+    required String hallId,
+    required String name,
+    required String password,
+  }) async {
+    final response = await _lobby.createRoom(
+      api.CreateRoomRequest()
+        ..hallId = hallId
+        ..name = name
+        ..password = password,
+      options: _authenticatedOptions(accessToken),
+    );
+    return _roomFrom(response);
+  }
+
+  @override
+  Future<LobbyRoom> joinRoom({
+    required String accessToken,
+    required String roomId,
+  }) async {
+    final response = await _lobby.joinRoom(
+      api.RoomRequest()..roomId = roomId,
+      options: _authenticatedOptions(accessToken),
+    );
+    return _roomFrom(response);
+  }
+
+  @override
+  Future<LobbyRoom> joinByCode({
+    required String accessToken,
+    required String roomCode,
+    required String password,
+  }) async {
+    final response = await _lobby.joinByCode(
+      api.JoinByCodeRequest()
+        ..roomCode = roomCode
+        ..password = password,
+      options: _authenticatedOptions(accessToken),
+    );
+    return _roomFrom(response);
+  }
+
+  CallOptions _authenticatedOptions(String accessToken) => CallOptions(
+    metadata: {'authorization': 'Bearer ' + accessToken},
+  );
+
+  LobbyRoom _roomFrom(api.RoomSummary room) => LobbyRoom(
+    id: room.roomId,
+    hallId: room.hallId,
+    name: room.name,
+    status: switch (room.status) {
+      api.RoomStatus.ROOM_STATUS_WAITING => LobbyRoomStatus.waiting,
+      api.RoomStatus.ROOM_STATUS_PLAYING => LobbyRoomStatus.playing,
+      api.RoomStatus.ROOM_STATUS_CLOSED => LobbyRoomStatus.closed,
+      _ => LobbyRoomStatus.unspecified,
+    },
+    occupiedSeats: room.occupiedSeats,
+    capacity: room.capacity,
+    hasPassword: room.hasPassword,
+    version: room.version,
+  );
 
   @override
   Future<void> close() => _channel.shutdown();

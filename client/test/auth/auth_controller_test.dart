@@ -1,4 +1,5 @@
 import 'package:eighty_point_huai_an/src/api/api_client.dart';
+import 'package:eighty_point_huai_an/src/api/lobby_models.dart';
 import 'package:eighty_point_huai_an/src/auth/auth_controller.dart';
 import 'package:eighty_point_huai_an/src/auth/auth_session.dart';
 import 'package:eighty_point_huai_an/src/auth/session_store.dart';
@@ -82,6 +83,37 @@ class _FakeApiClient implements ApiClient {
 
   @override
   Future<void> logout(String refreshToken) => throw UnimplementedError();
+
+  @override
+  Future<List<LobbyHall>> listHalls({required String accessToken}) async =>
+      const [];
+
+  @override
+  Future<List<LobbyRoom>> listRooms({
+    required String accessToken,
+    required String hallId,
+  }) async => const [];
+
+  @override
+  Future<LobbyRoom> createRoom({
+    required String accessToken,
+    required String hallId,
+    required String name,
+    required String password,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<LobbyRoom> joinRoom({
+    required String accessToken,
+    required String roomId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<LobbyRoom> joinByCode({
+    required String accessToken,
+    required String roomCode,
+    required String password,
+  }) => throw UnimplementedError();
 
   @override
   Future<void> close() async {}
