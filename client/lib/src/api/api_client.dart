@@ -5,6 +5,7 @@ import 'package:grpc/service_api.dart';
 import 'channel_factory.dart';
 import '../auth/auth_session.dart';
 import 'lobby_models.dart';
+import 'player_models.dart';
 
 abstract interface class ApiClient {
   Future<AuthSession> login({
@@ -51,6 +52,18 @@ abstract interface class ApiClient {
     required String accessToken,
     required String roomCode,
     required String password,
+  });
+
+  Future<PlayerStatistics> getFriendStatistics({
+    required String accessToken,
+    required String userId,
+  });
+
+  Future<FriendRecentResultsPage> listFriendRecentResults({
+    required String accessToken,
+    required String userId,
+    String pageToken = '',
+    int pageSize = 20,
   });
 
   Future<void> close();
@@ -210,6 +223,54 @@ class GrpcApiClient implements ApiClient {
       options: _authenticatedOptions(accessToken),
     );
     return _roomFrom(response);
+  }
+
+  @override
+  Future<PlayerStatistics> getFriendStatistics({
+    required String accessToken,
+    required String userId,
+  }) async {
+    final response = await _player.getFriendStatistics(
+      api.GetFriendStatisticsRequest()..userId = userId,
+      options: _authenticatedOptions(accessToken),
+    );
+    return PlayerStatistics(
+      totalGames: response.totalGames,
+      wins: response.wins,
+      losses: response.losses,
+      points: response.points,
+      rank: response.rank,
+    );
+  }
+
+  @override
+  Future<FriendRecentResultsPage> listFriendRecentResults({
+    required String accessToken,
+    required String userId,
+    String pageToken = '',
+    int pageSize = 20,
+  }) async {
+    final response = await _player.listFriendRecentResults(
+      api.ListFriendRecentResultsRequest()
+        ..userId = userId
+        ..page = (api.PageRequest()
+          ..pageToken = pageToken
+          ..pageSize = pageSize),
+      options: _authenticatedOptions(accessToken),
+    );
+    return FriendRecentResultsPage(
+      results: response.results
+          .map(
+            (result) => RecentGameResult(
+              gameSessionId: result.gameSessionId,
+              won: result.won,
+              pointsDelta: result.pointsDelta,
+              endedAt: result.endedAt.toDateTime(),
+            ),
+          )
+          .toList(growable: false),
+      nextPageToken: response.page.nextPageToken,
+    );
   }
 
   CallOptions _authenticatedOptions(String accessToken) => CallOptions(

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:eighty_point_huai_an/src/api/api_client.dart';
 import 'package:eighty_point_huai_an/src/api/lobby_models.dart';
+import 'package:eighty_point_huai_an/src/api/player_models.dart';
 import 'package:eighty_point_huai_an/src/auth/auth_controller.dart';
 import 'package:eighty_point_huai_an/src/auth/auth_session.dart';
 import 'package:eighty_point_huai_an/src/auth/session_store.dart';
@@ -394,6 +395,20 @@ class _FakeApiClient implements ApiClient {
     required String accessToken,
     required String roomCode,
     required String password,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<PlayerStatistics> getFriendStatistics({
+    required String accessToken,
+    required String userId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<FriendRecentResultsPage> listFriendRecentResults({
+    required String accessToken,
+    required String userId,
+    String pageToken = '',
+    int pageSize = 20,
   }) => throw UnimplementedError();
 
   @override
