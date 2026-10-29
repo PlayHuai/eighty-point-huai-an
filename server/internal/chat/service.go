@@ -9,10 +9,10 @@ import (
 )
 
 var (
-	ErrInvalidInput     = errors.New("invalid chat input")
-	ErrNotFriends       = errors.New("private chat requires an accepted friendship")
-	ErrRequestConflict  = errors.New("request ID was reused with a different message")
-	ErrMessageNotFound  = errors.New("chat message not found")
+	ErrInvalidInput    = errors.New("invalid chat input")
+	ErrNotFriends      = errors.New("private chat requires an accepted friendship")
+	ErrRequestConflict = errors.New("request ID was reused with a different message")
+	ErrMessageNotFound = errors.New("chat message not found")
 )
 
 const (

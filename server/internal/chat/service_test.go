@@ -83,11 +83,11 @@ func TestSendPrivateMessageRejectsInvalidInputBeforeRepository(t *testing.T) {
 		t.Fatal(err)
 	}
 	tests := []struct {
-		name        string
-		sender      string
-		recipient   string
-		requestID   string
-		body        string
+		name      string
+		sender    string
+		recipient string
+		requestID string
+		body      string
 	}{
 		{name: "empty request ID", sender: "sender", recipient: "recipient", body: "hello"},
 		{name: "same participant", sender: "same", recipient: "same", requestID: "req", body: "hello"},

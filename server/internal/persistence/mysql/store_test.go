@@ -528,7 +528,8 @@ func TestLoadMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 3 || migrations[0].version != 1 || migrations[1].version != 2 || migrations[2].version != 3 {
+	if len(migrations) != 4 || migrations[0].version != 1 || migrations[1].version != 2 ||
+		migrations[2].version != 3 || migrations[3].version != 4 {
 		t.Fatalf("unexpected migrations: %#v", migrations)
 	}
 	for _, required := range []string{
@@ -553,6 +554,9 @@ func TestLoadMigrations(t *testing.T) {
 	if !strings.Contains(migrations[2].sql, "ADD COLUMN won BOOLEAN") {
 		t.Fatal("player outcomes migration is missing the won column")
 	}
+	if !strings.Contains(migrations[3].sql, "uq_chat_sender_request") {
+		t.Fatal("private message request migration is missing its idempotency key")
+	}
 }
 
 func TestApplyMigrationsRecordsVersionsAndIsIdempotent(t *testing.T) {
@@ -571,9 +575,10 @@ func TestApplyMigrationsRecordsVersionsAndIsIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	firstDDLCount := db.state.ddlCount
-	if len(db.state.migrations) != 3 || db.state.migrations[1].name != "0001_initial.sql" ||
+	if len(db.state.migrations) != 4 || db.state.migrations[1].name != "0001_initial.sql" ||
 		db.state.migrations[2].name != "0002_session_access_tokens.sql" ||
-		db.state.migrations[3].name != "0003_player_result_outcomes.sql" {
+		db.state.migrations[3].name != "0003_player_result_outcomes.sql" ||
+		db.state.migrations[4].name != "0004_private_chat_requests.sql" {
 		t.Fatalf("migration version was not recorded: %+v", db.state.migrations)
 	}
 	if err := ApplyMigrations(context.Background(), sqlDB); err != nil {

@@ -681,138 +681,6 @@ func (s *Store) RemoveFriend(ctx context.Context, userID, friendID string) error
 	if userID == "" || friendID == "" || userID == friendID {
 		return social.ErrInvalidInput
 	}
-
-	func (s *Store) SendPrivateMessage(
-		ctx context.Context,
-		senderID, recipientID, requestID, body string,
-	) (chat.Message, error) {
-		tx, err := s.db.BeginTx(ctx, nil)
-		if err != nil {
-			return chat.Message{}, fmt.Errorf("begin private message: %w", err)
-		}
-		defer tx.Rollback()
-
-		var friendshipStatus string
-		err = tx.QueryRowContext(ctx, `SELECT f.status FROM friendships f
-			JOIN users sender ON sender.id = f.user_id AND sender.status = 'ACTIVE'
-			JOIN users recipient ON recipient.id = f.friend_id AND recipient.status = 'ACTIVE'
-			WHERE f.user_id = ? AND f.friend_id = ? FOR UPDATE`, senderID, recipientID).Scan(&friendshipStatus)
-		if errors.Is(err, sql.ErrNoRows) || (err == nil && friendshipStatus != "ACCEPTED") {
-			return chat.Message{}, chat.ErrNotFriends
-		}
-		if err != nil {
-			return chat.Message{}, fmt.Errorf("authorize private message: %w", err)
-		}
-
-		var existing chat.Message
-		err = tx.QueryRowContext(ctx, `SELECT CAST(id AS CHAR), sender_id, recipient_id, body, created_at
-			FROM chat_messages WHERE sender_id = ? AND request_id = ?`, senderID, requestID).Scan(
-			&existing.ID, &existing.SenderID, &existing.RecipientID, &existing.Body, &existing.CreatedAt)
-		if err == nil {
-			if existing.RecipientID != recipientID || existing.Body != body {
-				return chat.Message{}, chat.ErrRequestConflict
-			}
-			if err := tx.Commit(); err != nil {
-				return chat.Message{}, fmt.Errorf("commit duplicate private message: %w", err)
-			}
-			return existing, nil
-		}
-		if !errors.Is(err, sql.ErrNoRows) {
-			return chat.Message{}, fmt.Errorf("find private message retry: %w", err)
-		}
-
-		result, err := tx.ExecContext(ctx, `INSERT INTO chat_messages
-			(room_id, sender_id, recipient_id, request_id, body) VALUES (NULL, ?, ?, ?, ?)`,
-			senderID, recipientID, requestID, body)
-		if err != nil {
-			if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
-				err = tx.QueryRowContext(ctx, `SELECT CAST(id AS CHAR), sender_id, recipient_id, body, created_at
-					FROM chat_messages WHERE sender_id = ? AND request_id = ? FOR UPDATE`, senderID, requestID).Scan(
-					&existing.ID, &existing.SenderID, &existing.RecipientID, &existing.Body, &existing.CreatedAt)
-				if err != nil {
-					return chat.Message{}, fmt.Errorf("read concurrent private message retry: %w", err)
-				}
-				if existing.RecipientID != recipientID || existing.Body != body {
-					return chat.Message{}, chat.ErrRequestConflict
-				}
-				if err := tx.Commit(); err != nil {
-					return chat.Message{}, fmt.Errorf("commit concurrent private message retry: %w", err)
-				}
-				return existing, nil
-			}
-			return chat.Message{}, fmt.Errorf("insert private message: %w", err)
-		}
-		messageID, err := result.LastInsertId()
-		if err != nil {
-			return chat.Message{}, fmt.Errorf("read private message ID: %w", err)
-		}
-		payload, err := json.Marshal(struct {
-			MessageID   string `json:"message_id"`
-			SenderID    string `json:"sender_user_id"`
-			RecipientID string `json:"recipient_user_id"`
-		}{strconv.FormatInt(messageID, 10), senderID, recipientID})
-		if err != nil {
-			return chat.Message{}, fmt.Errorf("encode private message event: %w", err)
-		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO outbox_events (event_type, aggregate_id, payload)
-			VALUES ('PRIVATE_MESSAGE_CREATED', ?, ?)`, recipientID, payload); err != nil {
-			return chat.Message{}, fmt.Errorf("store private message event: %w", err)
-		}
-		if err := tx.QueryRowContext(ctx, `SELECT created_at FROM chat_messages WHERE id = ?`, messageID).
-			Scan(&existing.CreatedAt); err != nil {
-			return chat.Message{}, fmt.Errorf("read private message timestamp: %w", err)
-		}
-		existing.ID = strconv.FormatInt(messageID, 10)
-		existing.SenderID = senderID
-		existing.RecipientID = recipientID
-		existing.Body = body
-		if err := tx.Commit(); err != nil {
-			return chat.Message{}, fmt.Errorf("commit private message: %w", err)
-		}
-		return existing, nil
-	}
-
-	func (s *Store) ListPrivateMessages(
-		ctx context.Context,
-		userID, peerID string,
-		offset, limit uint32,
-	) ([]chat.Message, error) {
-		if limit == 0 || limit > 101 {
-			return nil, chat.ErrInvalidInput
-		}
-		var status string
-		err := s.db.QueryRowContext(ctx, `SELECT f.status FROM friendships f
-			JOIN users user ON user.id = f.user_id AND user.status = 'ACTIVE'
-			JOIN users peer ON peer.id = f.friend_id AND peer.status = 'ACTIVE'
-			WHERE f.user_id = ? AND f.friend_id = ?`, userID, peerID).Scan(&status)
-		if errors.Is(err, sql.ErrNoRows) || (err == nil && status != "ACCEPTED") {
-			return nil, chat.ErrNotFriends
-		}
-		if err != nil {
-			return nil, fmt.Errorf("authorize private message history: %w", err)
-		}
-		rows, err := s.db.QueryContext(ctx, `SELECT CAST(id AS CHAR), sender_id, recipient_id, body, created_at
-			FROM chat_messages
-			WHERE room_id IS NULL AND
-				((sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?))
-			ORDER BY id LIMIT ? OFFSET ?`, userID, peerID, peerID, userID, limit, offset)
-		if err != nil {
-			return nil, fmt.Errorf("list private messages: %w", err)
-		}
-		defer rows.Close()
-		messages := make([]chat.Message, 0, limit)
-		for rows.Next() {
-			var message chat.Message
-			if err := rows.Scan(&message.ID, &message.SenderID, &message.RecipientID, &message.Body, &message.CreatedAt); err != nil {
-				return nil, fmt.Errorf("scan private message: %w", err)
-			}
-			messages = append(messages, message)
-		}
-		if err := rows.Err(); err != nil {
-			return nil, fmt.Errorf("read private messages: %w", err)
-		}
-		return messages, nil
-	}
 	result, err := s.db.ExecContext(ctx, `DELETE FROM friendships
 		WHERE status = 'ACCEPTED' AND ((user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?))`,
 		userID, friendID, friendID, userID)
@@ -827,6 +695,138 @@ func (s *Store) RemoveFriend(ctx context.Context, userID, friendID string) error
 		return social.ErrNotFriends
 	}
 	return nil
+}
+
+func (s *Store) SendPrivateMessage(
+	ctx context.Context,
+	senderID, recipientID, requestID, body string,
+) (chat.Message, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return chat.Message{}, fmt.Errorf("begin private message: %w", err)
+	}
+	defer tx.Rollback()
+
+	var friendshipStatus string
+	err = tx.QueryRowContext(ctx, `SELECT f.status FROM friendships f
+			JOIN users sender ON sender.id = f.user_id AND sender.status = 'ACTIVE'
+			JOIN users recipient ON recipient.id = f.friend_id AND recipient.status = 'ACTIVE'
+			WHERE f.user_id = ? AND f.friend_id = ? FOR UPDATE`, senderID, recipientID).Scan(&friendshipStatus)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && friendshipStatus != "ACCEPTED") {
+		return chat.Message{}, chat.ErrNotFriends
+	}
+	if err != nil {
+		return chat.Message{}, fmt.Errorf("authorize private message: %w", err)
+	}
+
+	var existing chat.Message
+	err = tx.QueryRowContext(ctx, `SELECT CAST(id AS CHAR), sender_id, recipient_id, body, created_at
+			FROM chat_messages WHERE sender_id = ? AND request_id = ?`, senderID, requestID).Scan(
+		&existing.ID, &existing.SenderID, &existing.RecipientID, &existing.Body, &existing.CreatedAt)
+	if err == nil {
+		if existing.RecipientID != recipientID || existing.Body != body {
+			return chat.Message{}, chat.ErrRequestConflict
+		}
+		if err := tx.Commit(); err != nil {
+			return chat.Message{}, fmt.Errorf("commit duplicate private message: %w", err)
+		}
+		return existing, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return chat.Message{}, fmt.Errorf("find private message retry: %w", err)
+	}
+
+	result, err := tx.ExecContext(ctx, `INSERT INTO chat_messages
+			(room_id, sender_id, recipient_id, request_id, body) VALUES (NULL, ?, ?, ?, ?)`,
+		senderID, recipientID, requestID, body)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
+			err = tx.QueryRowContext(ctx, `SELECT CAST(id AS CHAR), sender_id, recipient_id, body, created_at
+					FROM chat_messages WHERE sender_id = ? AND request_id = ? FOR UPDATE`, senderID, requestID).Scan(
+				&existing.ID, &existing.SenderID, &existing.RecipientID, &existing.Body, &existing.CreatedAt)
+			if err != nil {
+				return chat.Message{}, fmt.Errorf("read concurrent private message retry: %w", err)
+			}
+			if existing.RecipientID != recipientID || existing.Body != body {
+				return chat.Message{}, chat.ErrRequestConflict
+			}
+			if err := tx.Commit(); err != nil {
+				return chat.Message{}, fmt.Errorf("commit concurrent private message retry: %w", err)
+			}
+			return existing, nil
+		}
+		return chat.Message{}, fmt.Errorf("insert private message: %w", err)
+	}
+	messageID, err := result.LastInsertId()
+	if err != nil {
+		return chat.Message{}, fmt.Errorf("read private message ID: %w", err)
+	}
+	payload, err := json.Marshal(struct {
+		MessageID   string `json:"message_id"`
+		SenderID    string `json:"sender_user_id"`
+		RecipientID string `json:"recipient_user_id"`
+	}{strconv.FormatInt(messageID, 10), senderID, recipientID})
+	if err != nil {
+		return chat.Message{}, fmt.Errorf("encode private message event: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO outbox_events (event_type, aggregate_id, payload)
+			VALUES ('PRIVATE_MESSAGE_CREATED', ?, ?)`, recipientID, payload); err != nil {
+		return chat.Message{}, fmt.Errorf("store private message event: %w", err)
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT created_at FROM chat_messages WHERE id = ?`, messageID).
+		Scan(&existing.CreatedAt); err != nil {
+		return chat.Message{}, fmt.Errorf("read private message timestamp: %w", err)
+	}
+	existing.ID = strconv.FormatInt(messageID, 10)
+	existing.SenderID = senderID
+	existing.RecipientID = recipientID
+	existing.Body = body
+	if err := tx.Commit(); err != nil {
+		return chat.Message{}, fmt.Errorf("commit private message: %w", err)
+	}
+	return existing, nil
+}
+
+func (s *Store) ListPrivateMessages(
+	ctx context.Context,
+	userID, peerID string,
+	offset, limit uint32,
+) ([]chat.Message, error) {
+	if limit == 0 || limit > 101 {
+		return nil, chat.ErrInvalidInput
+	}
+	var status string
+	err := s.db.QueryRowContext(ctx, `SELECT f.status FROM friendships f
+			JOIN users user ON user.id = f.user_id AND user.status = 'ACTIVE'
+			JOIN users peer ON peer.id = f.friend_id AND peer.status = 'ACTIVE'
+			WHERE f.user_id = ? AND f.friend_id = ?`, userID, peerID).Scan(&status)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && status != "ACCEPTED") {
+		return nil, chat.ErrNotFriends
+	}
+	if err != nil {
+		return nil, fmt.Errorf("authorize private message history: %w", err)
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT CAST(id AS CHAR), sender_id, recipient_id, body, created_at
+			FROM chat_messages
+			WHERE room_id IS NULL AND
+				((sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?))
+			ORDER BY id LIMIT ? OFFSET ?`, userID, peerID, peerID, userID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list private messages: %w", err)
+	}
+	defer rows.Close()
+	messages := make([]chat.Message, 0, limit)
+	for rows.Next() {
+		var message chat.Message
+		if err := rows.Scan(&message.ID, &message.SenderID, &message.RecipientID, &message.Body, &message.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan private message: %w", err)
+		}
+		messages = append(messages, message)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read private messages: %w", err)
+	}
+	return messages, nil
 }
 
 func (s *Store) CreateRoomInvite(ctx context.Context, userID, roomID, friendID string) error {
