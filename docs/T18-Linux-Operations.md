@@ -46,9 +46,9 @@
 
 ## 监控与告警
 
-`deploy/monitoring/prometheus.yml` 和 `alerts.yml` 提供 Prometheus 的基础 HTTP 可用性探测与告警规则。配置假设 Prometheus 与服务端运行在同一 Linux 主机，因此目标为默认映射端口 `127.0.0.1:8080`；若 `HTTP_PORT` 使用其他值，须同步修改抓取目标。若由集中式 Prometheus 抓取，须通过受控网络/代理改成可达的内部地址，不能为监控而将应用端口暴露到公网。
+`deploy/monitoring/prometheus.yml` 和 `alerts.yml` 提供 Prometheus 的基础 HTTP 可用性探测与告警规则。该配置通过 Blackbox Exporter 的 `http_2xx` 模块探测 `/healthz`（健康时返回 HTTP 204），因此须在 Prometheus 同一主机安装并运行 Blackbox Exporter，且其默认地址为 `127.0.0.1:9115`。配置假设 Prometheus 与服务端运行在同一 Linux 主机，因此探测目标为默认映射端口 `127.0.0.1:8080`；若 `HTTP_PORT` 使用其他值，须同步修改目标。若由集中式 Prometheus 抓取，须通过受控网络/代理改成可达的内部地址，不能为监控而将应用端口暴露到公网。
 
-将这两个配置载入主机上的 Prometheus，并将 Alertmanager 配置到已确认的值班通知渠道（配置文件内目标为本机 `127.0.0.1:9093`）。启用前验证规则已加载、测试告警确实送达值班渠道，并记录责任人及升级路径。当前规则仅覆盖健康端点失败、抓取目标丢失和抓取耗时；目前没有可抓取的 Prometheus 应用指标端点，因而不覆盖架构要求的游戏、数据库连接池、Redis、结算或 WebSocket 指标。不能据此推断业务健康。
+将这两个配置载入主机上的 Prometheus，并将 Alertmanager 配置到已确认的值班通知渠道（配置文件内目标为本机 `127.0.0.1:9093`）。告警依据 `probe_success` 判断 HTTP 探测结果；Prometheus 的 `up` 用于发现 Blackbox Exporter 抓取失败，`probe_duration_seconds` 用于判断探测耗时。启用前验证规则已加载、测试告警确实送达值班渠道，并记录责任人及升级路径。当前规则仅覆盖健康端点失败、探测目标丢失和探测耗时；目前没有可抓取的 Prometheus 应用指标端点，因而不覆盖架构要求的游戏、数据库连接池、Redis、结算或 WebSocket 指标。不能据此推断业务健康。
 
 规则中的 1 分钟和 2 秒是基础故障探测值，不是已批准的业务 SLO；生产启用前须结合确认后的容量和告警策略复核。
 
@@ -73,14 +73,15 @@ free -h
    docker image tag eighty-point-huai-an/server:local eighty-point-huai-an/server:rollback-<旧版本>
    ```
 
-3. 将入口置于维护状态，确认没有新的写请求；从仓库根目录运行：
+3. 获取目标发布版本的源码，并核对其发布标签/提交与已批准版本一致；核对该版本的数据库迁移文件及迁移兼容性说明。`upgrade.sh` 不会下载或切换源码，只会构建当前工作区，因此必须在目标版本的源码工作区执行。保留现有 `deploy/.env` 和 `deploy/backups/`，不得用目标源码覆盖或删除环境文件及备份。
+4. 将入口置于维护状态，确认没有新的写请求；从目标版本工作区的仓库根目录运行：
 
    ```sh
    ./deploy/scripts/upgrade.sh
    ```
 
    脚本会先备份 MySQL，再构建服务端/迁移镜像、停止服务、运行迁移并等待新服务健康。若任一步失败，保持维护状态并执行下方回滚，不要继续接收写流量。
-4. 检查 `docker compose ... ps`、`server healthcheck`、迁移日志和监控告警；在业务 API 可用后按发布验收清单做登录、房间、牌局恢复及结算的端到端检查。当前骨架没有这些已接通的运行时接口，不能在本仓库状态下通过这些业务验收。
+5. 检查 `docker compose ... ps`、`server healthcheck`、迁移日志和监控告警；在业务 API 可用后按发布验收清单做登录、房间、牌局恢复及结算的端到端检查。当前骨架没有这些已接通的运行时接口，不能在本仓库状态下通过这些业务验收。
 
 ## 回滚
 
