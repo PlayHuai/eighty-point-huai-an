@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/Derek0120/eighty-point-huai-an/server/gen/huai/v1"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/player"
@@ -15,6 +16,9 @@ type profileRepositoryStub struct {
 	updatedUserID string
 	nickname      string
 	avatarURL     string
+	friends       bool
+	statistics    player.Statistics
+	results       []player.RecentResult
 }
 
 func (*profileRepositoryStub) GetPublicProfile(context.Context, string) (player.PublicProfile, error) {
@@ -24,6 +28,18 @@ func (*profileRepositoryStub) GetPublicProfile(context.Context, string) (player.
 func (r *profileRepositoryStub) UpdatePublicProfile(_ context.Context, userID, nickname, avatarURL string) (player.PublicProfile, error) {
 	r.updatedUserID, r.nickname, r.avatarURL = userID, nickname, avatarURL
 	return player.PublicProfile{UserID: userID, Nickname: nickname, AvatarURL: avatarURL}, nil
+}
+
+func (r *profileRepositoryStub) AreFriends(context.Context, string, string) (bool, error) {
+	return r.friends, nil
+}
+
+func (r *profileRepositoryStub) GetStatistics(context.Context, string) (player.Statistics, error) {
+	return r.statistics, nil
+}
+
+func (r *profileRepositoryStub) ListRecentResults(context.Context, string, uint32, uint32) ([]player.RecentResult, error) {
+	return r.results, nil
 }
 
 type socialRepositoryStub struct {
@@ -136,6 +152,41 @@ func TestPlayerAndFriendRPCsRejectMissingIdentity(t *testing.T) {
 	if _, err := (&friendServer{service: socialService}).ListRoomInvitations(
 		context.Background(), &huaiv1.PageRequest{}); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("unauthenticated ListRoomInvitations error = %v", err)
+	}
+}
+
+func TestPlayerStatisticsRPCsRestrictFriendResults(t *testing.T) {
+	repository := &profileRepositoryStub{
+		friends: true,
+		statistics: player.Statistics{
+			TotalGames: 3, Wins: 2, Losses: 1, Points: 1100, Rank: "白银",
+		},
+		results: []player.RecentResult{
+			{GameSessionID: "game-1", Won: true, PointsDelta: 25, EndedAt: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)},
+		},
+	}
+	service, err := player.NewPublicProfileService(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &playerServer{service: service}
+	ctx := ctxWithUserID(context.Background(), "viewer")
+
+	stats, err := server.GetFriendStatistics(ctx, &huaiv1.GetFriendStatisticsRequest{UserId: "friend"})
+	if err != nil || stats.GetTotalGames() != 3 || stats.GetPoints() != 1100 {
+		t.Fatalf("GetFriendStatistics() = %+v, %v", stats, err)
+	}
+	results, err := server.ListFriendRecentResults(ctx, &huaiv1.ListFriendRecentResultsRequest{
+		UserId: "friend", Page: &huaiv1.PageRequest{PageSize: 1},
+	})
+	if err != nil || len(results.GetResults()) != 1 ||
+		results.GetResults()[0].GetGameSessionId() != "game-1" ||
+		results.GetResults()[0].GetEndedAt().AsTime() != repository.results[0].EndedAt {
+		t.Fatalf("ListFriendRecentResults() = %+v, %v", results, err)
+	}
+	repository.friends = false
+	if _, err := server.GetFriendStatistics(ctx, &huaiv1.GetFriendStatisticsRequest{UserId: "stranger"}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("GetFriendStatistics for non-friend error = %v, want PermissionDenied", err)
 	}
 }
 
