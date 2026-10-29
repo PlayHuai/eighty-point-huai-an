@@ -75,7 +75,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     final session = widget.auth.session;
     if (session == null || _isJoining) return;
     if (room.hasPassword) {
-      await _showJoinByCodeDialog();
+      await _showJoinByCodeDialog(initialCode: room.id);
       return;
     }
     setState(() => _isJoining = true);
@@ -267,7 +267,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     passwordController.dispose();
   }
 
-  Future<void> _showCreateRoomDialog(String hallId) async {
+  Future<void> _showCreateRoomDialog(LobbyHall hall) async {
     final nameController = TextEditingController();
     final passwordController = TextEditingController();
     final minimumPointsController = TextEditingController(text: '0');
@@ -286,7 +286,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                 maxLength: 32,
                 decoration: const InputDecoration(labelText: '房间名称'),
               ),
-              if (hallId != friendRoomHallId) ...[
+              if (hall.id != friendRoomHallId) ...[
                 const SizedBox(height: DarkTokens.spacingS3),
                 TextField(
                   controller: passwordController,
@@ -330,13 +330,24 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                         );
                         return;
                       }
+                      if (hall.maximumPoints > 0 &&
+                          parsedMinimumPoints > hall.maximumPoints) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              '最低准入积分不能超过当前大厅上限（${hall.maximumPoints} 分）。',
+                            ),
+                          ),
+                        );
+                        return;
+                      }
                       _createRoom(
                         dialogContext,
-                        hallId,
+                        hall.id,
                         nameController.text.trim(),
                         passwordController.text,
                         allowSpectators,
-                        hallId == friendRoomHallId ? 0 : parsedMinimumPoints,
+                        hall.id == friendRoomHallId ? 0 : parsedMinimumPoints,
                       );
                     },
               child: const Text('创建'),
@@ -560,7 +571,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                       FilledButton.icon(
                         onPressed: _isCreating
                             ? null
-                            : () => _showCreateRoomDialog(selectedHall.id),
+                            : () => _showCreateRoomDialog(selectedHall),
                         icon: const Icon(Icons.add),
                         label: const Text('创建房间'),
                       ),
@@ -719,6 +730,17 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                   '${room.occupiedSeats}/${room.capacity} 人  ·  ${_statusLabel(room.status)}',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
+                if (room.minimumPoints > 0 || room.allowSpectators) ...[
+                  const SizedBox(height: DarkTokens.spacingS1),
+                  Wrap(
+                    spacing: DarkTokens.spacingS2,
+                    children: [
+                      if (room.minimumPoints > 0)
+                        Text('最低积分 ${room.minimumPoints}'),
+                      if (room.allowSpectators) const Text('允许观战'),
+                    ],
+                  ),
+                ],
                 const Spacer(),
                 Align(
                   alignment: Alignment.centerRight,

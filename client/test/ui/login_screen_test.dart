@@ -171,6 +171,8 @@ void main() {
             capacity: 4,
             hasPassword: false,
             version: 3,
+            allowSpectators: true,
+            minimumPoints: 100,
           ),
         ],
       };
@@ -184,11 +186,112 @@ void main() {
     expect(find.text('普通大厅'), findsOneWidget);
     expect(find.text('周末牌局'), findsOneWidget);
     expect(find.text('2/4 人  ·  等待中'), findsOneWidget);
+    expect(find.text('最低积分 100'), findsOneWidget);
+    expect(find.text('允许观战'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(FilledButton, '加入'));
     await tester.pumpAndSettle();
     expect(api.joinedRoomId, 'room-1');
     expect(find.textContaining('已加入 周末牌局'), findsOneWidget);
+  });
+
+  testWidgets('joining a password-protected room pre-fills its room number', (
+    tester,
+  ) async {
+    final api = _FakeApiClient()
+      ..halls = const [
+        LobbyHall(
+          id: 'normal',
+          name: '普通大厅',
+          minimumPoints: 0,
+          maximumPoints: 9999,
+          multiplier: 1,
+        ),
+      ]
+      ..roomsByHall = const {
+        'normal': [
+          LobbyRoom(
+            id: 'locked-room',
+            hallId: 'normal',
+            name: '密码房',
+            status: LobbyRoomStatus.waiting,
+            occupiedSeats: 1,
+            capacity: 4,
+            hasPassword: true,
+            version: 1,
+          ),
+        ],
+      };
+    final auth = AuthController(api: api, store: _FakeSessionStore());
+    final login = auth.login('account', 'password');
+    api.loginCompleter.complete(_session);
+    await login;
+
+    await tester.pumpWidget(ClientApp(auth: auth));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '加入'));
+    await tester.pumpAndSettle();
+
+    final roomCodeField = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField && widget.decoration?.labelText == '房间号',
+    );
+    expect(
+      tester.widget<TextField>(roomCodeField).controller!.text,
+      'locked-room',
+    );
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.text('加入'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(api.joinedRoomCode, 'locked-room');
+  });
+
+  testWidgets('room minimum points cannot exceed the selected hall cap', (
+    tester,
+  ) async {
+    final api = _FakeApiClient()
+      ..halls = const [
+        LobbyHall(
+          id: 'normal',
+          name: '普通大厅',
+          minimumPoints: 0,
+          maximumPoints: 100,
+          multiplier: 1,
+        ),
+      ];
+    final auth = AuthController(api: api, store: _FakeSessionStore());
+    final login = auth.login('account', 'password');
+    api.loginCompleter.complete(_session);
+    await login;
+
+    await tester.pumpWidget(ClientApp(auth: auth));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '创建房间'));
+    await tester.pumpAndSettle();
+    final roomNameField = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField && widget.decoration?.labelText == '房间名称',
+    );
+    final minimumPointsField = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField && widget.decoration?.labelText == '最低准入积分',
+    );
+    await tester.enterText(roomNameField, '测试牌局');
+    await tester.enterText(minimumPointsField, '101');
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(FilledButton, '创建'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('最低准入积分不能超过当前大厅上限（100 分）。'), findsOneWidget);
+    expect(api.createdRoomMinimumPoints, isEmpty);
   });
 
   testWidgets('login validates required fields and shows server errors', (
@@ -466,12 +569,14 @@ class _FakeApiClient implements ApiClient {
   List<PlayerFriend> friends = const [];
   final requestedRoomHallIds = <String>[];
   String? joinedRoomId;
+  String? joinedRoomCode;
   String? joinedInvitationRoomId;
   String? joinedInvitationRequestId;
   String? invitedFriendId;
   String? invitedRoomId;
   final chatRequestIds = <String>[];
   final sentMessages = <ChatMessage>[];
+  final createdRoomMinimumPoints = <int>[];
   bool failNextChatSend = false;
 
   @override
@@ -527,16 +632,19 @@ class _FakeApiClient implements ApiClient {
     bool allowSpectators = false,
     int minimumPoints = 0,
     String requestId = '',
-  }) async => LobbyRoom(
-    id: 'created-friend-room',
-    hallId: hallId,
-    name: name,
-    status: LobbyRoomStatus.waiting,
-    occupiedSeats: 0,
-    capacity: 4,
-    hasPassword: password.isNotEmpty,
-    version: 1,
-  );
+  }) async {
+    createdRoomMinimumPoints.add(minimumPoints);
+    return LobbyRoom(
+      id: 'created-friend-room',
+      hallId: hallId,
+      name: name,
+      status: LobbyRoomStatus.waiting,
+      occupiedSeats: 0,
+      capacity: 4,
+      hasPassword: password.isNotEmpty,
+      version: 1,
+    );
+  }
 
   @override
   Future<LobbyRoom> joinRoom({
@@ -554,7 +662,19 @@ class _FakeApiClient implements ApiClient {
     required String accessToken,
     required String roomCode,
     required String password,
-  }) => throw UnimplementedError();
+  }) async {
+    joinedRoomCode = roomCode;
+    return LobbyRoom(
+      id: roomCode,
+      hallId: 'normal',
+      name: '密码房',
+      status: LobbyRoomStatus.waiting,
+      occupiedSeats: 1,
+      capacity: 4,
+      hasPassword: true,
+      version: 1,
+    );
+  }
 
   @override
   Future<PlayerStatistics> getFriendStatistics({
