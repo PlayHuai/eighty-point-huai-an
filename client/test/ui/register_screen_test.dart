@@ -372,6 +372,29 @@ class _FakeApiClient implements ApiClient {
   }) => throw UnimplementedError();
 
   @override
+  Future<List<RoomInvitation>> listRoomInvitations({
+    required String accessToken,
+  }) async => const [];
+
+  @override
+  Future<List<PlayerFriend>> listFriends({required String accessToken}) async =>
+      const [];
+
+  @override
+  Future<void> sendRoomInvite({
+    required String accessToken,
+    required String roomId,
+    required String friendId,
+  }) async {}
+
+  @override
+  Future<LobbyRoom> joinInvitedRoom({
+    required String accessToken,
+    required String roomId,
+    required String requestId,
+  }) => throw UnimplementedError();
+
+  @override
   Future<void> close() async {}
 }
 

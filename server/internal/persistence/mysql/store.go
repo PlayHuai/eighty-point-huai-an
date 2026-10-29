@@ -704,6 +704,7 @@ func (s *Store) CreateRoomInvite(ctx context.Context, userID, roomID, friendID s
 	if s.roomManager == nil || !s.roomManager.CanInvite(roomID, userID) {
 		return social.ErrRoomUnavailable
 	}
+	friendRoom := s.roomManager.IsFriendRoom(roomID)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin room invitation: %w", err)
@@ -734,7 +735,15 @@ func (s *Store) CreateRoomInvite(ctx context.Context, userID, roomID, friendID s
 		VALUES ('FRIEND_ROOM_INVITE', ?, ?)`, friendID, payload); err != nil {
 		return fmt.Errorf("store room invitation: %w", err)
 	}
+	if friendRoom {
+		if err := s.roomManager.InviteFriend(roomID, userID, friendID); err != nil {
+			return social.ErrRoomUnavailable
+		}
+	}
 	if err := tx.Commit(); err != nil {
+		if friendRoom {
+			s.roomManager.RevokeFriendInvitation(roomID, friendID)
+		}
 		return fmt.Errorf("commit room invitation: %w", err)
 	}
 	return nil

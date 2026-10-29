@@ -15,6 +15,8 @@ func TestCanEnterHallAllowsLowerHallsOnly(t *testing.T) {
 		{name: "advanced threshold", points: 10000, hall: HallAdvanced, want: true},
 		{name: "advanced player cannot enter supreme hall", points: 39999, hall: HallSupreme},
 		{name: "supreme threshold", points: 40000, hall: HallSupreme, want: true},
+		{name: "friend room always requires an invitation", points: 0, hall: HallFriend},
+		{name: "friend room ignores ranked eligibility", points: 50000, hall: HallFriend},
 		{name: "unknown hall", points: 50000, hall: "unknown"},
 	}
 

@@ -1,5 +1,7 @@
 enum LobbyRoomStatus { waiting, playing, closed, unspecified }
 
+const friendRoomHallId = 'friend';
+
 class LobbyHall {
   const LobbyHall({
     required this.id,

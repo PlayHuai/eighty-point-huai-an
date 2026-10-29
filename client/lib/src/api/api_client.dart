@@ -66,6 +66,24 @@ abstract interface class ApiClient {
     int pageSize = 20,
   });
 
+  Future<List<RoomInvitation>> listRoomInvitations({
+    required String accessToken,
+  });
+
+  Future<List<PlayerFriend>> listFriends({required String accessToken});
+
+  Future<void> sendRoomInvite({
+    required String accessToken,
+    required String roomId,
+    required String friendId,
+  });
+
+  Future<LobbyRoom> joinInvitedRoom({
+    required String accessToken,
+    required String roomId,
+    required String requestId,
+  });
+
   Future<void> close();
 }
 
@@ -79,6 +97,8 @@ class GrpcApiClient implements ApiClient {
   late final api.AuthServiceClient _auth;
   late final api.PlayerServiceClient _player;
   late final api.LobbyServiceClient _lobby = api.LobbyServiceClient(_channel);
+  late final api.FriendServiceClient _friends = api.FriendServiceClient(_channel);
+  late final api.RoomServiceClient _room = api.RoomServiceClient(_channel);
 
   @override
   Future<AuthSession> login({
@@ -271,6 +291,94 @@ class GrpcApiClient implements ApiClient {
           .toList(growable: false),
       nextPageToken: response.page.nextPageToken,
     );
+  }
+
+  @override
+  Future<List<RoomInvitation>> listRoomInvitations({
+    required String accessToken,
+  }) async {
+    final invitations = <RoomInvitation>[];
+    final seenPageTokens = <String>{};
+    var pageToken = '';
+    do {
+      final response = await _friends.listRoomInvitations(
+        api.PageRequest()
+          ..pageToken = pageToken
+          ..pageSize = 50,
+        options: _authenticatedOptions(accessToken),
+      );
+      invitations.addAll(
+        response.invitations.map(
+          (invitation) => RoomInvitation(
+            roomId: invitation.roomId,
+            inviterUserId: invitation.inviter.userId,
+            inviterNickname: invitation.inviter.nickname,
+            invitedAt: invitation.invitedAt.toDateTime(),
+          ),
+        ),
+      );
+      final nextPageToken = response.page.nextPageToken;
+      if (nextPageToken.isEmpty || !seenPageTokens.add(nextPageToken)) break;
+      pageToken = nextPageToken;
+    } while (true);
+    return invitations;
+  }
+
+  @override
+  Future<void> sendRoomInvite({
+    required String accessToken,
+    required String roomId,
+    required String friendId,
+  }) async {
+    await _friends.sendRoomInvite(
+      api.SendRoomInviteRequest()
+        ..roomId = roomId
+        ..friendId = friendId,
+      options: _authenticatedOptions(accessToken),
+    );
+  }
+
+  @override
+  Future<List<PlayerFriend>> listFriends({required String accessToken}) async {
+    final friends = <PlayerFriend>[];
+    final seenPageTokens = <String>{};
+    var pageToken = '';
+    do {
+      final response = await _friends.listFriends(
+        api.PageRequest()
+          ..pageToken = pageToken
+          ..pageSize = 50,
+        options: _authenticatedOptions(accessToken),
+      );
+      friends.addAll(
+        response.friends.map(
+          (friend) => PlayerFriend(
+            userId: friend.profile.userId,
+            nickname: friend.profile.nickname,
+            avatarUrl: friend.profile.avatarUrl,
+          ),
+        ),
+      );
+      final nextPageToken = response.page.nextPageToken;
+      if (nextPageToken.isEmpty || !seenPageTokens.add(nextPageToken)) break;
+      pageToken = nextPageToken;
+    } while (true);
+    return friends;
+  }
+
+  @override
+  Future<LobbyRoom> joinInvitedRoom({
+    required String accessToken,
+    required String roomId,
+    required String requestId,
+  }) async {
+    final response = await _room.joinInvitedRoom(
+      api.JoinInvitedRoomRequest()
+        ..roomId = roomId
+        ..requestId = requestId,
+      options: _authenticatedOptions(accessToken),
+    );
+    return _roomFrom(response.room);
   }
 
   CallOptions _authenticatedOptions(String accessToken) => CallOptions(

@@ -858,6 +858,7 @@ var LobbyService_ServiceDesc = grpc.ServiceDesc{
 
 const (
 	RoomService_GetRoom_FullMethodName           = "/huai.v1.RoomService/GetRoom"
+	RoomService_JoinInvitedRoom_FullMethodName   = "/huai.v1.RoomService/JoinInvitedRoom"
 	RoomService_SitDown_FullMethodName           = "/huai.v1.RoomService/SitDown"
 	RoomService_ChangeSeat_FullMethodName        = "/huai.v1.RoomService/ChangeSeat"
 	RoomService_StandUp_FullMethodName           = "/huai.v1.RoomService/StandUp"
@@ -872,6 +873,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type RoomServiceClient interface {
 	GetRoom(ctx context.Context, in *RoomRequest, opts ...grpc.CallOption) (*RoomDetails, error)
+	JoinInvitedRoom(ctx context.Context, in *JoinInvitedRoomRequest, opts ...grpc.CallOption) (*RoomDetails, error)
 	SitDown(ctx context.Context, in *SeatRequest, opts ...grpc.CallOption) (*RoomDetails, error)
 	ChangeSeat(ctx context.Context, in *SeatRequest, opts ...grpc.CallOption) (*RoomDetails, error)
 	StandUp(ctx context.Context, in *RoomRequest, opts ...grpc.CallOption) (*RoomDetails, error)
@@ -893,6 +895,16 @@ func (c *roomServiceClient) GetRoom(ctx context.Context, in *RoomRequest, opts .
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RoomDetails)
 	err := c.cc.Invoke(ctx, RoomService_GetRoom_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *roomServiceClient) JoinInvitedRoom(ctx context.Context, in *JoinInvitedRoomRequest, opts ...grpc.CallOption) (*RoomDetails, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RoomDetails)
+	err := c.cc.Invoke(ctx, RoomService_JoinInvitedRoom_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -974,6 +986,7 @@ func (c *roomServiceClient) StartGame(ctx context.Context, in *RoomRequest, opts
 // for forward compatibility.
 type RoomServiceServer interface {
 	GetRoom(context.Context, *RoomRequest) (*RoomDetails, error)
+	JoinInvitedRoom(context.Context, *JoinInvitedRoomRequest) (*RoomDetails, error)
 	SitDown(context.Context, *SeatRequest) (*RoomDetails, error)
 	ChangeSeat(context.Context, *SeatRequest) (*RoomDetails, error)
 	StandUp(context.Context, *RoomRequest) (*RoomDetails, error)
@@ -993,6 +1006,9 @@ type UnimplementedRoomServiceServer struct{}
 
 func (UnimplementedRoomServiceServer) GetRoom(context.Context, *RoomRequest) (*RoomDetails, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetRoom not implemented")
+}
+func (UnimplementedRoomServiceServer) JoinInvitedRoom(context.Context, *JoinInvitedRoomRequest) (*RoomDetails, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method JoinInvitedRoom not implemented")
 }
 func (UnimplementedRoomServiceServer) SitDown(context.Context, *SeatRequest) (*RoomDetails, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SitDown not implemented")
@@ -1050,6 +1066,24 @@ func _RoomService_GetRoom_Handler(srv interface{}, ctx context.Context, dec func
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(RoomServiceServer).GetRoom(ctx, req.(*RoomRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _RoomService_JoinInvitedRoom_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(JoinInvitedRoomRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RoomServiceServer).JoinInvitedRoom(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RoomService_JoinInvitedRoom_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RoomServiceServer).JoinInvitedRoom(ctx, req.(*JoinInvitedRoomRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1190,6 +1224,10 @@ var RoomService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetRoom",
 			Handler:    _RoomService_GetRoom_Handler,
+		},
+		{
+			MethodName: "JoinInvitedRoom",
+			Handler:    _RoomService_JoinInvitedRoom_Handler,
 		},
 		{
 			MethodName: "SitDown",

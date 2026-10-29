@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grpc/grpc.dart';
 
 import '../api/lobby_models.dart';
+import '../api/player_models.dart';
+import '../api/request_id.dart';
 import '../auth/auth_controller.dart';
 import 'client_providers.dart';
 import 'components/design_icon.dart';
@@ -28,6 +30,14 @@ final lobbyRoomsProvider = FutureProvider.family<List<LobbyRoom>, String>((
       .listRooms(accessToken: session.accessToken, hallId: hallId);
 });
 
+final roomInvitationsProvider = FutureProvider<List<RoomInvitation>>((ref) {
+  final session = ref.watch(authControllerProvider).session;
+  if (session == null) return Future.value(const <RoomInvitation>[]);
+  return ref
+      .watch(apiClientProvider)
+      .listRoomInvitations(accessToken: session.accessToken);
+});
+
 class LobbyScreen extends ConsumerStatefulWidget {
   const LobbyScreen({
     required this.auth,
@@ -46,7 +56,10 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   String? _selectedHallId;
   String _roomQuery = '';
   bool _isJoining = false;
+  bool _isJoiningInvitation = false;
   bool _isCreating = false;
+  bool _isSendingInvite = false;
+  final _invitationRequestIds = <String, String>{};
 
   Future<void> _joinRoom(LobbyRoom room) async {
     final session = widget.auth.session;
@@ -100,6 +113,32 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     }
   }
 
+  Future<void> _joinInvitedRoom(RoomInvitation invitation) async {
+    final session = widget.auth.session;
+    if (session == null || _isJoiningInvitation) return;
+    setState(() => _isJoiningInvitation = true);
+    final requestId = _invitationRequestIds.putIfAbsent(
+      invitation.roomId,
+      createRequestId,
+    );
+    try {
+      final room = await ref.read(apiClientProvider).joinInvitedRoom(
+        accessToken: session.accessToken,
+        roomId: invitation.roomId,
+        requestId: requestId,
+      );
+      _invitationRequestIds.remove(invitation.roomId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已加入 ${room.name}（房间号 ${room.id}）')),
+      );
+    } catch (error) {
+      _showError(error);
+    } finally {
+      if (mounted) setState(() => _isJoiningInvitation = false);
+    }
+  }
+
   Future<void> _createRoom(String hallId, String name, String password) async {
     final session = widget.auth.session;
     if (session == null || _isCreating) return;
@@ -123,6 +162,9 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('房间已创建（房间号 ${room.id}）')),
       );
+      if (hallId == friendRoomHallId) {
+        await _showFriendInviteDialog(room.id);
+      }
     } catch (error) {
       _showError(error);
     } finally {
@@ -202,12 +244,14 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
               maxLength: 32,
               decoration: const InputDecoration(labelText: '房间名称'),
             ),
-            const SizedBox(height: DarkTokens.spacingS3),
-            TextField(
-              controller: passwordController,
-              decoration: const InputDecoration(labelText: '房间密码（可选）'),
-              obscureText: true,
-            ),
+            if (hallId != friendRoomHallId) ...[
+              const SizedBox(height: DarkTokens.spacingS3),
+              TextField(
+                controller: passwordController,
+                decoration: const InputDecoration(labelText: '房间密码（可选）'),
+                obscureText: true,
+              ),
+            ],
           ],
         ),
         actions: [
@@ -230,6 +274,90 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     );
     nameController.dispose();
     passwordController.dispose();
+  }
+
+  Future<void> _showFriendInviteDialog(String roomId) async {
+    final session = widget.auth.session;
+    if (session == null) return;
+    List<PlayerFriend> friends;
+    try {
+      friends = await ref
+          .read(apiClientProvider)
+          .listFriends(accessToken: session.accessToken);
+    } catch (error) {
+      _showError(error);
+      return;
+    }
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('邀请好友加入好友房'),
+        content: friends.isEmpty
+            ? const Text('暂无可邀请的好友。')
+            : ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final friend in friends)
+                    ListTile(
+                      title: Text(
+                        friend.nickname.isEmpty
+                            ? friend.userId
+                            : friend.nickname,
+                      ),
+                      subtitle: Text(friend.userId),
+                      trailing: IconButton(
+                        tooltip: '发送邀请',
+                        onPressed: _isSendingInvite
+                            ? null
+                            : () => _sendRoomInvite(
+                                dialogContext,
+                                roomId,
+                                friend.userId,
+                              ),
+                        icon: const DesignIcon(
+                          name: DesignIconName.invite,
+                          enabled: true,
+                          size: DarkTokens.spacingS4,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('完成'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _sendRoomInvite(
+    BuildContext dialogContext,
+    String roomId,
+    String friendId,
+  ) async {
+    final session = widget.auth.session;
+    if (session == null || _isSendingInvite) return;
+    setState(() => _isSendingInvite = true);
+    try {
+      await ref.read(apiClientProvider).sendRoomInvite(
+        accessToken: session.accessToken,
+        roomId: roomId,
+        friendId: friendId,
+      );
+      if (!mounted) return;
+      Navigator.of(dialogContext).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('好友房邀请已发送。')),
+      );
+    } catch (error) {
+      _showError(error);
+    } finally {
+      if (mounted) setState(() => _isSendingInvite = false);
+    }
   }
 
   @override
@@ -371,17 +499,20 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                   ),
                   const SizedBox(height: DarkTokens.spacingS3),
                   Expanded(
-                    child: ref.watch(lobbyRoomsProvider(selectedHall.id)).when(
-                      loading: () => const Center(
-                        child: CircularProgressIndicator(),
-                      ),
-                      error: (_, _) => _loadError(
-                        onRetry: () =>
-                            ref.invalidate(lobbyRoomsProvider(selectedHall.id)),
-                      ),
-                      data: (rooms) =>
-                          _buildRooms(rooms, size, availableWidth),
-                    ),
+                    child: selectedHall.id == friendRoomHallId
+                        ? _buildFriendRoomInvitations()
+                        : ref.watch(lobbyRoomsProvider(selectedHall.id)).when(
+                            loading: () => const Center(
+                              child: CircularProgressIndicator(),
+                            ),
+                            error: (_, _) => _loadError(
+                              onRetry: () => ref.invalidate(
+                                lobbyRoomsProvider(selectedHall.id),
+                              ),
+                            ),
+                            data: (rooms) =>
+                                _buildRooms(rooms, size, availableWidth),
+                          ),
                   ),
                 ],
               );
@@ -391,6 +522,43 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       ],
     ),
   );
+
+  Widget _buildFriendRoomInvitations() =>
+      ref.watch(roomInvitationsProvider).when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (_, _) => _loadError(
+          onRetry: () => ref.invalidate(roomInvitationsProvider),
+        ),
+        data: (invitations) {
+          if (invitations.isEmpty) {
+            return const Center(
+              child: Text('好友房仅接受好友邀请，不公开展示房间列表。'),
+            );
+          }
+          return ListView.separated(
+            itemCount: invitations.length,
+            separatorBuilder: (_, _) =>
+                const SizedBox(height: DarkTokens.spacingS2),
+            itemBuilder: (context, index) {
+              final invitation = invitations[index];
+              return Card(
+                child: ListTile(
+                  title: Text(
+                    '${invitation.inviterNickname.isEmpty ? invitation.inviterUserId : invitation.inviterNickname} 邀请你加入好友房',
+                  ),
+                  subtitle: Text('房间号 ${invitation.roomId}'),
+                  trailing: FilledButton(
+                    onPressed: _isJoiningInvitation
+                        ? null
+                        : () => _joinInvitedRoom(invitation),
+                    child: Text(_isJoiningInvitation ? '加入中…' : '接受邀请'),
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      );
 
   Widget _buildRooms(
     List<LobbyRoom> rooms,

@@ -15,20 +15,22 @@ import (
 )
 
 var (
-	ErrInvalidInput       = errors.New("invalid room input")
-	ErrRoomNotFound       = errors.New("room not found")
-	ErrNotMember          = errors.New("user is not a room member")
-	ErrAlreadyMember      = errors.New("user is already a room member")
-	ErrRoomFull           = errors.New("room has no available seats")
-	ErrSpectatorsDisabled = errors.New("spectating is disabled")
-	ErrInvalidPassword    = errors.New("invalid room password")
-	ErrAdmissionDenied    = errors.New("hall or room admission denied")
-	ErrSeatUnavailable    = errors.New("seat is unavailable")
-	ErrRoomStarted        = errors.New("room is already playing")
-	ErrRoomNotReady       = errors.New("room requires four seated players")
-	ErrOwnerRequired      = errors.New("room owner permission required")
-	ErrVersionConflict    = errors.New("room version conflict")
-	ErrRoomClosed         = errors.New("room is closed")
+	ErrInvalidInput              = errors.New("invalid room input")
+	ErrRoomNotFound              = errors.New("room not found")
+	ErrNotMember                 = errors.New("user is not a room member")
+	ErrAlreadyMember             = errors.New("user is already a room member")
+	ErrRoomFull                  = errors.New("room has no available seats")
+	ErrSpectatorsDisabled        = errors.New("spectating is disabled")
+	ErrInvalidPassword           = errors.New("invalid room password")
+	ErrAdmissionDenied           = errors.New("hall or room admission denied")
+	ErrSeatUnavailable           = errors.New("seat is unavailable")
+	ErrRoomStarted               = errors.New("room is already playing")
+	ErrRoomNotReady              = errors.New("room requires four seated players")
+	ErrOwnerRequired             = errors.New("room owner permission required")
+	ErrVersionConflict           = errors.New("room version conflict")
+	ErrRoomClosed                = errors.New("room is closed")
+	ErrInvitationRequired        = errors.New("friend room invitation required")
+	ErrInvitationRequestConflict = errors.New("invitation request ID reused by another user")
 )
 
 type Status string
@@ -63,6 +65,7 @@ type Summary struct {
 	Capacity        uint32
 	HasPassword     bool
 	AllowSpectators bool
+	MinimumPoints   int64
 	Version         uint64
 }
 
@@ -85,14 +88,17 @@ type memberState struct {
 }
 
 type roomState struct {
-	mu            sync.Mutex
-	summary       Summary
-	ownerID       string
-	minimumPoints int64
-	passwordSalt  [16]byte
-	passwordHash  []byte
-	members       map[string]memberState
-	version       uint64
+	mu             sync.Mutex
+	summary        Summary
+	ownerID        string
+	minimumPoints  int64
+	passwordSalt   [16]byte
+	passwordHash   []byte
+	members        map[string]memberState
+	invitees       map[string]struct{}
+	joinedInvites  map[string]struct{}
+	inviteRequests map[string]string
+	version        uint64
 }
 
 type Manager struct {
@@ -113,8 +119,9 @@ func (m *Manager) CreateRoom(hallID, ownerID string, ownerPoints int64, settings
 		!utf8.ValidString(settings.Password) || len(settings.Password) > 128 {
 		return Details{}, ErrInvalidInput
 	}
-	if !lobby.CanEnter(ownerPoints, hallID) || settings.MinimumPoints > ownerPoints ||
-		(hall.MaximumPoints != 0 && settings.MinimumPoints > hall.MaximumPoints) {
+	if hallID == lobby.HallFriend && (settings.MinimumPoints != 0 || settings.Password != "") ||
+		hallID != lobby.HallFriend && (!lobby.CanEnter(ownerPoints, hallID) || settings.MinimumPoints > ownerPoints ||
+			(hall.MaximumPoints != 0 && settings.MinimumPoints > hall.MaximumPoints)) {
 		return Details{}, ErrAdmissionDenied
 	}
 
@@ -127,9 +134,11 @@ func (m *Manager) CreateRoom(hallID, ownerID string, ownerPoints int64, settings
 			ID: id, HallID: hallID, OwnerID: ownerID, Name: strings.TrimSpace(settings.Name),
 			Status: StatusWaiting, Capacity: 4,
 			HasPassword: settings.Password != "", AllowSpectators: settings.AllowSpectators,
+			MinimumPoints: settings.MinimumPoints,
 		},
 		ownerID: ownerID, minimumPoints: settings.MinimumPoints,
-		members: make(map[string]memberState),
+		members: make(map[string]memberState), invitees: make(map[string]struct{}),
+		joinedInvites: make(map[string]struct{}), inviteRequests: make(map[string]string),
 		version: 1,
 	}
 	if settings.Password != "" {
@@ -148,6 +157,9 @@ func (m *Manager) CreateRoom(hallID, ownerID string, ownerPoints int64, settings
 func (m *Manager) ListRooms(hallID string, userPoints int64) ([]Summary, error) {
 	if _, err := lobby.FindHall(hallID); err != nil {
 		return nil, lobby.ErrUnknownHall
+	}
+	if hallID == lobby.HallFriend {
+		return nil, ErrInvitationRequired
 	}
 	if userPoints < 0 || !lobby.CanEnter(userPoints, hallID) {
 		return nil, ErrAdmissionDenied
@@ -182,8 +194,18 @@ func (m *Manager) JoinRoom(roomID, userID string, points int64, password string,
 	if err := state.checkVersion(expectedVersion); err != nil {
 		return Details{}, err
 	}
-	if err := state.checkAdmission(userID, points); err != nil {
-		return Details{}, err
+	friendRoom := state.summary.HallID == lobby.HallFriend
+	if friendRoom && userID != state.ownerID {
+		return Details{}, ErrInvitationRequired
+	}
+	if friendRoom {
+		if userID == "" || points < 0 {
+			return Details{}, ErrInvalidInput
+		}
+	} else {
+		if err := state.checkAdmission(userID, points); err != nil {
+			return Details{}, err
+		}
 	}
 	if state.summary.Status != StatusWaiting {
 		return Details{}, ErrRoomStarted
@@ -213,6 +235,9 @@ func (m *Manager) JoinSpectator(roomID, userID string, points int64, password st
 	if err := state.checkVersion(expectedVersion); err != nil {
 		return Details{}, err
 	}
+	if state.summary.HallID == lobby.HallFriend {
+		return Details{}, ErrInvitationRequired
+	}
 	if err := state.checkHallAdmission(userID, points); err != nil {
 		return Details{}, err
 	}
@@ -234,6 +259,96 @@ func (m *Manager) JoinSpectator(roomID, userID string, points int64, password st
 	state.members[userID] = memberState{Member: Member{
 		UserID: userID, Role: RoleSpectator, ViewSeat: viewSeat,
 	}}
+	state.version++
+	return snapshotLocked(state), nil
+}
+
+func (m *Manager) InviteFriend(roomID, inviterID, friendID string) error {
+	if inviterID == "" || friendID == "" || inviterID == friendID {
+		return ErrInvalidInput
+	}
+	state, err := m.lockRoom(roomID)
+	if err != nil {
+		return err
+	}
+	defer state.mu.Unlock()
+	if state.summary.HallID != lobby.HallFriend || state.summary.Status != StatusWaiting {
+		return ErrInvitationRequired
+	}
+	if _, exists := state.members[friendID]; exists {
+		return ErrAlreadyMember
+	}
+	if inviterID != state.ownerID {
+		member, exists := state.members[inviterID]
+		if !exists || member.Role != RolePlayer || member.Seat == 0 {
+			return ErrOwnerRequired
+		}
+	}
+	state.invitees[friendID] = struct{}{}
+	delete(state.joinedInvites, friendID)
+	return nil
+}
+
+func (m *Manager) RevokeFriendInvitation(roomID, friendID string) {
+	state, err := m.lockRoom(roomID)
+	if err != nil {
+		return
+	}
+	defer state.mu.Unlock()
+	delete(state.invitees, friendID)
+}
+
+func (m *Manager) JoinInvitedFriendRoom(roomID, userID, password, requestID string, expectedVersion uint64) (Details, error) {
+	state, err := m.lockRoom(roomID)
+	if err != nil {
+		return Details{}, err
+	}
+	defer state.mu.Unlock()
+	if expectedVersion != 0 {
+		if err := state.checkVersion(expectedVersion); err != nil {
+			return Details{}, err
+		}
+	}
+	if requestID == "" || len(requestID) > 128 {
+		return Details{}, ErrInvalidInput
+	}
+	if requesterID, exists := state.inviteRequests[requestID]; exists {
+		if requesterID != userID {
+			return Details{}, ErrInvitationRequestConflict
+		}
+		return snapshotLocked(state), nil
+	}
+	if state.summary.HallID != lobby.HallFriend {
+		return Details{}, ErrInvitationRequired
+	}
+	if _, alreadyJoined := state.joinedInvites[userID]; alreadyJoined {
+		state.inviteRequests[requestID] = userID
+		return snapshotLocked(state), nil
+	}
+	if _, invited := state.invitees[userID]; !invited {
+		return Details{}, ErrInvitationRequired
+	}
+	if state.summary.Status != StatusWaiting {
+		return Details{}, ErrRoomStarted
+	}
+	if userID == "" {
+		return Details{}, ErrInvalidInput
+	}
+	if _, exists := state.members[userID]; exists {
+		return Details{}, ErrAlreadyMember
+	}
+	if state.summary.HasPassword && !verifyPassword(password, state.passwordSalt[:], state.passwordHash) {
+		return Details{}, ErrInvalidPassword
+	}
+	seat := firstOpenSeat(state.members)
+	if seat == 0 {
+		return Details{}, ErrRoomFull
+	}
+	state.members[userID] = memberState{Member: Member{UserID: userID, Role: RolePlayer, Seat: seat}}
+	delete(state.invitees, userID)
+	state.joinedInvites[userID] = struct{}{}
+	state.inviteRequests[requestID] = userID
+	state.summary.OccupiedSeats++
 	state.version++
 	return snapshotLocked(state), nil
 }
@@ -344,6 +459,7 @@ func (m *Manager) LeaveRoom(roomID, userID string, expectedVersion uint64) (Deta
 		return Details{}, ErrRoomStarted
 	}
 	delete(state.members, userID)
+	delete(state.joinedInvites, userID)
 	if member.Role == RolePlayer && member.Seat != 0 {
 		state.summary.OccupiedSeats--
 	}
@@ -469,6 +585,15 @@ func (m *Manager) CanInvite(roomID, userID string) bool {
 	}
 	member, exists := state.members[userID]
 	return exists && member.Role == RolePlayer && member.Seat != 0
+}
+
+func (m *Manager) IsFriendRoom(roomID string) bool {
+	state, err := m.lockRoom(roomID)
+	if err != nil {
+		return false
+	}
+	defer state.mu.Unlock()
+	return state.summary.HallID == lobby.HallFriend
 }
 
 func (s *roomState) checkVersion(expected uint64) error {

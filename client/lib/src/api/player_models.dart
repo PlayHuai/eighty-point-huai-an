@@ -37,3 +37,29 @@ class FriendRecentResultsPage {
   final List<RecentGameResult> results;
   final String nextPageToken;
 }
+
+class RoomInvitation {
+  const RoomInvitation({
+    required this.roomId,
+    required this.inviterUserId,
+    required this.inviterNickname,
+    required this.invitedAt,
+  });
+
+  final String roomId;
+  final String inviterUserId;
+  final String inviterNickname;
+  final DateTime invitedAt;
+}
+
+class PlayerFriend {
+  const PlayerFriend({
+    required this.userId,
+    required this.nickname,
+    required this.avatarUrl,
+  });
+
+  final String userId;
+  final String nickname;
+  final String avatarUrl;
+}

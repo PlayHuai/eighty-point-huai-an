@@ -210,6 +210,11 @@ message RoomDetails {
   uint64 version = 3;
 }
 
+message JoinInvitedRoomRequest {
+  string room_id = 1;
+  string request_id = 2;
+}
+
 message SeatRequest {
   string room_id = 1;
   uint32 seat_no = 2;
@@ -232,6 +237,7 @@ message SpectatorViewRequest {
 
 service RoomService {
   rpc GetRoom(RoomRequest) returns (RoomDetails);
+  rpc JoinInvitedRoom(JoinInvitedRoomRequest) returns (RoomDetails);
   rpc SitDown(SeatRequest) returns (RoomDetails);
   rpc ChangeSeat(SeatRequest) returns (RoomDetails);
   rpc StandUp(RoomRequest) returns (RoomDetails);
