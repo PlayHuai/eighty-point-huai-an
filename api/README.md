@@ -38,8 +38,8 @@ PATH="$HOME/.pub-cache/bin:$PATH" buf generate --template buf.gen.dart.yaml
 ```
 
 This writes Dart messages and gRPC clients under
-`client/lib/src/generated/huai/v1`. The Flutter application can import those
-generated files when it is introduced by T11.
+`client/lib/src/generated/huai/v1`. Generate these bindings before running
+`flutter pub get`, analysis, tests, or builds for the Flutter client.
 
 To check that a change remains wire-compatible with the previous schema:
 
