@@ -23,7 +23,7 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, '注册'));
     await tester.pump();
     expect(find.text('账号不能为空'), findsOneWidget);
-    expect(find.text('密码至少8位且需包含字母和数字'), findsOneWidget);
+    expect(find.text('密码须为8到128字节且需包含字母和数字'), findsOneWidget);
     expect(find.text('请确认密码'), findsOneWidget);
     expect(find.text('昵称不能为空'), findsOneWidget);
 
@@ -39,7 +39,7 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, '注册'));
     await tester.pump();
 
-    expect(find.text('账号须为3到64个字符'), findsOneWidget);
+    expect(find.text('账号须为3到64字节且不能包含空格'), findsOneWidget);
     expect(find.text('两次输入的密码不一致'), findsOneWidget);
     await _enterText(tester, 'register-account-field', 'player01');
     await tester.ensureVisible(find.widgetWithText(FilledButton, '注册'));
@@ -75,7 +75,11 @@ void main() {
     expect(api.registeredPassword, 'Cards2026!');
     expect(api.registeredNickname, '玩家');
     expect(api.registeredAvatarUrl, isNull);
-    expect(find.byType(ModalBarrier), findsOneWidget);
+    final formAbsorber = find.ancestor(
+      of: find.byKey(const ValueKey('register-account-field')),
+      matching: find.byType(AbsorbPointer),
+    );
+    expect(tester.widget<AbsorbPointer>(formAbsorber).absorbing, isTrue);
     expect(
       tester.widgetList<TextFormField>(find.byType(TextFormField)).map(
         (field) => field.controller!.text.trim(),
@@ -144,6 +148,78 @@ void main() {
     auth.dispose();
   });
 
+  testWidgets('registration validates UTF-8 byte limits', (tester) async {
+    final api = _FakeApiClient();
+    final auth = AuthController(api: api, store: _FakeSessionStore());
+    await auth.restoreSession();
+    await tester.pumpWidget(MaterialApp(home: RegisterScreen(auth: auth)));
+
+    final overlongPassword = 'Aa1${List.filled(42, '界').join()}';
+    await _enterText(
+      tester,
+      'register-account-field',
+      List.filled(22, '界').join(),
+    );
+    await _enterText(tester, 'register-password-field', overlongPassword);
+    await _enterText(
+      tester,
+      'register-confirm-password-field',
+      overlongPassword,
+    );
+    await _enterText(tester, 'register-nickname-field', '玩家');
+    await tester.ensureVisible(find.widgetWithText(FilledButton, '注册'));
+    await tester.tap(find.widgetWithText(FilledButton, '注册'));
+    await tester.pump();
+
+    expect(find.text('账号须为3到64字节且不能包含空格'), findsOneWidget);
+    expect(find.text('密码须为8到128字节且需包含字母和数字'), findsOneWidget);
+    expect(api.registeredAccount, isNull);
+
+    await _enterText(
+      tester,
+      'register-account-field',
+      '${List.filled(127, 'é').join()}@a',
+    );
+    await tester.ensureVisible(find.widgetWithText(FilledButton, '注册'));
+    await tester.tap(find.widgetWithText(FilledButton, '注册'));
+    await tester.pump();
+    expect(find.text('邮箱账号不得超过254字节'), findsOneWidget);
+    expect(api.registeredAccount, isNull);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    auth.dispose();
+  });
+
+  test('duplicate registration does not issue another request', () async {
+    final api = _FakeApiClient();
+    final auth = AuthController(api: api, store: _FakeSessionStore());
+    await auth.restoreSession();
+
+    final firstAttempt = auth.register(
+      'player01',
+      'Cards2026!',
+      '玩家',
+      'huai-avatar://login',
+    );
+    expect(auth.isLoading, isTrue);
+    expect(
+      await auth.register(
+        'player01',
+        'Cards2026!',
+        '玩家',
+        'huai-avatar://login',
+      ),
+      isFalse,
+    );
+    expect(api.registerCount, 1);
+
+    api.registerCompleter.complete(_session);
+    expect(await firstAttempt, isTrue);
+    expect(auth.session, _session);
+    expect(auth.error, isNull);
+    auth.dispose();
+  });
+
   testWidgets('registration shows server errors and remains on the form', (
     tester,
   ) async {
@@ -201,6 +277,7 @@ Future<void> _enterText(
 
 class _FakeApiClient implements ApiClient {
   final registerCompleter = Completer<AuthSession>();
+  var registerCount = 0;
   String? registeredAccount;
   String? registeredPassword;
   String? registeredNickname;
@@ -221,6 +298,7 @@ class _FakeApiClient implements ApiClient {
     required String password,
     required String nickname,
   }) {
+    registerCount++;
     registeredAccount = account;
     registeredPassword = password;
     registeredNickname = nickname;
@@ -267,7 +345,7 @@ class _FakeSessionStore implements SessionStore {
   Future<void> clear() async {}
 }
 
-const _session = AuthSession(
+final _session = AuthSession(
   accessToken: 'access',
   refreshToken: 'refresh',
   expiresAt: DateTime.utc(2030),

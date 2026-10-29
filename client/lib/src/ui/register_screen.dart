@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../auth/auth_controller.dart';
@@ -326,28 +328,30 @@ class _RegisterScreenState extends State<RegisterScreen> {
   String? _validateAccount(String? value) {
     final account = value?.trim() ?? '';
     if (account.isEmpty) return '账号不能为空';
+    final accountBytes = utf8.encode(account).length;
     if (account.contains('@')) {
+      if (accountBytes > 254) return '邮箱账号不得超过254字节';
       final parts = account.split('@');
       if (parts.length != 2 ||
-          parts.any((part) => part.isEmpty || part.contains(RegExp(r'\s'))) ||
-          account.length > 254) {
+          parts.any((part) => part.isEmpty || part.contains(RegExp(r'\s')))) {
         return '请输入有效账号';
       }
-    } else if (account.runes.length < 3 ||
-        account.runes.length > 64 ||
+    } else if (accountBytes < 3 ||
+        accountBytes > 64 ||
         account.contains(RegExp(r'\s'))) {
-      return '账号须为3到64个字符';
+      return '账号须为3到64字节且不能包含空格';
     }
     return null;
   }
 
   String? _validatePassword(String? value) {
     final password = value ?? '';
-    if (password.runes.length < 8 ||
-        password.runes.length > 128 ||
+    final passwordBytes = utf8.encode(password).length;
+    if (passwordBytes < 8 ||
+        passwordBytes > 128 ||
         !RegExp('[A-Za-z]').hasMatch(password) ||
         !RegExp('[0-9]').hasMatch(password)) {
-      return '密码至少8位且需包含字母和数字';
+      return '密码须为8到128字节且需包含字母和数字';
     }
     return null;
   }
