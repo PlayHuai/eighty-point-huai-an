@@ -6,7 +6,6 @@ import 'package:eighty_point_huai_an/src/auth/auth_session.dart';
 import 'package:eighty_point_huai_an/src/auth/session_store.dart';
 import 'package:eighty_point_huai_an/src/ui/client_app.dart';
 import 'package:eighty_point_huai_an/src/ui/login_screen.dart';
-import 'package:eighty_point_huai_an/src/ui/register_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grpc/grpc.dart';
@@ -96,22 +95,165 @@ void main() {
     auth.dispose();
   });
 
-  testWidgets('login opens the standalone registration screen', (tester) async {
+  testWidgets('registration validates required fields and matching passwords', (
+    tester,
+  ) async {
     final auth = AuthController(
       api: _FakeApiClient(),
       store: _FakeSessionStore(),
     );
     await tester.pumpWidget(ClientApp(auth: auth));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('创建账号'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '注册'));
+    await tester.pump();
 
+    expect(find.text('账号不能为空'), findsOneWidget);
+    expect(
+      find.text('密码须为8到128字节且需包含字母和数字'),
+      findsOneWidget,
+    );
+    expect(find.text('请确认密码'), findsOneWidget);
+    expect(find.text('昵称不能为空'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('register-account-field')),
+      'account',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('register-password-field')),
+      'short',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('register-confirm-password-field')),
+      'different',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('register-nickname-field')),
+      'nickname',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, '注册'));
+    await tester.pump();
+
+    expect(
+      find.text('密码须为8到128字节且需包含字母和数字'),
+      findsOneWidget,
+    );
+    expect(find.text('两次输入的密码不一致'), findsOneWidget);
+    auth.dispose();
+  });
+
+  testWidgets('keeps registration fields mounted while the request is pending', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(400, 500));
+    final api = _FakeApiClient();
+    final auth = AuthController(api: api, store: _FakeSessionStore());
+
+    await tester.pumpWidget(ClientApp(auth: auth));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('创建账号'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('register-account-field')),
+      'account',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('register-password-field')),
+      'password123',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('register-confirm-password-field')),
+      'password123',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('register-nickname-field')),
+      'nickname',
+    );
+    await tester.ensureVisible(find.widgetWithText(FilledButton, '注册'));
+    await tester.tap(find.widgetWithText(FilledButton, '注册'));
+    await tester.pump();
+
+    expect(find.text('选择头像'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsWidgets);
+    expect(auth.isLoading, isTrue);
+    expect(
+      tester.widget<AbsorbPointer>(
+        find.ancestor(
+          of: find.byKey(const ValueKey('register-account-field')),
+          matching: find.byType(AbsorbPointer),
+        ),
+      ).absorbing,
+      isTrue,
+    );
+    expect(
+      tester.widgetList<TextFormField>(find.byType(TextFormField)).map(
+        (field) => field.controller!.text,
+      ),
+      ['account', 'password123', 'password123', 'nickname'],
+    );
+
+    api.registerCompleter.completeError(
+      GrpcError.unauthenticated('registration failed'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('选择头像'), findsOneWidget);
+    expect(
+      tester.widgetList<TextFormField>(find.byType(TextFormField)).map(
+        (field) => field.controller!.text,
+      ),
+      ['account', 'password123', 'password123', 'nickname'],
+    );
+    await tester.binding.setSurfaceSize(null);
+  });
+
+  testWidgets('registration updates the selected avatar before opening lobby', (
+    tester,
+  ) async {
+    final api = _FakeApiClient();
+    final auth = AuthController(api: api, store: _FakeSessionStore());
+    await tester.pumpWidget(ClientApp(auth: auth));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('创建账号'));
     await tester.tap(find.text('创建账号'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(RegisterScreen), findsOneWidget);
-    expect(find.text('请输入密码（≥8位含字母数字）'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('register-account-field')),
+      'account',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('register-password-field')),
+      'password123',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('register-confirm-password-field')),
+      'password123',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('register-nickname-field')),
+      'Player',
+    );
+    await tester.tap(find.byKey(const ValueKey('register-avatar-1')));
+    await tester.ensureVisible(find.widgetWithText(FilledButton, '注册'));
+    await tester.tap(find.widgetWithText(FilledButton, '注册'));
+    await tester.pump();
+
+    api.registerCompleter.complete(_session);
+    await tester.pump();
+    expect(api.updatedNickname, 'Player');
+    expect(api.updatedAvatarUrl, 'huai-avatar://host');
+
+    api.profileUpdateCompleter.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('你好，Player'), findsOneWidget);
   });
 
-  testWidgets('login form remains scrollable on a short viewport', (tester) async {
+  testWidgets('registration form remains scrollable on a short viewport', (
+    tester,
+  ) async {
     await tester.binding.setSurfaceSize(const Size(320, 240));
     final auth = AuthController(
       api: _FakeApiClient(),
@@ -120,47 +262,24 @@ void main() {
 
     await tester.pumpWidget(ClientApp(auth: auth));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('创建账号'));
+    await tester.tap(find.text('创建账号'));
+    await tester.pumpAndSettle();
 
     expect(find.byType(SingleChildScrollView), findsOneWidget);
-    await tester.ensureVisible(find.widgetWithText(FilledButton, '登录'));
+    await tester.ensureVisible(find.widgetWithText(FilledButton, '注册'));
     expect(tester.takeException(), isNull);
 
     await tester.binding.setSurfaceSize(null);
   });
-
-  testWidgets('server login errors remain authoritative without client lockout', (
-    tester,
-  ) async {
-    final api = _FakeApiClient();
-    final auth = AuthController(api: api, store: _FakeSessionStore());
-    await tester.pumpWidget(ClientApp(auth: auth));
-    await tester.pumpAndSettle();
-
-    await tester.enterText(find.byType(TextFormField).at(0), 'account');
-    await tester.enterText(find.byType(TextFormField).at(1), 'password');
-    for (var attempt = 0; attempt < 2; attempt++) {
-      await tester.tap(find.widgetWithText(FilledButton, '登录'));
-      await tester.pump();
-      api.loginCompleter.completeError(
-        GrpcError.resourceExhausted('login temporarily restricted'),
-      );
-      await tester.pumpAndSettle();
-      expect(find.textContaining('login temporarily restricted'), findsOneWidget);
-      if (attempt == 0) {
-        expect(find.widgetWithText(FilledButton, '登录'), findsOneWidget);
-        api.resetLoginCompleter();
-      }
-    }
-  });
 }
 
 class _FakeApiClient implements ApiClient {
-  Completer<AuthSession> loginCompleter = Completer<AuthSession>();
+  final loginCompleter = Completer<AuthSession>();
   final registerCompleter = Completer<AuthSession>();
-
-  void resetLoginCompleter() {
-    loginCompleter = Completer<AuthSession>();
-  }
+  final profileUpdateCompleter = Completer<void>();
+  String? updatedNickname;
+  String? updatedAvatarUrl;
 
   @override
   Future<AuthSession> login({
@@ -180,7 +299,11 @@ class _FakeApiClient implements ApiClient {
     required String accessToken,
     required String nickname,
     required String avatarUrl,
-  }) async {}
+  }) {
+    updatedNickname = nickname;
+    updatedAvatarUrl = avatarUrl;
+    return profileUpdateCompleter.future;
+  }
 
   @override
   Future<AuthSession> refresh(String refreshToken) async =>

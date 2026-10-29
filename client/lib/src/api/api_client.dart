@@ -33,10 +33,12 @@ abstract interface class ApiClient {
 class GrpcApiClient implements ApiClient {
   GrpcApiClient(Uri endpoint) : _channel = createClientChannel(endpoint) {
     _auth = api.AuthServiceClient(_channel);
+    _player = api.PlayerServiceClient(_channel);
   }
 
   final ClientChannel _channel;
   late final api.AuthServiceClient _auth;
+  late final api.PlayerServiceClient _player;
 
   @override
   Future<AuthSession> login({
@@ -72,7 +74,7 @@ class GrpcApiClient implements ApiClient {
     required String nickname,
     required String avatarUrl,
   }) async {
-    await api.PlayerServiceClient(_channel).updateProfile(
+    await _player.updateProfile(
       api.UpdateProfileRequest()
         ..nickname = nickname
         ..avatarUrl = avatarUrl,
