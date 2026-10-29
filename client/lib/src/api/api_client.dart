@@ -59,6 +59,8 @@ abstract interface class ApiClient {
     required String password,
   });
 
+  Future<PlayerStatistics> getStatistics({required String accessToken});
+
   Future<PlayerStatistics> getFriendStatistics({
     required String accessToken,
     required String userId,
@@ -298,6 +300,21 @@ class GrpcApiClient implements ApiClient {
       options: _authenticatedOptions(accessToken),
     );
     return _roomFrom(response);
+  }
+
+  @override
+  Future<PlayerStatistics> getStatistics({required String accessToken}) async {
+    final response = await _player.getStatistics(
+      api.Empty(),
+      options: _authenticatedOptions(accessToken),
+    );
+    return PlayerStatistics(
+      totalGames: response.totalGames.toInt(),
+      wins: response.wins.toInt(),
+      losses: response.losses.toInt(),
+      points: response.points.toInt(),
+      rank: response.rank,
+    );
   }
 
   @override

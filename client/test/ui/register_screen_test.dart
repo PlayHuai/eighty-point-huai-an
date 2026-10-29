@@ -361,6 +361,16 @@ class _FakeApiClient implements ApiClient {
   }) => throw UnimplementedError();
 
   @override
+  Future<PlayerStatistics> getStatistics({required String accessToken}) async =>
+      const PlayerStatistics(
+        totalGames: 0,
+        wins: 0,
+        losses: 0,
+        points: 0,
+        rank: '',
+      );
+
+  @override
   Future<PlayerStatistics> getFriendStatistics({
     required String accessToken,
     required String userId,
