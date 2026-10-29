@@ -101,6 +101,9 @@ class _FakeApiClient implements ApiClient {
     required String hallId,
     required String name,
     required String password,
+    bool allowSpectators = false,
+    int minimumPoints = 0,
+    String requestId = '',
   }) => throw UnimplementedError();
 
   @override
@@ -138,6 +141,57 @@ class _FakeApiClient implements ApiClient {
   @override
   Future<List<PlayerFriend>> listFriends({required String accessToken}) async =>
       const [];
+
+  @override
+  Future<List<PlayerFriend>> searchPlayers({
+    required String accessToken,
+    required String query,
+  }) async => const [];
+
+  @override
+  Future<void> sendFriendRequest({
+    required String accessToken,
+    required String userId,
+  }) async {}
+
+  @override
+  Future<List<PlayerFriend>> listFriendRequests({
+    required String accessToken,
+  }) async => const [];
+
+  @override
+  Future<void> respondFriendRequest({
+    required String accessToken,
+    required String userId,
+    required bool accept,
+  }) async {}
+
+  @override
+  Future<void> removeFriend({
+    required String accessToken,
+    required String userId,
+  }) async {}
+
+  @override
+  Future<ChatMessagesPage> listPrivateMessages({
+    required String accessToken,
+    required String peerUserId,
+    String pageToken = '',
+    int pageSize = 50,
+  }) async => const ChatMessagesPage(messages: [], nextPageToken: '');
+
+  @override
+  Future<ChatMessage> sendPrivateMessage({
+    required String accessToken,
+    required String peerUserId,
+    required String body,
+    required String requestId,
+  }) async => ChatMessage(
+    id: 'message',
+    senderUserId: '',
+    body: body,
+    createdAt: DateTime.utc(2026),
+  );
 
   @override
   Future<void> sendRoomInvite({
