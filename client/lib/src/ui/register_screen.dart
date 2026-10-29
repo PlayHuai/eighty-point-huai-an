@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../auth/auth_controller.dart';
@@ -47,22 +49,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: widget.auth,
     builder: (context, _) => Scaffold(
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) => SingleChildScrollView(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: constraints.maxHeight),
-              child: Center(
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) => SingleChildScrollView(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 420),
-                  child: Padding(
-                    padding: const EdgeInsets.all(DarkTokens.spacingS5),
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 420),
+                      child: Padding(
+                        padding: const EdgeInsets.all(DarkTokens.spacingS5),
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
                         const AppIcon(size: DarkTokens.spacingS6),
                         const SizedBox(height: DarkTokens.spacingS3),
                         Text(
@@ -216,7 +221,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               : () => Navigator.of(context).pop(),
                           child: const Text('已有账号？返回登录'),
                         ),
-                        ],
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -224,14 +231,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
             ),
           ),
-        ),
+          if (widget.auth.isLoading) ...[
+            const ModalBarrier(dismissible: false),
+            const Center(child: CircularProgressIndicator()),
+          ],
+        ],
       ),
     ),
   );
 
   String? _validatePassword(String? value) {
     if (value == null || value.isEmpty) return '请输入密码';
-    if (value.length < 8 || value.length > 128) {
+    final length = utf8.encode(value).length;
+    if (length < 8 || length > 128) {
       return '密码长度需为 8–128 位';
     }
     if (!RegExp('[A-Za-z]').hasMatch(value) ||

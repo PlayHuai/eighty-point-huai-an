@@ -171,9 +171,12 @@ void main() {
 
     expect(find.text('选择头像'), findsOneWidget);
     expect(find.byType(ModalBarrier), findsOneWidget);
+    expect(auth.isLoading, isTrue);
     expect(
-      tester.widget<AbsorbPointer>(find.byType(AbsorbPointer).first).absorbing,
-      isTrue,
+      tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, '注册'),
+      ).onPressed,
+      isNull,
     );
     expect(
       tester.widgetList<TextFormField>(find.byType(TextFormField)).map(
