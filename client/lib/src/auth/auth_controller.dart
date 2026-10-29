@@ -17,6 +17,7 @@ class AuthController extends ChangeNotifier {
   bool _isLoading = true;
   String? _error;
   bool _canRetryRestore = false;
+  bool _registrationProfilePending = false;
 
   AuthSession? get session => _session;
   bool get isLoading => _isLoading;
@@ -67,13 +68,41 @@ class AuthController extends ChangeNotifier {
     String account,
     String password,
     String nickname,
-  ) => _authenticate(
-    () => _api.register(
-      account: account,
-      password: password,
-      nickname: nickname,
-    ),
-  );
+    {String avatarUrl = ''},
+  ) async {
+    if (!_registrationProfilePending) {
+      final registered = await _authenticate(
+        () => _api.register(
+          account: account,
+          password: password,
+          nickname: nickname,
+        ),
+      );
+      if (!registered) return false;
+      _registrationProfilePending = avatarUrl.isNotEmpty;
+    }
+
+    if (!_registrationProfilePending) return true;
+
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+    try {
+      await _api.updateProfile(
+        accessToken: _session!.accessToken,
+        nickname: nickname,
+        avatarUrl: avatarUrl,
+      );
+      _registrationProfilePending = false;
+      return true;
+    } catch (error) {
+      _error = error.toString();
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
 
   Future<bool> _authenticate(Future<AuthSession> Function() authenticate) async {
     _isLoading = true;
@@ -113,6 +142,7 @@ class AuthController extends ChangeNotifier {
         _error = 'Unable to clear the saved session.';
       }
       _session = null;
+      _registrationProfilePending = false;
       _isLoading = false;
       notifyListeners();
     }

@@ -17,6 +17,12 @@ abstract interface class ApiClient {
     required String nickname,
   });
 
+  Future<void> updateProfile({
+    required String accessToken,
+    required String nickname,
+    required String avatarUrl,
+  });
+
   Future<AuthSession> refresh(String refreshToken);
 
   Future<void> logout(String refreshToken);
@@ -27,10 +33,12 @@ abstract interface class ApiClient {
 class GrpcApiClient implements ApiClient {
   GrpcApiClient(Uri endpoint) : _channel = createClientChannel(endpoint) {
     _auth = api.AuthServiceClient(_channel);
+    _player = api.PlayerServiceClient(_channel);
   }
 
   final ClientChannel _channel;
   late final api.AuthServiceClient _auth;
+  late final api.PlayerServiceClient _player;
 
   @override
   Future<AuthSession> login({
@@ -58,6 +66,22 @@ class GrpcApiClient implements ApiClient {
         ..nickname = nickname,
     );
     return _sessionFrom(response);
+  }
+
+  @override
+  Future<void> updateProfile({
+    required String accessToken,
+    required String nickname,
+    required String avatarUrl,
+  }) async {
+    await _player.updateProfile(
+      api.UpdateProfileRequest()
+        ..nickname = nickname
+        ..avatarUrl = avatarUrl,
+      options: CallOptions(
+        metadata: {'authorization': 'Bearer ' + accessToken},
+      ),
+    );
   }
 
   @override

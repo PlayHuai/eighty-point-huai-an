@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../auth/auth_controller.dart';
+import 'register_screen.dart';
 import 'theme/app_theme.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -16,29 +17,18 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _account = TextEditingController();
   final _password = TextEditingController();
-  final _nickname = TextEditingController();
-  bool _registering = false;
   bool _passwordVisible = false;
 
   @override
   void dispose() {
     _account.dispose();
     _password.dispose();
-    _nickname.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_registering) {
-      await widget.auth.register(
-        _account.text.trim(),
-        _password.text,
-        _nickname.text.trim(),
-      );
-    } else {
-      await widget.auth.login(_account.text.trim(), _password.text);
-    }
+    await widget.auth.login(_account.text.trim(), _password.text);
   }
 
   @override
@@ -59,7 +49,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Text(
-                        _registering ? '创建账号' : '淮安80分',
+                        '淮安80分',
                         style: Theme.of(context).textTheme.headlineMedium,
                         textAlign: TextAlign.center,
                       ),
@@ -72,16 +62,6 @@ class _LoginScreenState extends State<LoginScreen> {
                             : null,
                         textInputAction: TextInputAction.next,
                       ),
-                      if (_registering)
-                        TextFormField(
-                          controller: _nickname,
-                          decoration: const InputDecoration(labelText: '昵称'),
-                          validator: (value) =>
-                              value == null || value.trim().isEmpty
-                              ? '请输入昵称'
-                              : null,
-                          textInputAction: TextInputAction.next,
-                        ),
                       TextFormField(
                         key: const ValueKey('login-password-field'),
                         controller: _password,
@@ -121,16 +101,21 @@ class _LoginScreenState extends State<LoginScreen> {
                       const SizedBox(height: DarkTokens.spacingS4),
                       FilledButton(
                         onPressed: widget.auth.isLoading ? null : _submit,
-                        child: Text(_registering ? '注册' : '登录'),
+                        child: const Text('登录'),
                       ),
                       TextButton(
                         onPressed: widget.auth.isLoading
                             ? null
-                            : () => setState(() {
-                                _registering = !_registering;
+                            : () {
                                 widget.auth.clearError();
-                              }),
-                        child: Text(_registering ? '已有账号？登录' : '创建账号'),
+                                Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) =>
+                                        RegisterScreen(auth: widget.auth),
+                                  ),
+                                );
+                              },
+                        child: const Text('注册新账号'),
                       ),
                     ],
                   ),
