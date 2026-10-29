@@ -55,6 +55,7 @@ class FriendListScreen extends ConsumerStatefulWidget {
 
 class _FriendListScreenState extends ConsumerState<FriendListScreen> {
   final _searchController = TextEditingController();
+  final _pendingRequestIds = <String, String>{};
   String _query = '';
   bool _isMutating = false;
 
@@ -65,16 +66,22 @@ class _FriendListScreenState extends ConsumerState<FriendListScreen> {
   }
 
   Future<void> _mutate(
-    Future<void> Function(String accessToken) action,
+    String requestKey,
+    Future<void> Function(String accessToken, String requestId) action,
     String successMessage, {
     bool refreshRequests = false,
   }) async {
     final session = widget.auth.session;
     if (session == null || _isMutating) return;
+    final requestId = _pendingRequestIds.putIfAbsent(
+      requestKey,
+      createRequestId,
+    );
     setState(() => _isMutating = true);
     try {
-      await action(session.accessToken);
+      await action(session.accessToken, requestId);
       if (!mounted) return;
+      _pendingRequestIds.remove(requestKey);
       ref.invalidate(friendListProvider);
       ref.invalidate(playerSearchProvider);
       if (refreshRequests) ref.invalidate(friendRequestsProvider);
@@ -210,11 +217,13 @@ class _FriendListScreenState extends ConsumerState<FriendListScreen> {
                     onPressed: _isMutating
                         ? null
                         : () => _mutate(
-                            (token) => ref
+                            'friend-request:${friend.userId}',
+                            (token, requestId) => ref
                                 .read(apiClientProvider)
                                 .sendFriendRequest(
                                   accessToken: token,
                                   userId: friend.userId,
+                                  requestId: requestId,
                                 ),
                             '好友申请已发送。',
                           ),
@@ -233,11 +242,13 @@ class _FriendListScreenState extends ConsumerState<FriendListScreen> {
                         onPressed: _isMutating
                             ? null
                             : () => _mutate(
-                                (token) => ref
+                                'remove-friend:${friend.userId}',
+                                (token, requestId) => ref
                                     .read(apiClientProvider)
                                     .removeFriend(
                                       accessToken: token,
                                       userId: friend.userId,
+                                      requestId: requestId,
                                     ),
                                 '已删除好友。',
                               ),
@@ -272,12 +283,14 @@ class _FriendListScreenState extends ConsumerState<FriendListScreen> {
                       onPressed: _isMutating
                           ? null
                           : () => _mutate(
-                              (token) => ref
+                              'respond:${request.userId}:accept',
+                              (token, requestId) => ref
                                   .read(apiClientProvider)
                                   .respondFriendRequest(
                                     accessToken: token,
                                     userId: request.userId,
                                     accept: true,
+                                    requestId: requestId,
                                   ),
                               '已接受好友申请。',
                               refreshRequests: true,
@@ -288,12 +301,14 @@ class _FriendListScreenState extends ConsumerState<FriendListScreen> {
                       onPressed: _isMutating
                           ? null
                           : () => _mutate(
-                              (token) => ref
+                              'respond:${request.userId}:reject',
+                              (token, requestId) => ref
                                   .read(apiClientProvider)
                                   .respondFriendRequest(
                                     accessToken: token,
                                     userId: request.userId,
                                     accept: false,
+                                    requestId: requestId,
                                   ),
                               '已拒绝好友申请。',
                               refreshRequests: true,

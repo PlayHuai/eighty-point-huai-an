@@ -589,6 +589,7 @@ class _FakeApiClient implements ApiClient {
   Future<void> sendFriendRequest({
     required String accessToken,
     required String userId,
+    String requestId = '',
   }) async {}
 
   @override
@@ -601,12 +602,14 @@ class _FakeApiClient implements ApiClient {
     required String accessToken,
     required String userId,
     required bool accept,
+    String requestId = '',
   }) async {}
 
   @override
   Future<void> removeFriend({
     required String accessToken,
     required String userId,
+    String requestId = '',
   }) async {}
 
   @override
@@ -647,6 +650,7 @@ class _FakeApiClient implements ApiClient {
     required String accessToken,
     required String roomId,
     required String friendId,
+    String requestId = '',
   }) async {
     invitedRoomId = roomId;
     invitedFriendId = friendId;

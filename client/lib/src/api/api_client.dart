@@ -85,6 +85,7 @@ abstract interface class ApiClient {
   Future<void> sendFriendRequest({
     required String accessToken,
     required String userId,
+    String requestId = '',
   }) => throw UnsupportedError('Friend requests are not supported.');
 
   Future<List<PlayerFriend>> listFriendRequests({
@@ -95,11 +96,13 @@ abstract interface class ApiClient {
     required String accessToken,
     required String userId,
     required bool accept,
+    String requestId = '',
   }) => throw UnsupportedError('Friend request responses are not supported.');
 
   Future<void> removeFriend({
     required String accessToken,
     required String userId,
+    String requestId = '',
   }) => throw UnsupportedError('Friend removal is not supported.');
 
   Future<ChatMessagesPage> listPrivateMessages({
@@ -120,6 +123,7 @@ abstract interface class ApiClient {
     required String accessToken,
     required String roomId,
     required String friendId,
+    String requestId = '',
   });
 
   Future<LobbyRoom> joinInvitedRoom({
@@ -380,11 +384,13 @@ class GrpcApiClient implements ApiClient {
     required String accessToken,
     required String roomId,
     required String friendId,
+    String requestId = '',
   }) async {
     await _friends.sendRoomInvite(
       api.SendRoomInviteRequest()
         ..roomId = roomId
-        ..friendId = friendId,
+        ..friendId = friendId
+        ..requestId = requestId.isEmpty ? createRequestId() : requestId,
       options: _authenticatedOptions(accessToken),
     );
   }
@@ -443,9 +449,12 @@ class GrpcApiClient implements ApiClient {
   Future<void> sendFriendRequest({
     required String accessToken,
     required String userId,
+    String requestId = '',
   }) async {
     await _friends.sendRequest(
-      api.FriendRequest()..targetUserId = userId,
+      api.FriendRequest()
+        ..targetUserId = userId
+        ..requestId = requestId.isEmpty ? createRequestId() : requestId,
       options: _authenticatedOptions(accessToken),
     );
   }
@@ -474,11 +483,13 @@ class GrpcApiClient implements ApiClient {
     required String accessToken,
     required String userId,
     required bool accept,
+    String requestId = '',
   }) async {
     await _friends.respondRequest(
       api.RespondFriendRequest()
         ..requesterUserId = userId
-        ..accept = accept,
+        ..accept = accept
+        ..requestId = requestId.isEmpty ? createRequestId() : requestId,
       options: _authenticatedOptions(accessToken),
     );
   }
@@ -487,9 +498,12 @@ class GrpcApiClient implements ApiClient {
   Future<void> removeFriend({
     required String accessToken,
     required String userId,
+    String requestId = '',
   }) async {
     await _friends.removeFriend(
-      api.FriendRequest()..targetUserId = userId,
+      api.FriendRequest()
+        ..targetUserId = userId
+        ..requestId = requestId.isEmpty ? createRequestId() : requestId,
       options: _authenticatedOptions(accessToken),
     );
   }
