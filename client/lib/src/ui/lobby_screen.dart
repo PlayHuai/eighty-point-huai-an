@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grpc/grpc.dart';
@@ -708,10 +710,19 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       ResponsiveSize.medium => 2,
       ResponsiveSize.expanded => 3,
     };
+    final cardWidth =
+        (availableWidth -
+            DarkTokens.spacingS4 * 2 -
+            DarkTokens.spacingS3 * (columnCount - 1)) /
+        columnCount;
+    final cardHeight = math.max(
+      cardWidth / 1.75,
+      MediaQuery.textScalerOf(context).scale(DarkTokens.spacingS6 * 8),
+    );
     return GridView.builder(
       gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: availableWidth / columnCount,
-        childAspectRatio: 1.75,
+        mainAxisExtent: cardHeight,
         crossAxisSpacing: DarkTokens.spacingS3,
         mainAxisSpacing: DarkTokens.spacingS3,
       ),
