@@ -1,37 +1,24 @@
-# Server deployment
+# 服务端部署指南
 
-This guide covers the provided Docker Compose deployment and a Linux `systemd`
-deployment of the compiled server binary. The Compose setup installs MySQL 8.4
-and Redis 7 in private containers with persistent named volumes. The native
-`systemd` setup uses host-installed MySQL and Redis.
+本文介绍两种部署方式：使用 Docker Compose 部署服务，或将编译后的服务端程序安装为 Linux `systemd` 服务。Compose 方式使用独立容器运行 MySQL 8.4 和 Redis 7，并通过持久化卷保存数据；`systemd` 方式使用主机上安装的 MySQL 和 Redis。
 
-The current executable provides HTTP liveness and the MySQL migration command;
-application RPC/WebSocket service wiring is not yet included, and the executable
-does not currently connect to Redis. Do not treat a healthy process as proof that
-game services are ready.
+**当前服务端能力说明：**可执行程序目前提供 HTTP 存活检查和 MySQL 数据库迁移命令；RPC/WebSocket 业务服务尚未接入，程序当前也没有连接 Redis。因此，进程或健康检查正常不代表游戏业务服务已经就绪。
 
-## First deployment
+## 首次部署（Docker Compose）
 
-Requirements: Docker Engine with the Compose v2 plugin, and Bash.
+需要安装 Docker Engine、Docker Compose v2 插件和 Bash。
 
 ```sh
 ./deploy/scripts/init.sh
 ```
 
-On its first run, the script creates `deploy/.env` from the example and exits.
-Replace both placeholder passwords with unique values, keep the file private,
-and run the command again. The file is ignored by Git. The server health endpoint
-is bound to `127.0.0.1` on port 8080 by default; set `HTTP_PORT` to change it.
+首次运行会从示例文件创建 `deploy/.env`，并退出。请将两个数据库密码占位值替换为不同的强密码，妥善保护该文件后再次运行命令。该文件已加入 Git 忽略规则。服务默认只绑定到主机本地地址 `127.0.0.1:8080`；可通过 `HTTP_PORT` 修改端口。
 
-The current server executable exposes `/healthz` for liveness; application
-transports and service wiring are not yet part of this deployment scaffold.
-Place a TLS reverse proxy in front of the loopback-bound endpoint when exposing
-the host.
+当前服务端仅通过 `/healthz` 提供存活检查，尚未接入业务传输层和服务装配。若要从外部访问主机，请在服务前配置 TLS 反向代理。
 
-## Build and package a Linux binary
+## 编译并打包 Linux 可执行文件
 
-Build on Linux or cross-compile from a Go 1.25+ environment. Choose `GOARCH`
-for the target host (`amd64` or `arm64`):
+可在 Linux 上编译，也可使用 Go 1.25 或更高版本进行交叉编译。根据目标主机选择 `GOARCH`（`amd64` 或 `arm64`）：
 
 ```sh
 mkdir -p dist
@@ -42,9 +29,7 @@ cp deploy/scripts/install-systemd.sh deploy/scripts/uninstall-systemd.sh deploy/
 tar -C dist -czf eighty-point-linux-amd64.tar.gz server install-systemd.sh uninstall-systemd.sh systemd.env.example
 ```
 
-Transfer and unpack the archive on the target host. Copy `systemd.env.example`
-to `server.env`, set the database connection values and a unique password, and
-keep that file private:
+将压缩包传到目标主机并解压。将 `systemd.env.example` 复制为 `server.env`，填写数据库连接信息和唯一强密码，并限制文件访问权限：
 
 ```sh
 cp systemd.env.example server.env
@@ -52,11 +37,7 @@ chmod 600 server.env
 sudo ./install-systemd.sh ./server ./server.env
 ```
 
-The installer installs the binary at `/opt/eighty-point/server`, copies the
-environment file to `/etc/eighty-point/server.env`, and enables (but does not
-start) the service. On service start, systemd applies the embedded MySQL
-migrations before starting the HTTP process. The MySQL server and application
-database must already be available:
+安装脚本会将程序安装到 `/opt/eighty-point/server`，将环境配置复制到 `/etc/eighty-point/server.env`，并启用服务（但不会立即启动）。服务启动时，systemd 会先运行内置的 MySQL 迁移，再启动 HTTP 进程。请确保 MySQL 和应用数据库已可用：
 
 ```sh
 sudo systemctl start eighty-point
@@ -64,9 +45,9 @@ sudo systemctl status eighty-point
 sudo journalctl -u eighty-point -f
 ```
 
-For an upgrade, build and transfer the new archive, back up the database, stop
-the service, rerun the installer with the updated binary and current environment
-file, then start the service; pending migrations run before the process starts:
+### 升级 systemd 部署
+
+编译并传输新版本前，请先备份数据库。然后停止服务、用新程序重新运行安装脚本，再启动服务。待执行的数据库迁移会在服务进程启动前运行：
 
 ```sh
 sudo systemctl stop eighty-point
@@ -74,15 +55,11 @@ sudo ./install-systemd.sh ./server ./server.env
 sudo systemctl start eighty-point
 ```
 
-The installer does not overwrite the environment file's source, but refreshes
-the installed copy from the path supplied. Keep it administrator-controlled and
-do not use untrusted content. The HTTP listener defaults in the example to
-loopback and should be exposed externally only through a TLS reverse proxy.
+安装脚本不会修改作为源文件的环境配置，但会用指定路径的文件更新系统中安装的副本。请只使用管理员可信任的配置文件。示例配置将 HTTP 监听地址设为本地回环地址；如需对外提供访问，请使用 TLS 反向代理。
 
-## Host MySQL and Redis (systemd deployment)
+## 主机安装 MySQL 和 Redis（systemd 部署）
 
-On Ubuntu (or another distribution with a MySQL 8.x package), install the host
-services and start them at boot:
+在 Ubuntu（或提供 MySQL 8.x 软件包的其他发行版）上安装服务并设置为开机启动：
 
 ```sh
 sudo apt update
@@ -90,8 +67,7 @@ sudo apt install mysql-server redis-server
 sudo systemctl enable --now mysql redis-server
 ```
 
-Keep Redis bound to localhost with protected mode enabled; enable AOF persistence
-in `/etc/redis/redis.conf`:
+确保 Redis 仅监听本机地址并启用保护模式；在 `/etc/redis/redis.conf` 中启用 AOF 持久化：
 
 ```conf
 bind 127.0.0.1 ::1
@@ -99,14 +75,13 @@ protected-mode yes
 appendonly yes
 ```
 
-Then apply the configuration with `sudo systemctl restart redis-server`. Create
-the application database and least-privilege account in MySQL. Use the same
-unique password in `server.env`. On Ubuntu's default local root
-authentication, open a privileged MySQL console and run the SQL statements:
+修改后执行 `sudo systemctl restart redis-server`。接下来在 MySQL 中创建应用数据库和权限受限的应用账号。请使用唯一强密码，并将同一密码配置到 `server.env`。Ubuntu 默认使用本地 root 身份认证，可通过以下命令进入 MySQL 管理控制台：
 
 ```sh
 sudo mysql
 ```
+
+在 MySQL 控制台中执行：
 
 ```sql
 CREATE DATABASE eighty_point CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
@@ -114,10 +89,11 @@ CREATE USER 'eighty_point'@'127.0.0.1' IDENTIFIED BY 'replace-with-a-unique-secr
 GRANT ALL PRIVILEGES ON eighty_point.* TO 'eighty_point'@'127.0.0.1';
 ```
 
-Save these values in `server.env` as `DB_HOST=127.0.0.1`, `DB_PORT=3306`,
-`DB_NAME=eighty_point`, `DB_USER=eighty_point`, and `DB_PASSWORD=...`. The
-`migrate` command creates/updates the schema. Back up and restore host MySQL
-with a protected dump file:
+在 `server.env` 中设置 `DB_HOST=127.0.0.1`、`DB_PORT=3306`、`DB_NAME=eighty_point`、`DB_USER=eighty_point` 和 `DB_PASSWORD=...`。服务启动时会通过 `migrate` 命令创建或更新数据库结构。
+
+### 主机 MySQL 备份与恢复
+
+以下示例会生成权限受限的压缩备份，并在压缩校验通过后再写入最终文件：
 
 ```sh
 set -o pipefail
@@ -129,78 +105,62 @@ sudo mysqldump --single-transaction --routines --triggers --add-drop-table eight
 gzip -t "$tmp"
 mv "$tmp" "$backup"
 trap - EXIT
-# Restore is destructive: verify the file and target database before running.
+# 恢复会覆盖数据库中的表；执行前请确认备份文件和目标数据库。
 set -o pipefail
 gzip -cd "$backup" | sudo mysql eighty_point
 ```
 
-Keep backups off-host and test restores. Redis currently holds no server runtime
-state in this executable; if it is later wired into runtime services, back up
-its `/var/lib/redis` data according to the chosen recovery point.
+请将备份复制到异机保存，并定期验证恢复流程。目前 Redis 未保存该服务端程序的运行状态；若后续接入 Redis，应根据恢复目标备份其 `/var/lib/redis` 数据。
 
-## Upgrade
+## Compose 升级
 
 ```sh
 ./deploy/scripts/upgrade.sh
 ```
 
-The script waits for the data services, creates a compressed MySQL backup,
-stops the old server, builds the new image, applies pending migrations, and
-starts the new server. Migration checksums are validated and applied versions
-are not rerun. If migration fails, the server remains stopped; restore a backup
-before restarting if recovery is needed.
+脚本会等待数据库和 Redis 就绪、创建压缩的 MySQL 备份、停止旧服务、构建新镜像、应用待执行的数据库迁移，然后启动新服务。迁移版本及校验和会被检查，已应用的迁移不会重复执行。若迁移失败，服务将保持停止；如需恢复，请先恢复备份再启动服务。
 
-## Backup and restore
+## Compose 备份与恢复
 
-Create a consistent compressed MySQL backup:
+创建一致性压缩 MySQL 备份：
 
 ```sh
 ./deploy/scripts/backup.sh
 ```
 
-Backups are written with private file permissions under `deploy/backups/` by
-default; an optional first argument selects another output directory. Protect
-and copy backups off-host according to the deployment's retention policy.
+默认备份到 `deploy/backups/`，文件权限仅允许当前用户访问；也可将输出目录作为第一个参数传入。请根据部署环境的保留策略保护备份并复制到异机保存。
 
-Restore is destructive and requires an explicit confirmation argument. Ensure
-the Compose MySQL service is running, then run:
+恢复会覆盖现有数据库，必须通过 `--confirm` 明确确认。请先确保 Compose 中的 MySQL 服务正在运行，再执行：
 
 ```sh
 ./deploy/scripts/restore.sh deploy/backups/mysql-YYYYMMDDTHHMMSSZ.sql.gz --confirm
 ```
 
-The dump includes table drops so the restored database replaces existing table
-contents. Test restores before relying on backups for recovery.
+备份包含删除表的语句，因此恢复后原有表内容会被替换。正式依赖备份前，请先在测试环境验证恢复流程。
 
-## Uninstall
+## 卸载
 
-For the Compose deployment, stop and remove containers while retaining database
-volumes:
+卸载 Compose 服务并保留数据库数据卷：
 
 ```sh
 docker compose --env-file deploy/.env -f deploy/compose.yaml down
 ```
 
-To erase the MySQL and Redis data volumes too, add `-v`; this cannot be undone.
-For a `systemd` deployment, run the packaged uninstaller:
+如需同时删除 MySQL 和 Redis 数据卷，在命令末尾添加 `-v`。此操作不可撤销。
+
+卸载 `systemd` 服务时运行随包提供的脚本：
 
 ```sh
 sudo ./uninstall-systemd.sh
 ```
 
-It stops and disables the service and removes the unit and binary, but preserves
-`/etc/eighty-point/server.env`, the MySQL/Redis data, and the `eighty-point`
-system account. If decommissioning the host, remove the retained config and
-account separately:
+脚本会停止并禁用服务，删除 unit 文件和服务端程序，但保留 `/etc/eighty-point/server.env`、MySQL/Redis 数据及 `eighty-point` 系统账号。若要彻底回收主机，再单独移除保留的配置和账号：
 
 ```sh
 sudo rm -rf /etc/eighty-point
 sudo userdel eighty-point
 ```
 
-Host MySQL/Redis packages and their data are left intact; remove them only after
-backing up or intentionally deleting their data.
+主机上的 MySQL/Redis 软件包及其数据不会被卸载脚本删除；请先备份，只有在明确要删除数据时再单独卸载。
 
-The health checks independently verify MySQL, Redis, and the server's HTTP
-liveness endpoint. They do not establish that application RPCs or game
-operations are ready.
+健康检查分别确认 MySQL、Redis 和 HTTP 存活端点可用；它们不能证明 RPC、游戏操作等业务已经就绪。

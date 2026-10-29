@@ -8,11 +8,11 @@ env_file="$deploy_dir/.env"
 backup_dir="${1:-$deploy_dir/backups}"
 
 if [[ ! -f "$env_file" ]]; then
-  printf 'Missing %s; run init.sh first.\n' "$env_file" >&2
+  printf '找不到 %s；请先运行 init.sh。\n' "$env_file" >&2
   exit 1
 fi
 if grep -Eq '^DB_(PASSWORD|ROOT_PASSWORD)=replace-with-' "$env_file"; then
-  printf 'Replace the placeholder database passwords in %s before backing up.\n' "$env_file" >&2
+  printf '备份前请先替换 %s 中的数据库密码占位值。\n' "$env_file" >&2
   exit 1
 fi
 
