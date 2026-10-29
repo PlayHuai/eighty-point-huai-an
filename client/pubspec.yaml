@@ -11,6 +11,7 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_secure_storage: ^10.0.0
+  flutter_svg: ^2.2.3
   grpc: ^5.1.0
 
 dev_dependencies:
@@ -19,3 +20,52 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/app_icon.png
+    - assets/icons/ic_add_friend/
+    - assets/icons/ic_autoplay/
+    - assets/icons/ic_autoplay_active/
+    - assets/icons/ic_back/
+    - assets/icons/ic_card_back/
+    - assets/icons/ic_chat/
+    - assets/icons/ic_close/
+    - assets/icons/ic_close_hand/
+    - assets/icons/ic_combo_510k/
+    - assets/icons/ic_comeback/
+    - assets/icons/ic_countdown/
+    - assets/icons/ic_create_room/
+    - assets/icons/ic_defeat/
+    - assets/icons/ic_draw_lighting/
+    - assets/icons/ic_host/
+    - assets/icons/ic_invite/
+    - assets/icons/ic_level/
+    - assets/icons/ic_level_card/
+    - assets/icons/ic_locked/
+    - assets/icons/ic_login/
+    - assets/icons/ic_more/
+    - assets/icons/ic_natural_level/
+    - assets/icons/ic_offline/
+    - assets/icons/ic_online/
+    - assets/icons/ic_open_hand/
+    - assets/icons/ic_paddword_room/
+    - assets/icons/ic_read_five/
+    - assets/icons/ic_refresh/
+    - assets/icons/ic_room_expert/
+    - assets/icons/ic_room_normal/
+    - assets/icons/ic_room_supreme/
+    - assets/icons/ic_search/
+    - assets/icons/ic_seat/
+    - assets/icons/ic_settings/
+    - assets/icons/ic_sky_earth/
+    - assets/icons/ic_spectator/
+    - assets/icons/ic_spring/
+    - assets/icons/ic_suit_club/
+    - assets/icons/ic_suit_diamond/
+    - assets/icons/ic_suit_spade/
+    - assets/icons/ic_surt_heart/
+    - assets/icons/ic_swap_host/
+    - assets/icons/ic_trump/
+    - assets/icons/ic_trump_dadge/
+    - assets/icons/ic_victory/
+    - assets/icons/ic_waiting/
+    - assets/icons/ic_watching/
