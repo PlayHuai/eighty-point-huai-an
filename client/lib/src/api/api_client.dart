@@ -17,6 +17,12 @@ abstract interface class ApiClient {
     required String nickname,
   });
 
+  Future<void> updateProfile({
+    required String accessToken,
+    required String nickname,
+    required String avatarUrl,
+  });
+
   Future<AuthSession> refresh(String refreshToken);
 
   Future<void> logout(String refreshToken);
@@ -58,6 +64,22 @@ class GrpcApiClient implements ApiClient {
         ..nickname = nickname,
     );
     return _sessionFrom(response);
+  }
+
+  @override
+  Future<void> updateProfile({
+    required String accessToken,
+    required String nickname,
+    required String avatarUrl,
+  }) async {
+    await api.PlayerServiceClient(_channel).updateProfile(
+      api.UpdateProfileRequest()
+        ..nickname = nickname
+        ..avatarUrl = avatarUrl,
+      options: CallOptions(
+        metadata: {'authorization': 'Bearer ' + accessToken},
+      ),
+    );
   }
 
   @override

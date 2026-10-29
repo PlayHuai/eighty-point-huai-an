@@ -6,6 +6,7 @@ import 'package:eighty_point_huai_an/src/auth/auth_session.dart';
 import 'package:eighty_point_huai_an/src/auth/session_store.dart';
 import 'package:eighty_point_huai_an/src/ui/client_app.dart';
 import 'package:eighty_point_huai_an/src/ui/login_screen.dart';
+import 'package:eighty_point_huai_an/src/ui/register_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grpc/grpc.dart';
@@ -95,50 +96,19 @@ void main() {
     auth.dispose();
   });
 
-  testWidgets('keeps registration fields mounted while the request is pending', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(400, 500));
-    final api = _FakeApiClient();
-    final auth = AuthController(api: api, store: _FakeSessionStore());
-
+  testWidgets('login opens the standalone registration screen', (tester) async {
+    final auth = AuthController(
+      api: _FakeApiClient(),
+      store: _FakeSessionStore(),
+    );
     await tester.pumpWidget(ClientApp(auth: auth));
     await tester.pumpAndSettle();
+
     await tester.tap(find.text('创建账号'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextFormField).at(0), 'account');
-    await tester.enterText(find.byType(TextFormField).at(1), 'nickname');
-    await tester.enterText(find.byType(TextFormField).at(2), 'password');
-    await tester.ensureVisible(find.widgetWithText(FilledButton, '注册'));
-    await tester.tap(find.widgetWithText(FilledButton, '注册'));
-    await tester.pump();
 
-    expect(find.text('创建账号'), findsWidgets);
-    expect(find.byType(ModalBarrier), findsOneWidget);
-    expect(
-      tester.widget<AbsorbPointer>(find.byType(AbsorbPointer).first).absorbing,
-      isTrue,
-    );
-    expect(
-      tester.widgetList<TextFormField>(find.byType(TextFormField)).map(
-        (field) => field.controller!.text,
-      ),
-      ['account', 'nickname', 'password'],
-    );
-
-    api.registerCompleter.completeError(
-      GrpcError.unauthenticated('registration failed'),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('创建账号'), findsWidgets);
-    expect(
-      tester.widgetList<TextFormField>(find.byType(TextFormField)).map(
-        (field) => field.controller!.text,
-      ),
-      ['account', 'nickname', 'password'],
-    );
-    await tester.binding.setSurfaceSize(null);
+    expect(find.byType(RegisterScreen), findsOneWidget);
+    expect(find.text('请输入密码（≥8位含字母数字）'), findsOneWidget);
   });
 
   testWidgets('login form remains scrollable on a short viewport', (tester) async {
@@ -150,20 +120,47 @@ void main() {
 
     await tester.pumpWidget(ClientApp(auth: auth));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('创建账号'));
-    await tester.pumpAndSettle();
 
     expect(find.byType(SingleChildScrollView), findsOneWidget);
-    await tester.ensureVisible(find.widgetWithText(FilledButton, '注册'));
+    await tester.ensureVisible(find.widgetWithText(FilledButton, '登录'));
     expect(tester.takeException(), isNull);
 
     await tester.binding.setSurfaceSize(null);
   });
+
+  testWidgets('server login errors remain authoritative without client lockout', (
+    tester,
+  ) async {
+    final api = _FakeApiClient();
+    final auth = AuthController(api: api, store: _FakeSessionStore());
+    await tester.pumpWidget(ClientApp(auth: auth));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextFormField).at(0), 'account');
+    await tester.enterText(find.byType(TextFormField).at(1), 'password');
+    for (var attempt = 0; attempt < 2; attempt++) {
+      await tester.tap(find.widgetWithText(FilledButton, '登录'));
+      await tester.pump();
+      api.loginCompleter.completeError(
+        GrpcError.resourceExhausted('login temporarily restricted'),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('login temporarily restricted'), findsOneWidget);
+      if (attempt == 0) {
+        expect(find.widgetWithText(FilledButton, '登录'), findsOneWidget);
+        api.resetLoginCompleter();
+      }
+    }
+  });
 }
 
 class _FakeApiClient implements ApiClient {
-  final loginCompleter = Completer<AuthSession>();
+  Completer<AuthSession> loginCompleter = Completer<AuthSession>();
   final registerCompleter = Completer<AuthSession>();
+
+  void resetLoginCompleter() {
+    loginCompleter = Completer<AuthSession>();
+  }
 
   @override
   Future<AuthSession> login({
@@ -177,6 +174,13 @@ class _FakeApiClient implements ApiClient {
     required String password,
     required String nickname,
   }) => registerCompleter.future;
+
+  @override
+  Future<void> updateProfile({
+    required String accessToken,
+    required String nickname,
+    required String avatarUrl,
+  }) async {}
 
   @override
   Future<AuthSession> refresh(String refreshToken) async =>
