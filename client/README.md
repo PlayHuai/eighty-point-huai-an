@@ -9,3 +9,9 @@ Generate the Dart API bindings by following the instructions in
 
 The API endpoint defaults to `https://localhost:8443`. Override it at build or
 run time with `--dart-define=API_ENDPOINT=https://your-api.example`.
+
+The shared UI theme is defined in `lib/src/ui/theme/app_theme.dart` from
+`ui-design/DarkTokens.json`. Reusable 32px state icons and the AppIcon are
+bundled under `assets/`; card faces are rendered from rank/suit data because
+the `third-party/playing-cards` source directory currently contains no card
+image files.

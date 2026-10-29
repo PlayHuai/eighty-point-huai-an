@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../auth/auth_controller.dart';
+import 'theme/app_theme.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({required this.auth, super.key});
@@ -49,7 +50,7 @@ class _LoginScreenState extends State<LoginScreen> {
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 400),
               child: Padding(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(DarkTokens.spacingS5),
                 child: Form(
                   key: _formKey,
                   child: Column(
@@ -61,7 +62,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         style: Theme.of(context).textTheme.headlineMedium,
                         textAlign: TextAlign.center,
                       ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: DarkTokens.spacingS5),
                       TextFormField(
                         controller: _account,
                         decoration: const InputDecoration(labelText: '账号或邮箱'),
@@ -90,7 +91,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       if (widget.auth.error case final error?)
                         Padding(
-                          padding: const EdgeInsets.only(top: 12),
+                          padding: const EdgeInsets.only(
+                            top: DarkTokens.spacingS3,
+                          ),
                           child: Text(
                             error,
                             style: TextStyle(
@@ -105,7 +108,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               : widget.auth.restoreSession,
                           child: const Text('重试恢复登录'),
                         ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: DarkTokens.spacingS4),
                       FilledButton(
                         onPressed: widget.auth.isLoading ? null : _submit,
                         child: Text(_registering ? '注册' : '登录'),

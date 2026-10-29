@@ -5,11 +5,13 @@ import 'package:flutter/material.dart';
 import '../auth/auth_controller.dart';
 import 'home_screen.dart';
 import 'login_screen.dart';
+import 'theme/app_theme.dart';
 
 class ClientApp extends StatefulWidget {
-  const ClientApp({required this.auth, super.key});
+  const ClientApp({required this.auth, this.routes = const {}, super.key});
 
   final AuthController auth;
+  final Map<String, WidgetBuilder> routes;
 
   @override
   State<ClientApp> createState() => _ClientAppState();
@@ -32,7 +34,8 @@ class _ClientAppState extends State<ClientApp> {
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: '淮安80分',
-    theme: ThemeData(colorSchemeSeed: Colors.indigo, useMaterial3: true),
+    theme: AppTheme.dark,
+    routes: widget.routes,
     home: AnimatedBuilder(
       animation: widget.auth,
       builder: (context, _) {
