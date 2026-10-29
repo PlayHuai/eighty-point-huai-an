@@ -185,6 +185,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('普通大厅'), findsOneWidget);
     expect(find.text('周末牌局'), findsOneWidget);
+    expect(find.text('Player · 800 分 · 青铜'), findsOneWidget);
     expect(find.text('2/4 人  ·  等待中'), findsOneWidget);
     expect(find.text('最低积分 100'), findsOneWidget);
     expect(find.text('允许观战'), findsOneWidget);
@@ -675,6 +676,16 @@ class _FakeApiClient implements ApiClient {
       version: 1,
     );
   }
+
+  @override
+  Future<PlayerStatistics> getStatistics({required String accessToken}) async =>
+      const PlayerStatistics(
+        totalGames: 0,
+        wins: 0,
+        losses: 0,
+        points: 800,
+        rank: '青铜',
+      );
 
   @override
   Future<PlayerStatistics> getFriendStatistics({

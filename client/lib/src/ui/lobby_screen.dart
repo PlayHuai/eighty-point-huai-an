@@ -45,6 +45,16 @@ final roomInvitationsProvider = FutureProvider<List<RoomInvitation>>((ref) {
       .listRoomInvitations(accessToken: session.accessToken);
 });
 
+final lobbyPlayerStatisticsProvider = FutureProvider<PlayerStatistics?>((ref) {
+  final session = ref.watch(
+    authControllerProvider.select((auth) => auth.session),
+  );
+  if (session == null) return Future.value(null);
+  return ref
+      .watch(apiClientProvider)
+      .getStatistics(accessToken: session.accessToken);
+});
+
 class LobbyScreen extends ConsumerStatefulWidget {
   const LobbyScreen({
     required this.auth,
@@ -483,14 +493,6 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
           ),
           icon: const Icon(Icons.people_outline),
         ),
-        if (MediaQuery.sizeOf(context).width >
-            ResponsiveBreakpoints.compactMaxWidth)
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: DarkTokens.spacingS3,
-            ),
-            child: Center(child: Text(widget.nickname)),
-          ),
         IconButton(
           tooltip: '退出登录',
           onPressed: widget.auth.isLoading ? null : widget.auth.logout,
@@ -523,6 +525,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                 ref.invalidate(lobbyHallsProvider);
                 ref.invalidate(lobbyRoomsProvider);
                 ref.invalidate(roomInvitationsProvider);
+                ref.invalidate(lobbyPlayerStatisticsProvider);
               },
               icon: const DesignIcon(
                 name: DesignIconName.refresh,
@@ -530,6 +533,25 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
               ),
             ),
           ],
+        ),
+        Align(
+          alignment: Alignment.centerRight,
+          child: ref.watch(lobbyPlayerStatisticsProvider).when(
+            data: (statistics) => Text(
+              statistics == null
+                  ? widget.nickname
+                  : '${widget.nickname} · ${statistics.points} 分 · ${statistics.rank}',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            error: (_, _) => Text(
+              widget.nickname,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            loading: () => Text(
+              widget.nickname,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ),
         ),
         const SizedBox(height: DarkTokens.spacingS3),
         Expanded(
