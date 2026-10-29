@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../auth/auth_controller.dart';
+import 'theme/app_theme.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({required this.auth, super.key});
@@ -17,6 +18,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _password = TextEditingController();
   final _nickname = TextEditingController();
   bool _registering = false;
+  bool _passwordVisible = false;
 
   @override
   void dispose() {
@@ -49,7 +51,7 @@ class _LoginScreenState extends State<LoginScreen> {
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 400),
               child: Padding(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(DarkTokens.spacingS5),
                 child: Form(
                   key: _formKey,
                   child: Column(
@@ -61,7 +63,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         style: Theme.of(context).textTheme.headlineMedium,
                         textAlign: TextAlign.center,
                       ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: DarkTokens.spacingS5),
                       TextFormField(
                         controller: _account,
                         decoration: const InputDecoration(labelText: '账号或邮箱'),
@@ -81,16 +83,27 @@ class _LoginScreenState extends State<LoginScreen> {
                           textInputAction: TextInputAction.next,
                         ),
                       TextFormField(
+                        key: const ValueKey('login-password-field'),
                         controller: _password,
-                        decoration: const InputDecoration(labelText: '密码'),
-                        obscureText: true,
+                        decoration: InputDecoration(
+                          labelText: '密码',
+                          suffixIcon: TextButton(
+                            onPressed: () => setState(
+                              () => _passwordVisible = !_passwordVisible,
+                            ),
+                            child: Text(_passwordVisible ? '隐藏' : '显示'),
+                          ),
+                        ),
+                        obscureText: !_passwordVisible,
                         validator: (value) =>
                             value == null || value.isEmpty ? '请输入密码' : null,
                         onFieldSubmitted: (_) => _submit(),
                       ),
                       if (widget.auth.error case final error?)
                         Padding(
-                          padding: const EdgeInsets.only(top: 12),
+                          padding: const EdgeInsets.only(
+                            top: DarkTokens.spacingS3,
+                          ),
                           child: Text(
                             error,
                             style: TextStyle(
@@ -105,7 +118,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               : widget.auth.restoreSession,
                           child: const Text('重试恢复登录'),
                         ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: DarkTokens.spacingS4),
                       FilledButton(
                         onPressed: widget.auth.isLoading ? null : _submit,
                         child: Text(_registering ? '注册' : '登录'),
