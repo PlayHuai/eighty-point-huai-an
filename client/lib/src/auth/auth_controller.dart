@@ -67,13 +67,45 @@ class AuthController extends ChangeNotifier {
     String account,
     String password,
     String nickname,
-  ) => _authenticate(
-    () => _api.register(
-      account: account,
-      password: password,
-      nickname: nickname,
-    ),
-  );
+    String avatarUrl,
+  ) async {
+    _isLoading = true;
+    _error = null;
+    _canRetryRestore = false;
+    notifyListeners();
+    try {
+      final session = await _api.register(
+        account: account,
+        password: password,
+        nickname: nickname,
+      );
+      _session = session;
+      final warnings = <String>[];
+      try {
+        await _store.write(session);
+      } catch (_) {
+        warnings.add('账号已创建，但登录状态无法保存。');
+      }
+      try {
+        await _api.updateProfile(
+          accessToken: session.accessToken,
+          nickname: nickname,
+          avatarUrl: avatarUrl,
+        );
+      } catch (_) {
+        warnings.add('账号已创建，但头像暂未保存。');
+      }
+      _error = warnings.isEmpty ? null : warnings.join(' ');
+      return true;
+    } catch (error) {
+      _session = null;
+      _error = error.toString();
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
 
   Future<bool> _authenticate(Future<AuthSession> Function() authenticate) async {
     _isLoading = true;

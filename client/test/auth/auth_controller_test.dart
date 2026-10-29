@@ -71,6 +71,13 @@ class _FakeApiClient implements ApiClient {
   }) => throw UnimplementedError();
 
   @override
+  Future<void> updateProfile({
+    required String accessToken,
+    required String nickname,
+    required String avatarUrl,
+  }) async {}
+
+  @override
   Future<AuthSession> refresh(String refreshToken) => onRefresh(refreshToken);
 
   @override
