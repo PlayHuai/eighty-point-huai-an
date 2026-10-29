@@ -69,6 +69,7 @@ class AuthController extends ChangeNotifier {
     String nickname,
     String avatarUrl,
   ) async {
+    if (_isLoading) return false;
     _isLoading = true;
     _error = null;
     _canRetryRestore = false;
