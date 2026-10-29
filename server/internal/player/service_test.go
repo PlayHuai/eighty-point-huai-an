@@ -16,9 +16,75 @@ type publicProfileRepositoryStub struct {
 	err      error
 }
 
+type statisticsRepositoryStub struct {
+	publicProfileRepositoryStub
+	friends   bool
+	statistics Statistics
+	results    []RecentResult
+	targetID   string
+	offset     uint32
+	limit      uint32
+}
+
+func (r *statisticsRepositoryStub) AreFriends(_ context.Context, _, targetID string) (bool, error) {
+	r.targetID = targetID
+	return r.friends, nil
+}
+
+func (r *statisticsRepositoryStub) GetStatistics(_ context.Context, userID string) (Statistics, error) {
+	r.targetID = userID
+	return r.statistics, nil
+}
+
+func (r *statisticsRepositoryStub) ListRecentResults(_ context.Context, userID string, offset, limit uint32) ([]RecentResult, error) {
+	r.targetID, r.offset, r.limit = userID, offset, limit
+	return r.results, nil
+}
+
 func (r *publicProfileRepositoryStub) GetPublicProfile(_ context.Context, userID string) (PublicProfile, error) {
 	r.userID = userID
 	return r.profile, r.err
+}
+
+func TestPublicProfileServiceStatisticsAreLimitedToFriends(t *testing.T) {
+	repository := &statisticsRepositoryStub{
+		friends: true,
+		statistics: Statistics{
+			TotalGames: 12, Wins: 7, Losses: 5, Points: 900, Rank: "青铜",
+		},
+		results: []RecentResult{
+			{GameSessionID: "game-1", Won: true, PointsDelta: 25},
+			{GameSessionID: "game-2", Won: false, PointsDelta: -25},
+		},
+	}
+	service, err := NewPublicProfileService(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stats, err := service.GetStatistics(context.Background(), "viewer", "friend")
+	if err != nil || stats != repository.statistics || repository.targetID != "friend" {
+		t.Fatalf("GetStatistics() = %+v, %v; repository = %+v", stats, err, repository)
+	}
+	results, next, err := service.ListRecentResults(context.Background(), "viewer", "friend", "5", 1)
+	if err != nil || len(results) != 1 || results[0].GameSessionID != "game-1" ||
+		next != "6" || repository.targetID != "friend" || repository.offset != 5 || repository.limit != 2 {
+		t.Fatalf("ListRecentResults() = %+v, %q, %v; repository = %+v", results, next, err, repository)
+	}
+}
+
+func TestPublicProfileServiceRejectsNonFriendStatisticsAndInvalidPages(t *testing.T) {
+	repository := &statisticsRepositoryStub{}
+	service, err := NewPublicProfileService(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.GetStatistics(context.Background(), "viewer", "stranger"); !errors.Is(err, ErrFriendRequired) {
+		t.Fatalf("GetStatistics() error = %v, want ErrFriendRequired", err)
+	}
+	if _, _, err := service.ListRecentResults(context.Background(), "viewer", "viewer", "invalid", 10); !errors.Is(err, ErrInvalidPage) {
+		t.Fatalf("ListRecentResults() error = %v, want ErrInvalidPage", err)
+	}
 }
 
 func (r *publicProfileRepositoryStub) UpdatePublicProfile(_ context.Context, userID, nickname, avatarURL string) (PublicProfile, error) {

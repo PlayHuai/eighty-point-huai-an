@@ -27,3 +27,24 @@ type PublicProfileRepository interface {
 	GetPublicProfile(ctx context.Context, userID string) (PublicProfile, error)
 	UpdatePublicProfile(ctx context.Context, userID, nickname, avatarURL string) (PublicProfile, error)
 }
+
+type Statistics struct {
+	TotalGames int64
+	Wins       int64
+	Losses     int64
+	Points     int64
+	Rank       string
+}
+
+type RecentResult struct {
+	GameSessionID string
+	Won           bool
+	PointsDelta   int64
+	EndedAt       time.Time
+}
+
+type StatisticsRepository interface {
+	AreFriends(ctx context.Context, firstUserID, secondUserID string) (bool, error)
+	GetStatistics(ctx context.Context, userID string) (Statistics, error)
+	ListRecentResults(ctx context.Context, userID string, offset, limit uint32) ([]RecentResult, error)
+}

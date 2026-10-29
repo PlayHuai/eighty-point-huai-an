@@ -376,6 +376,75 @@ func (s *Store) GetPublicProfile(ctx context.Context, userID string) (player.Pub
 	return profile, err
 }
 
+func (s *Store) AreFriends(ctx context.Context, firstUserID, secondUserID string) (bool, error) {
+	if firstUserID == "" || secondUserID == "" || firstUserID == secondUserID {
+		return false, nil
+	}
+	var friends bool
+	err := s.db.QueryRowContext(ctx, `SELECT EXISTS (
+		SELECT 1 FROM friendships
+		WHERE user_id = ? AND friend_id = ? AND status = 'ACCEPTED'
+	)`, firstUserID, secondUserID).Scan(&friends)
+	if err != nil {
+		return false, fmt.Errorf("check player friendship: %w", err)
+	}
+	return friends, nil
+}
+
+func (s *Store) GetStatistics(ctx context.Context, userID string) (player.Statistics, error) {
+	if userID == "" {
+		return player.Statistics{}, player.ErrInvalidProfile
+	}
+	var statistics player.Statistics
+	err := s.db.QueryRowContext(ctx, `SELECT
+		COUNT(DISTINCT l.game_session_id),
+		COALESCE(SUM(l.delta > 0), 0),
+		p.points,
+		p.rank_name
+		FROM player_profiles p
+		LEFT JOIN point_ledger l ON l.user_id = p.user_id
+		WHERE p.user_id = ?
+		GROUP BY p.user_id, p.points, p.rank_name`, userID).Scan(
+		&statistics.TotalGames, &statistics.Wins, &statistics.Points, &statistics.Rank)
+	if errors.Is(err, sql.ErrNoRows) {
+		return player.Statistics{}, player.ErrProfileNotFound
+	}
+	if err != nil {
+		return player.Statistics{}, fmt.Errorf("get player statistics: %w", err)
+	}
+	statistics.Losses = statistics.TotalGames - statistics.Wins
+	return statistics, nil
+}
+
+func (s *Store) ListRecentResults(ctx context.Context, userID string, offset, limit uint32) ([]player.RecentResult, error) {
+	if userID == "" || limit == 0 || limit > 101 {
+		return nil, player.ErrInvalidPage
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT l.game_session_id, l.delta, g.ended_at
+		FROM point_ledger l
+		JOIN game_sessions g ON g.id = l.game_session_id
+		WHERE l.user_id = ? AND g.ended_at IS NOT NULL
+		ORDER BY g.ended_at DESC, l.game_session_id DESC
+		LIMIT ? OFFSET ?`, userID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list recent player results: %w", err)
+	}
+	defer rows.Close()
+	results := make([]player.RecentResult, 0, limit)
+	for rows.Next() {
+		var result player.RecentResult
+		if err := rows.Scan(&result.GameSessionID, &result.PointsDelta, &result.EndedAt); err != nil {
+			return nil, fmt.Errorf("scan recent player result: %w", err)
+		}
+		result.Won = result.PointsDelta > 0
+		results = append(results, result)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read recent player results: %w", err)
+	}
+	return results, nil
+}
+
 func (s *Store) UpdatePublicProfile(ctx context.Context, userID, nickname, avatarURL string) (player.PublicProfile, error) {
 	if userID == "" || nickname == "" || utf8.RuneCountInString(nickname) > 64 ||
 		utf8.RuneCountInString(avatarURL) > 512 {
