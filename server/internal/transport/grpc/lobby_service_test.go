@@ -16,12 +16,18 @@ import (
 )
 
 type lobbyProfiles struct {
-	profile player.Profile
-	public  map[string]player.PublicProfile
-	err     error
+	profile    player.Profile
+	public     map[string]player.PublicProfile
+	err        error
+	batchCalls *int
+	batchIDs   *[]string
+	findCalls  *int
 }
 
 func (p lobbyProfiles) FindProfile(context.Context, string) (player.Profile, error) {
+	if p.findCalls != nil {
+		*p.findCalls = *p.findCalls + 1
+	}
 	return p.profile, p.err
 }
 
@@ -33,6 +39,22 @@ func (p lobbyProfiles) GetPublicProfile(_ context.Context, userID string) (playe
 		return player.PublicProfile{}, player.ErrProfileNotFound
 	}
 	return profile, nil
+}
+
+func (p lobbyProfiles) GetPublicProfiles(_ context.Context, userIDs []string) (map[string]player.PublicProfile, error) {
+	if p.batchCalls != nil {
+		*p.batchCalls = *p.batchCalls + 1
+	}
+	if p.batchIDs != nil {
+		*p.batchIDs = append(*p.batchIDs, userIDs...)
+	}
+	profiles := make(map[string]player.PublicProfile, len(userIDs))
+	for _, userID := range userIDs {
+		if profile, exists := p.public[userID]; exists {
+			profiles[userID] = profile
+		}
+	}
+	return profiles, nil
 }
 
 func (p lobbyProfiles) UpdatePublicProfile(context.Context, string, string, string) (player.PublicProfile, error) {
@@ -76,6 +98,13 @@ func TestListRoomsAppliesAdmissionAndPaginates(t *testing.T) {
 	if err != nil || len(first.GetRooms()) != 1 || first.GetPage().GetNextPageToken() == "" {
 		t.Fatalf("first ListRooms() = %+v, %v", first, err)
 	}
+	if _, err := manager.Close(
+		first.GetRooms()[0].GetRoomId(),
+		first.GetRooms()[0].GetOwner().GetUserId(),
+		first.GetRooms()[0].GetVersion(),
+	); err != nil {
+		t.Fatalf("Close(first page room): %v", err)
+	}
 	second, err := server.ListRooms(ctx, &huaiv1.ListRoomsRequest{
 		HallId: lobby.HallOrdinary,
 		Page:   &huaiv1.PageRequest{PageSize: 1, PageToken: first.GetPage().GetNextPageToken()},
@@ -94,11 +123,42 @@ func TestListRoomsAppliesAdmissionAndPaginates(t *testing.T) {
 	}
 }
 
+func TestListRoomsLoadsDistinctOwnerProfilesInOneBatch(t *testing.T) {
+	manager := room.NewManager()
+	for i := 0; i < 3; i++ {
+		if _, err := manager.CreateRoom(lobby.HallOrdinary, "owner", 500, room.Settings{Name: "room"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	calls := 0
+	var requestedIDs []string
+	server := &lobbyServer{
+		rooms: manager,
+		profiles: lobbyProfiles{
+			profile:    player.Profile{UserID: "viewer", Points: 500},
+			public:     map[string]player.PublicProfile{"owner": {UserID: "owner", Nickname: "Owner"}},
+			batchCalls: &calls,
+			batchIDs:   &requestedIDs,
+		},
+	}
+	response, err := server.ListRooms(ctxWithUserID(context.Background(), "viewer"), &huaiv1.ListRoomsRequest{
+		HallId: lobby.HallOrdinary, Page: &huaiv1.PageRequest{PageSize: 10},
+	})
+	if err != nil || len(response.GetRooms()) != 3 {
+		t.Fatalf("ListRooms() = %+v, %v", response, err)
+	}
+	if calls != 1 || len(requestedIDs) != 1 || requestedIDs[0] != "owner" {
+		t.Fatalf("owner profile batch calls=%d IDs=%v, want one call for one distinct owner", calls, requestedIDs)
+	}
+}
+
 func TestListRoomsRejectsPrivateHallAndInvalidPages(t *testing.T) {
+	findCalls := 0
 	server := &lobbyServer{
 		rooms: room.NewManager(),
 		profiles: lobbyProfiles{
-			profile: player.Profile{UserID: "viewer", Points: 50_000},
+			profile:   player.Profile{UserID: "viewer", Points: 50_000},
+			findCalls: &findCalls,
 		},
 	}
 	ctx := ctxWithUserID(context.Background(), "viewer")
@@ -109,6 +169,12 @@ func TestListRoomsRejectsPrivateHallAndInvalidPages(t *testing.T) {
 		HallId: lobby.HallOrdinary, Page: &huaiv1.PageRequest{PageSize: 101},
 	}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("oversized page ListRooms error = %v", err)
+	}
+	findCalls = 0
+	if _, err := server.ListRooms(ctx, &huaiv1.ListRoomsRequest{
+		HallId: lobby.HallOrdinary, Page: &huaiv1.PageRequest{PageToken: "invalid"},
+	}); status.Code(err) != codes.InvalidArgument || findCalls != 0 {
+		t.Fatalf("invalid cursor error=%v profile lookups=%d, want InvalidArgument without lookup", err, findCalls)
 	}
 }
 
