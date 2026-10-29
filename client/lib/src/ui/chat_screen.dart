@@ -64,7 +64,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       _pendingRequestId = null;
       _messageController.clear();
       ref.invalidate(privateMessagesProvider(widget.peer.userId));
-    } catch (error) {
+    } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('发送失败；重试将沿用本次请求编号。')),

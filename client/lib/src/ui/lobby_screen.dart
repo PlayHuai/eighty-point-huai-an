@@ -67,6 +67,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   bool _isCreating = false;
   bool _isSendingInvite = false;
   final _invitationRequestIds = <String, String>{};
+  final _roomInviteRequestIds = <String, String>{};
   String? _createRequestKey;
   String? _createRequestId;
 
@@ -415,14 +416,21 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   ) async {
     final session = widget.auth.session;
     if (session == null || _isSendingInvite) return;
+    final requestKey = '$roomId:$friendId';
+    final requestId = _roomInviteRequestIds.putIfAbsent(
+      requestKey,
+      createRequestId,
+    );
     setState(() => _isSendingInvite = true);
     try {
       await ref.read(apiClientProvider).sendRoomInvite(
         accessToken: session.accessToken,
         roomId: roomId,
         friendId: friendId,
+        requestId: requestId,
       );
       if (!mounted) return;
+      _roomInviteRequestIds.remove(requestKey);
       if (!dialogContext.mounted ||
           ModalRoute.of(dialogContext)?.isCurrent != true) {
         return;

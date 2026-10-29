@@ -92,8 +92,7 @@ class FriendProfileScreen extends ConsumerWidget {
         const SizedBox(height: DarkTokens.spacingS3),
         ref.watch(friendStatisticsProvider(friend.userId)).when(
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, _) => _errorCard(
-            context,
+          error: (_, _) => _errorCard(
             '好友统计加载失败',
             () => ref.invalidate(friendStatisticsProvider(friend.userId)),
           ),
@@ -127,8 +126,7 @@ class FriendProfileScreen extends ConsumerWidget {
             padding: EdgeInsets.all(DarkTokens.spacingS4),
             child: Center(child: CircularProgressIndicator()),
           ),
-          error: (error, _) => _errorCard(
-            context,
+          error: (_, _) => _errorCard(
             '最近战绩加载失败',
             () => ref.invalidate(friendRecentResultsProvider(friend.userId)),
           ),
@@ -164,11 +162,7 @@ class FriendProfileScreen extends ConsumerWidget {
     ),
   );
 
-  Widget _errorCard(
-    BuildContext context,
-    String message,
-    VoidCallback retry,
-  ) => Card(
+  Widget _errorCard(String message, VoidCallback retry) => Card(
     child: ListTile(
       title: Text(message),
       trailing: TextButton(onPressed: retry, child: const Text('重试')),
