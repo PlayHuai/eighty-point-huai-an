@@ -63,3 +63,24 @@ class PlayerFriend {
   final String nickname;
   final String avatarUrl;
 }
+
+class ChatMessage {
+  const ChatMessage({
+    required this.id,
+    required this.senderUserId,
+    required this.body,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String senderUserId;
+  final String body;
+  final DateTime createdAt;
+}
+
+class ChatMessagesPage {
+  const ChatMessagesPage({required this.messages, required this.nextPageToken});
+
+  final List<ChatMessage> messages;
+  final String nextPageToken;
+}

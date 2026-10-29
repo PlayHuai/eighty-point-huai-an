@@ -8,6 +8,7 @@ import '../api/request_id.dart';
 import '../auth/auth_controller.dart';
 import 'client_providers.dart';
 import 'components/design_icon.dart';
+import 'friend_list_screen.dart';
 import 'responsive_breakpoints.dart';
 import 'theme/app_theme.dart';
 
@@ -66,6 +67,8 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   bool _isCreating = false;
   bool _isSendingInvite = false;
   final _invitationRequestIds = <String, String>{};
+  String? _createRequestKey;
+  String? _createRequestId;
 
   Future<void> _joinRoom(LobbyRoom room) async {
     final session = widget.auth.session;
@@ -157,6 +160,8 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     String hallId,
     String name,
     String password,
+    bool allowSpectators,
+    int minimumPoints,
   ) async {
     final session = widget.auth.session;
     if (session == null || _isCreating) return;
@@ -166,6 +171,11 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       );
       return;
     }
+    final requestKey = '$hallId\u0000$name\u0000$password\u0000$allowSpectators\u0000$minimumPoints';
+    if (_createRequestKey != requestKey) {
+      _createRequestKey = requestKey;
+      _createRequestId = createRequestId();
+    }
     setState(() => _isCreating = true);
     try {
       final room = await ref.read(apiClientProvider).createRoom(
@@ -173,8 +183,13 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         hallId: hallId,
         name: name,
         password: password,
+        allowSpectators: allowSpectators,
+        minimumPoints: minimumPoints,
+        requestId: _createRequestId!,
       );
       if (!mounted) return;
+      _createRequestKey = null;
+      _createRequestId = null;
       if (dialogContext.mounted &&
           ModalRoute.of(dialogContext)?.isCurrent == true) {
         Navigator.of(dialogContext).pop();
@@ -254,49 +269,84 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   Future<void> _showCreateRoomDialog(String hallId) async {
     final nameController = TextEditingController();
     final passwordController = TextEditingController();
+    final minimumPointsController = TextEditingController(text: '0');
+    var allowSpectators = false;
     await showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('创建房间'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              maxLength: 32,
-              decoration: const InputDecoration(labelText: '房间名称'),
-            ),
-            if (hallId != friendRoomHallId) ...[
-              const SizedBox(height: DarkTokens.spacingS3),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          scrollable: true,
+          title: const Text('创建房间'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
               TextField(
-                controller: passwordController,
-                decoration: const InputDecoration(labelText: '房间密码（可选）'),
-                obscureText: true,
+                controller: nameController,
+                maxLength: 32,
+                decoration: const InputDecoration(labelText: '房间名称'),
               ),
+              if (hallId != friendRoomHallId) ...[
+                const SizedBox(height: DarkTokens.spacingS3),
+                TextField(
+                  controller: passwordController,
+                  decoration: const InputDecoration(labelText: '房间密码（可选）'),
+                  obscureText: true,
+                ),
+                TextField(
+                  controller: minimumPointsController,
+                  decoration: const InputDecoration(labelText: '最低准入积分'),
+                  keyboardType: TextInputType.number,
+                ),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: allowSpectators,
+                  title: const Text('允许观战'),
+                  onChanged: (value) => setDialogState(
+                    () => allowSpectators = value ?? false,
+                  ),
+                ),
+              ],
             ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: _isCreating
+                  ? null
+                  : () => Navigator.of(dialogContext).pop(),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: _isCreating
+                  ? null
+                  : () {
+                      final parsedMinimumPoints = int.tryParse(
+                        minimumPointsController.text,
+                      );
+                      if (parsedMinimumPoints == null ||
+                          parsedMinimumPoints < 0) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('最低准入积分必须是非负整数。')),
+                        );
+                        return;
+                      }
+                      _createRoom(
+                        dialogContext,
+                        hallId,
+                        nameController.text.trim(),
+                        passwordController.text,
+                        allowSpectators,
+                        hallId == friendRoomHallId ? 0 : parsedMinimumPoints,
+                      );
+                    },
+              child: const Text('创建'),
+            ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: _isCreating
-                ? null
-                : () => _createRoom(
-                    dialogContext,
-                    hallId,
-                    nameController.text.trim(),
-                    passwordController.text,
-                  ),
-            child: const Text('创建'),
-          ),
-        ],
       ),
     );
     nameController.dispose();
     passwordController.dispose();
+    minimumPointsController.dispose();
   }
 
   Future<void> _showFriendInviteDialog(String roomId) async {
@@ -405,6 +455,15 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         ],
       ),
       actions: [
+        IconButton(
+          tooltip: '好友',
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => FriendListScreen(auth: widget.auth),
+            ),
+          ),
+          icon: const Icon(Icons.people_outline),
+        ),
         if (MediaQuery.sizeOf(context).width >
             ResponsiveBreakpoints.compactMaxWidth)
           Padding(

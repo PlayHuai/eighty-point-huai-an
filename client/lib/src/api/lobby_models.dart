@@ -28,6 +28,8 @@ class LobbyRoom {
     required this.capacity,
     required this.hasPassword,
     required this.version,
+    this.allowSpectators = false,
+    this.minimumPoints = 0,
   });
 
   final String id;
@@ -38,4 +40,6 @@ class LobbyRoom {
   final int capacity;
   final bool hasPassword;
   final int version;
+  final bool allowSpectators;
+  final int minimumPoints;
 }

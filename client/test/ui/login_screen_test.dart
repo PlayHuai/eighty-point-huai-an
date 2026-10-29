@@ -13,6 +13,49 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grpc/grpc.dart';
 
 void main() {
+  testWidgets('friend chat retries with the same request ID', (tester) async {
+    final api = _FakeApiClient()
+      ..halls = const [
+        LobbyHall(
+          id: 'ordinary',
+          name: '普通大厅',
+          minimumPoints: 0,
+          maximumPoints: 9999,
+          multiplier: 1,
+        ),
+      ]
+      ..friends = const [
+        PlayerFriend(
+          userId: 'friend-1',
+          nickname: '好友甲',
+          avatarUrl: '',
+        ),
+      ]
+      ..failNextChatSend = true;
+    final auth = AuthController(api: api, store: _FakeSessionStore());
+    final login = auth.login('account', 'password');
+    api.loginCompleter.complete(_session);
+    await login;
+
+    await tester.pumpWidget(ClientApp(auth: auth));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('好友'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('聊天'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byHintText('输入消息'), '你好');
+    await tester.tap(find.byTooltip('发送'));
+    await tester.pumpAndSettle();
+    final firstRequestId = api.chatRequestIds.single;
+
+    await tester.tap(find.byTooltip('发送'));
+    await tester.pumpAndSettle();
+    expect(api.chatRequestIds, [firstRequestId, firstRequestId]);
+    expect(api.sentMessages.single.body, '你好');
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('friend hall is invitation-only, not a public room listing', (
     tester,
   ) async {
@@ -427,6 +470,9 @@ class _FakeApiClient implements ApiClient {
   String? joinedInvitationRequestId;
   String? invitedFriendId;
   String? invitedRoomId;
+  final chatRequestIds = <String>[];
+  final sentMessages = <ChatMessage>[];
+  bool failNextChatSend = false;
 
   @override
   Future<AuthSession> login({
@@ -478,6 +524,9 @@ class _FakeApiClient implements ApiClient {
     required String hallId,
     required String name,
     required String password,
+    bool allowSpectators = false,
+    int minimumPoints = 0,
+    String requestId = '',
   }) async => LobbyRoom(
     id: 'created-friend-room',
     hallId: hallId,
@@ -529,6 +578,69 @@ class _FakeApiClient implements ApiClient {
   @override
   Future<List<PlayerFriend>> listFriends({required String accessToken}) async =>
       friends;
+
+  @override
+  Future<List<PlayerFriend>> searchPlayers({
+    required String accessToken,
+    required String query,
+  }) async => friends.where((friend) => friend.userId.contains(query)).toList();
+
+  @override
+  Future<void> sendFriendRequest({
+    required String accessToken,
+    required String userId,
+  }) async {}
+
+  @override
+  Future<List<PlayerFriend>> listFriendRequests({
+    required String accessToken,
+  }) async => const [];
+
+  @override
+  Future<void> respondFriendRequest({
+    required String accessToken,
+    required String userId,
+    required bool accept,
+  }) async {}
+
+  @override
+  Future<void> removeFriend({
+    required String accessToken,
+    required String userId,
+  }) async {}
+
+  @override
+  Future<ChatMessagesPage> listPrivateMessages({
+    required String accessToken,
+    required String peerUserId,
+    String pageToken = '',
+    int pageSize = 50,
+  }) async => ChatMessagesPage(
+    messages: List.unmodifiable(sentMessages),
+    nextPageToken: '',
+  );
+
+  @override
+  Future<ChatMessage> sendPrivateMessage({
+    required String accessToken,
+    required String peerUserId,
+    required String body,
+    required String requestId,
+  }) async {
+    chatRequestIds.add(requestId);
+    if (failNextChatSend) {
+      failNextChatSend = false;
+      throw StateError('injected send failure');
+    }
+    final message = ChatMessage(
+      id: 'message-${sentMessages.length + 1}',
+      senderUserId: 'user',
+      body: body,
+      createdAt: DateTime.utc(2026),
+    );
+    sentMessages.add(message);
+    return message;
+  }
 
   @override
   Future<void> sendRoomInvite({

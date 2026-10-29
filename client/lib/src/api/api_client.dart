@@ -1,11 +1,13 @@
 import 'package:eighty_point_huai_an/src/generated/huai/v1/api.pbgrpc.dart'
     as api;
+import 'package:fixnum/fixnum.dart';
 import 'package:grpc/service_api.dart';
 
 import 'channel_factory.dart';
 import '../auth/auth_session.dart';
 import 'lobby_models.dart';
 import 'player_models.dart';
+import 'request_id.dart';
 
 abstract interface class ApiClient {
   Future<AuthSession> login({
@@ -41,6 +43,9 @@ abstract interface class ApiClient {
     required String hallId,
     required String name,
     required String password,
+    bool allowSpectators = false,
+    int minimumPoints = 0,
+    String requestId = '',
   });
 
   Future<LobbyRoom> joinRoom({
@@ -72,6 +77,45 @@ abstract interface class ApiClient {
 
   Future<List<PlayerFriend>> listFriends({required String accessToken});
 
+  Future<List<PlayerFriend>> searchPlayers({
+    required String accessToken,
+    required String query,
+  }) => throw UnsupportedError('Player search is not supported.');
+
+  Future<void> sendFriendRequest({
+    required String accessToken,
+    required String userId,
+  }) => throw UnsupportedError('Friend requests are not supported.');
+
+  Future<List<PlayerFriend>> listFriendRequests({
+    required String accessToken,
+  }) => throw UnsupportedError('Friend request listing is not supported.');
+
+  Future<void> respondFriendRequest({
+    required String accessToken,
+    required String userId,
+    required bool accept,
+  }) => throw UnsupportedError('Friend request responses are not supported.');
+
+  Future<void> removeFriend({
+    required String accessToken,
+    required String userId,
+  }) => throw UnsupportedError('Friend removal is not supported.');
+
+  Future<ChatMessagesPage> listPrivateMessages({
+    required String accessToken,
+    required String peerUserId,
+    String pageToken = '',
+    int pageSize = 50,
+  }) => throw UnsupportedError('Private messages are not supported.');
+
+  Future<ChatMessage> sendPrivateMessage({
+    required String accessToken,
+    required String peerUserId,
+    required String body,
+    required String requestId,
+  }) => throw UnsupportedError('Private messages are not supported.');
+
   Future<void> sendRoomInvite({
     required String accessToken,
     required String roomId,
@@ -99,6 +143,7 @@ class GrpcApiClient implements ApiClient {
   late final api.LobbyServiceClient _lobby = api.LobbyServiceClient(_channel);
   late final api.FriendServiceClient _friends = api.FriendServiceClient(_channel);
   late final api.RoomServiceClient _room = api.RoomServiceClient(_channel);
+  late final api.ChatServiceClient _chat = api.ChatServiceClient(_channel);
 
   @override
   Future<AuthSession> login({
@@ -207,12 +252,18 @@ class GrpcApiClient implements ApiClient {
     required String hallId,
     required String name,
     required String password,
+    bool allowSpectators = false,
+    int minimumPoints = 0,
+    String requestId = '',
   }) async {
     final response = await _lobby.createRoom(
       api.CreateRoomRequest()
         ..hallId = hallId
         ..name = name
-        ..password = password,
+        ..password = password
+        ..allowSpectators = allowSpectators
+        ..minimumPoints = Int64(minimumPoints)
+        ..requestId = requestId.isEmpty ? createRequestId() : requestId,
       options: _authenticatedOptions(accessToken),
     );
     return _roomFrom(response);
@@ -367,6 +418,135 @@ class GrpcApiClient implements ApiClient {
   }
 
   @override
+  Future<List<PlayerFriend>> searchPlayers({
+    required String accessToken,
+    required String query,
+  }) async {
+    final response = await _friends.searchPlayers(
+      api.SearchPlayersRequest()
+        ..query = query
+        ..page = (api.PageRequest()..pageSize = 50),
+      options: _authenticatedOptions(accessToken),
+    );
+    return response.players
+        .map(
+          (profile) => PlayerFriend(
+            userId: profile.userId,
+            nickname: profile.nickname,
+            avatarUrl: profile.avatarUrl,
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  @override
+  Future<void> sendFriendRequest({
+    required String accessToken,
+    required String userId,
+  }) async {
+    await _friends.sendRequest(
+      api.FriendRequest()..targetUserId = userId,
+      options: _authenticatedOptions(accessToken),
+    );
+  }
+
+  @override
+  Future<List<PlayerFriend>> listFriendRequests({
+    required String accessToken,
+  }) async {
+    final response = await _friends.listFriendRequests(
+      api.PageRequest()..pageSize = 50,
+      options: _authenticatedOptions(accessToken),
+    );
+    return response.requests
+        .map(
+          (request) => PlayerFriend(
+            userId: request.requester.userId,
+            nickname: request.requester.nickname,
+            avatarUrl: request.requester.avatarUrl,
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  @override
+  Future<void> respondFriendRequest({
+    required String accessToken,
+    required String userId,
+    required bool accept,
+  }) async {
+    await _friends.respondRequest(
+      api.RespondFriendRequest()
+        ..requesterUserId = userId
+        ..accept = accept,
+      options: _authenticatedOptions(accessToken),
+    );
+  }
+
+  @override
+  Future<void> removeFriend({
+    required String accessToken,
+    required String userId,
+  }) async {
+    await _friends.removeFriend(
+      api.FriendRequest()..targetUserId = userId,
+      options: _authenticatedOptions(accessToken),
+    );
+  }
+
+  @override
+  Future<ChatMessagesPage> listPrivateMessages({
+    required String accessToken,
+    required String peerUserId,
+    String pageToken = '',
+    int pageSize = 50,
+  }) async {
+    final response = await _chat.listPrivateMessages(
+      api.ListPrivateMessagesRequest()
+        ..peerUserId = peerUserId
+        ..page = (api.PageRequest()
+          ..pageToken = pageToken
+          ..pageSize = pageSize),
+      options: _authenticatedOptions(accessToken),
+    );
+    return ChatMessagesPage(
+      messages: response.messages
+          .map(
+            (message) => ChatMessage(
+              id: message.messageId,
+              senderUserId: message.senderUserId,
+              body: message.body,
+              createdAt: message.createdAt.toDateTime(),
+            ),
+          )
+          .toList(growable: false),
+      nextPageToken: response.page.nextPageToken,
+    );
+  }
+
+  @override
+  Future<ChatMessage> sendPrivateMessage({
+    required String accessToken,
+    required String peerUserId,
+    required String body,
+    required String requestId,
+  }) async {
+    final message = await _chat.sendPrivateMessage(
+      api.SendPrivateMessageRequest()
+        ..recipientUserId = peerUserId
+        ..requestId = requestId
+        ..body = body,
+      options: _authenticatedOptions(accessToken),
+    );
+    return ChatMessage(
+      id: message.messageId,
+      senderUserId: message.senderUserId,
+      body: message.body,
+      createdAt: message.createdAt.toDateTime(),
+    );
+  }
+
+  @override
   Future<LobbyRoom> joinInvitedRoom({
     required String accessToken,
     required String roomId,
@@ -399,6 +579,8 @@ class GrpcApiClient implements ApiClient {
     capacity: room.capacity,
     hasPassword: room.hasPassword,
     version: room.version.toInt(),
+    allowSpectators: room.allowSpectators,
+    minimumPoints: room.minimumPoints.toInt(),
   );
 
   @override
