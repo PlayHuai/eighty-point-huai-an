@@ -1,6 +1,6 @@
 # Flutter Token → WXSS 对照
 
-`miniprogram/styles/tokens.wxss` 按 `ui-design/DarkTokens.json` / `client/lib/src/ui/theme/app_theme.dart` 的值定义暗色默认主题。尺寸按小程序 WXSS 的 `rpx` 写入。
+`miniprogram/styles/tokens.wxss` 按 `ui-design/DarkTokens.json` / `client/lib/src/ui/theme/app_theme.dart` 的值定义暗色默认主题。尺寸采用 375px 设计基准，Flutter 逻辑像素乘 2 后写为 WXSS 的 `rpx`。
 
 | Flutter Token | WXSS 变量 | 值 |
 |---|---|---|
@@ -20,8 +20,8 @@
 | `suitRed` | `--color-suit-red` | `#c0392b` |
 | `suitBlack` | `--color-suit-black` | `#1c1c1c` |
 | `infoBlue` | `--color-info-blue` | `#4a7ba6` |
-| `fontSizeL1`–`fontSizeL6` | `--font-size-l1`–`--font-size-l6` | `40rpx`–`12rpx` |
-| `radiusCard`, `radiusButton`, `radiusPanel`, `radiusBadge` | `--radius-card`, `--radius-button`, `--radius-panel`, `--radius-badge` | `8rpx`, `8rpx`, `12rpx`, `999rpx` |
-| `spacingS1`–`spacingS6` | `--spacing-s1`–`--spacing-s6` | `4rpx`–`32rpx` |
+| `fontSizeL1`–`fontSizeL6` | `--font-size-l1`–`--font-size-l6` | `80rpx`–`24rpx` |
+| `radiusCard`, `radiusButton`, `radiusPanel`, `radiusBadge` | `--radius-card`, `--radius-button`, `--radius-panel`, `--radius-badge` | `16rpx`, `16rpx`, `24rpx`, `1998rpx` |
+| `spacingS1`–`spacingS6` | `--spacing-s1`–`--spacing-s6` | `8rpx`–`64rpx` |
 
 GameTable 的牌面、动画和完整牌桌状态仍需等服务端牌局快照/事件契约落地后实现。

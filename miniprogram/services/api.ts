@@ -53,18 +53,26 @@ export function listEntertainmentHalls(): Promise<{ halls: import('../types/api'
   return request('/api/lobby/halls');
 }
 
-export function listEntertainmentRooms(): Promise<{
+export function listEntertainmentRooms(pageToken = ''): Promise<{
   hallId: string;
   rooms: import('../types/api').RoomSummary[];
   nextPageToken: string;
 }> {
-  return request('/api/lobby/rooms?hallId=entertainment');
+  const token = pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '';
+  return request(`/api/lobby/rooms?hallId=entertainment${token}`);
 }
 
 export function joinRoom(roomId: string, expectedVersion: number): Promise<import('../types/api').RoomEntry> {
   return request('/api/lobby/joinRoom', {
     method: 'POST',
     data: { roomId, expectedVersion }
+  });
+}
+
+export function leaveRoom(roomId: string): Promise<{ left: boolean }> {
+  return request('/api/lobby/leaveRoom', {
+    method: 'POST',
+    data: { roomId }
   });
 }
 

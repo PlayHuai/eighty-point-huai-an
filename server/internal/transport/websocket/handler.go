@@ -30,6 +30,10 @@ type LobbyProfileResolver interface {
 	FindProfile(ctx context.Context, userID string) (player.Profile, error)
 }
 
+type LobbyAccountResolver interface {
+	IsWeChatUser(ctx context.Context, userID string) (bool, error)
+}
+
 type requestContextKey struct{}
 
 type connectionContext struct {
@@ -42,6 +46,7 @@ type Handler struct {
 	authenticator  AccessAuthenticator
 	friends        FriendResolver
 	profiles       LobbyProfileResolver
+	accounts       LobbyAccountResolver
 	allowedOrigins map[string]struct{}
 }
 
@@ -80,15 +85,17 @@ func NewHandlerWithLobbyProfiles(
 	allowedOrigins []string,
 	friends FriendResolver,
 	profiles LobbyProfileResolver,
+	accounts LobbyAccountResolver,
 ) (*Handler, error) {
-	if profiles == nil {
-		return nil, errors.New("lobby profile resolver is required")
+	if profiles == nil || accounts == nil {
+		return nil, errors.New("lobby profile and account resolvers are required")
 	}
 	handler, err := NewHandler(hub, authenticator, allowedOrigins, friends)
 	if err != nil {
 		return nil, err
 	}
 	handler.profiles = profiles
+	handler.accounts = accounts
 	return handler, nil
 }
 
@@ -137,12 +144,17 @@ func (h *Handler) handshake(config *xwebsocket.Config, request *http.Request) er
 	}
 	var hallIDs []string
 	if h.profiles != nil {
+		isWeChatUser, err := h.accounts.IsWeChatUser(ctx, userID)
+		if err != nil {
+			return errors.New("could not determine account type")
+		}
 		profile, err := h.profiles.FindProfile(ctx, userID)
 		if err != nil {
 			return errors.New("could not load player profile")
 		}
 		for _, hall := range lobby.Halls() {
-			if lobby.CanEnter(profile.Points, hall.ID) {
+			if (hall.ID == lobby.HallEntertainment) == isWeChatUser &&
+				lobby.CanEnter(profile.Points, hall.ID) {
 				hallIDs = append(hallIDs, hall.ID)
 			}
 		}

@@ -16,22 +16,22 @@ page {
   --color-suit-black: #1c1c1c;
   --color-info-blue: #4a7ba6;
 
-  --font-size-l1: 40rpx;
-  --font-size-l2: 32rpx;
-  --font-size-l3: 24rpx;
-  --font-size-l4: 18rpx;
-  --font-size-l5: 14rpx;
-  --font-size-l6: 12rpx;
+  --font-size-l1: 80rpx;
+  --font-size-l2: 64rpx;
+  --font-size-l3: 48rpx;
+  --font-size-l4: 36rpx;
+  --font-size-l5: 28rpx;
+  --font-size-l6: 24rpx;
 
-  --radius-card: 8rpx;
-  --radius-button: 8rpx;
-  --radius-panel: 12rpx;
-  --radius-badge: 999rpx;
+  --radius-card: 16rpx;
+  --radius-button: 16rpx;
+  --radius-panel: 24rpx;
+  --radius-badge: 1998rpx;
 
-  --spacing-s1: 4rpx;
-  --spacing-s2: 8rpx;
-  --spacing-s3: 12rpx;
-  --spacing-s4: 16rpx;
-  --spacing-s5: 24rpx;
-  --spacing-s6: 32rpx;
+  --spacing-s1: 8rpx;
+  --spacing-s2: 16rpx;
+  --spacing-s3: 24rpx;
+  --spacing-s4: 32rpx;
+  --spacing-s5: 48rpx;
+  --spacing-s6: 64rpx;
 }

@@ -44,6 +44,9 @@
         bindtap="enterRoom"
       >加入</button>
     </view>
+    <button wx:if="{{nextPageToken}}" class="join-button" loading="{{loadingMore}}" disabled="{{loadingMore}}" bindtap="loadMoreRooms">
+      {{loadingMore ? '正在加载…' : '加载更多'}}
+    </button>
   </view>
 
   <view class="footer muted">无需申请头像或昵称权限 · 好友可分享房间链接</view>

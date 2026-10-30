@@ -5,6 +5,7 @@
   "miniprogramRoot": "miniprogram/",
   "projectname": "eighty-point-huai-an",
   "setting": {
+    "useCompilerPlugins": ["typescript"],
     "es6": true,
     "minified": true,
     "urlCheck": true,

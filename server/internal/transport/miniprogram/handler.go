@@ -44,9 +44,17 @@ type Handler struct {
 	rooms         *room.Manager
 	exchanger     WeChatCodeExchanger
 
-	createMu    sync.Mutex
-	createdRoom map[string]roomEntry
+	createMu       sync.Mutex
+	createdRoom    map[string]createdRoomEntry
+	createAttempts map[string][]time.Time
+	now            func() time.Time
 }
+
+const (
+	createIdempotencyRetention = 24 * time.Hour
+	createRateLimitWindow      = time.Minute
+	createRateLimitMaximum     = 20
+)
 
 type WeChatCodeExchange struct {
 	AppID     string
@@ -73,6 +81,11 @@ type roomEntry struct {
 	Members   []roomMember `json:"members,omitempty"`
 }
 
+type createdRoomEntry struct {
+	room      roomEntry
+	createdAt time.Time
+}
+
 type roomMember struct {
 	UserID string `json:"userId"`
 	Seat   uint32 `json:"seat"`
@@ -90,7 +103,8 @@ func NewHandler(
 	}
 	return &Handler{
 		authenticator: authenticator, identity: identity, profiles: profiles,
-		rooms: rooms, exchanger: exchanger, createdRoom: make(map[string]roomEntry),
+		rooms: rooms, exchanger: exchanger, createdRoom: make(map[string]createdRoomEntry),
+		createAttempts: make(map[string][]time.Time), now: time.Now,
 	}, nil
 }
 
@@ -187,6 +201,16 @@ func (h *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 			return
 		}
 		h.joinRoom(writer, request, userID)
+	case "/api/lobby/leaveRoom":
+		if request.Method != http.MethodPost {
+			methodNotAllowed(writer)
+			return
+		}
+		userID, ok := h.authorizedWeChatUser(writer, request)
+		if !ok {
+			return
+		}
+		h.leaveRoom(writer, request, userID)
 	case "/api/lobby/createRoom":
 		if request.Method != http.MethodPost {
 			methodNotAllowed(writer)
@@ -364,12 +388,31 @@ func (h *Handler) createRoom(writer http.ResponseWriter, request *http.Request, 
 	cacheKey := userID + ":" + input.RequestID
 	h.createMu.Lock()
 	defer h.createMu.Unlock()
+	now := h.now()
+	for key, entry := range h.createdRoom {
+		if !now.Before(entry.createdAt.Add(createIdempotencyRetention)) {
+			delete(h.createdRoom, key)
+		}
+	}
+	for accountID, attempts := range h.createAttempts {
+		active := attempts[:0]
+		for _, attempt := range attempts {
+			if now.Before(attempt.Add(createRateLimitWindow)) {
+				active = append(active, attempt)
+			}
+		}
+		if len(active) == 0 {
+			delete(h.createAttempts, accountID)
+		} else {
+			h.createAttempts[accountID] = active
+		}
+	}
 	if previous, ok := h.createdRoom[cacheKey]; ok {
-		writeJSON(writer, http.StatusOK, previous)
+		writeJSON(writer, http.StatusOK, previous.room)
 		return
 	}
-	if len(h.createdRoom) >= 4096 {
-		writeError(writer, http.StatusTooManyRequests, "too many room creation requests")
+	if len(h.createAttempts[userID]) >= createRateLimitMaximum {
+		writeError(writer, http.StatusTooManyRequests, "too many room creations; try again later")
 		return
 	}
 	profile, err := h.profiles.FindProfile(request.Context(), userID)
@@ -390,8 +433,47 @@ func (h *Handler) createRoom(writer http.ResponseWriter, request *http.Request, 
 		return
 	}
 	result := entryFromDetails(details, userID)
-	h.createdRoom[cacheKey] = result
+	h.createdRoom[cacheKey] = createdRoomEntry{room: result, createdAt: now}
+	h.createAttempts[userID] = append(h.createAttempts[userID], now)
 	writeJSON(writer, http.StatusOK, result)
+}
+
+func (h *Handler) leaveRoom(writer http.ResponseWriter, request *http.Request, userID string) {
+	var input struct {
+		RoomID string `json:"roomId"`
+	}
+	if !decodeJSON(writer, request, &input) {
+		return
+	}
+	if input.RoomID == "" {
+		writeError(writer, http.StatusBadRequest, "room ID is required")
+		return
+	}
+	for attempt := 0; attempt < 3; attempt++ {
+		details, err := h.rooms.GetRoom(input.RoomID, userID)
+		if errors.Is(err, room.ErrNotMember) || errors.Is(err, room.ErrRoomNotFound) {
+			writeJSON(writer, http.StatusOK, map[string]bool{"left": true})
+			return
+		}
+		if err != nil {
+			writeError(writer, roomHTTPStatus(err), "could not leave entertainment room")
+			return
+		}
+		if details.Room.HallID != lobby.HallEntertainment {
+			writeError(writer, http.StatusNotFound, "entertainment room not found")
+			return
+		}
+		_, err = h.rooms.LeaveRoom(input.RoomID, userID, details.Version)
+		if err == nil || errors.Is(err, room.ErrNotMember) {
+			writeJSON(writer, http.StatusOK, map[string]bool{"left": true})
+			return
+		}
+		if !errors.Is(err, room.ErrVersionConflict) {
+			writeError(writer, roomHTTPStatus(err), "could not leave entertainment room")
+			return
+		}
+	}
+	writeError(writer, http.StatusConflict, "room state changed; retry leaving")
 }
 
 func entryFromDetails(details room.Details, userID string) roomEntry {

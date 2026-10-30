@@ -175,7 +175,7 @@ func newApplication(db *sql.DB, allowedOrigins []string) (*application, error) {
 		}
 	}
 	eventHandler, err := websocket.NewHandlerWithLobbyProfiles(
-		hub, authService, allowedOrigins, store, store,
+		hub, authService, allowedOrigins, store, store, authService,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create WebSocket handler: %w", err)

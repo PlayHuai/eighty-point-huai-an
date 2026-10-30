@@ -3,10 +3,13 @@ package miniprogram
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/auth"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/lobby"
@@ -197,6 +200,118 @@ func TestCreateEntertainmentRoomReplaysRequestID(t *testing.T) {
 	listed, err := rooms.ListRooms(lobby.HallEntertainment, 0)
 	if err != nil || len(listed) != 1 || listed[0].ID != first.RoomID {
 		t.Fatalf("created rooms = %+v, %v; want one room %q", listed, err, first.RoomID)
+	}
+}
+
+func TestCreateRoomRateLimitRecoversAndIdempotencyExpires(t *testing.T) {
+	rooms := room.NewManager()
+	identity := &testIdentity{wechatUsers: map[string]bool{"wechat-player": true}}
+	handler := testHandler(t, rooms, identity, nil)
+	now := time.Now()
+	handler.now = func() time.Time { return now }
+
+	var first roomEntry
+	for index := 0; index < createRateLimitMaximum; index++ {
+		requestID := "create-" + strconv.Itoa(index)
+		request := authenticatedRequest(http.MethodPost, "/api/lobby/createRoom",
+			`{"requestId":"`+requestID+`"}`, "wechat-token")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("create %s status = %d, want OK", requestID, response.Code)
+		}
+		if index == 0 {
+			if err := json.Unmarshal(response.Body.Bytes(), &first); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	limited := authenticatedRequest(http.MethodPost, "/api/lobby/createRoom",
+		`{"requestId":"over-limit"}`, "wechat-token")
+	limitedResponse := httptest.NewRecorder()
+	handler.ServeHTTP(limitedResponse, limited)
+	if limitedResponse.Code != http.StatusTooManyRequests {
+		t.Fatalf("rate-limited create status = %d, want 429", limitedResponse.Code)
+	}
+
+	replay := authenticatedRequest(http.MethodPost, "/api/lobby/createRoom",
+		`{"requestId":"create-0"}`, "wechat-token")
+	replayResponse := httptest.NewRecorder()
+	handler.ServeHTTP(replayResponse, replay)
+	var replayed roomEntry
+	if err := json.Unmarshal(replayResponse.Body.Bytes(), &replayed); err != nil {
+		t.Fatal(err)
+	}
+	if replayResponse.Code != http.StatusOK || replayed.RoomID != first.RoomID {
+		t.Fatalf("cached request replay = %+v, status %d", replayed, replayResponse.Code)
+	}
+
+	now = now.Add(createRateLimitWindow)
+	retry := authenticatedRequest(http.MethodPost, "/api/lobby/createRoom",
+		`{"requestId":"after-window"}`, "wechat-token")
+	retryResponse := httptest.NewRecorder()
+	handler.ServeHTTP(retryResponse, retry)
+	if retryResponse.Code != http.StatusOK {
+		t.Fatalf("create after rate-limit window status = %d, want OK", retryResponse.Code)
+	}
+
+	now = now.Add(createIdempotencyRetention)
+	expired := authenticatedRequest(http.MethodPost, "/api/lobby/createRoom",
+		`{"requestId":"create-0"}`, "wechat-token")
+	expiredResponse := httptest.NewRecorder()
+	handler.ServeHTTP(expiredResponse, expired)
+	var newRoom roomEntry
+	if err := json.Unmarshal(expiredResponse.Body.Bytes(), &newRoom); err != nil {
+		t.Fatal(err)
+	}
+	if expiredResponse.Code != http.StatusOK || newRoom.RoomID == first.RoomID {
+		t.Fatalf("expired request ID was not re-used after retention: %+v status=%d", newRoom, expiredResponse.Code)
+	}
+}
+
+func TestLeaveEntertainmentRoomIsAuthenticatedAndIdempotent(t *testing.T) {
+	rooms := room.NewManager()
+	created, err := rooms.CreateRoom(lobby.HallEntertainment, "wechat-player", 0, room.Settings{Name: "离房测试"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rooms.JoinRoom(created.Room.ID, "wechat-player", 0, "", created.Version); err != nil {
+		t.Fatal(err)
+	}
+	handler := testHandler(t, rooms, &testIdentity{
+		wechatUsers: map[string]bool{"wechat-player": true},
+	}, nil)
+
+	for attempt := 0; attempt < 2; attempt++ {
+		request := authenticatedRequest(http.MethodPost, "/api/lobby/leaveRoom",
+			`{"roomId":"`+created.Room.ID+`"}`, "wechat-token")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("leave attempt %d status = %d, want OK", attempt, response.Code)
+		}
+		var result struct {
+			Left bool `json:"left"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+			t.Fatal(err)
+		}
+		if !result.Left {
+			t.Fatalf("leave attempt %d did not report success", attempt)
+		}
+	}
+	if _, err := rooms.GetRoom(created.Room.ID, "wechat-player"); !errors.Is(err, room.ErrNotMember) &&
+		!errors.Is(err, room.ErrRoomNotFound) {
+		t.Fatalf("member after leave = %v, want not a member", err)
+	}
+
+	regularRequest := authenticatedRequest(http.MethodPost, "/api/lobby/leaveRoom",
+		`{"roomId":"`+created.Room.ID+`"}`, "regular-token")
+	regularResponse := httptest.NewRecorder()
+	handler.ServeHTTP(regularResponse, regularRequest)
+	if regularResponse.Code != http.StatusForbidden {
+		t.Fatalf("regular account leave status = %d, want forbidden", regularResponse.Code)
 	}
 }
 

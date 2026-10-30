@@ -568,7 +568,8 @@ func TestLoadMigrations(t *testing.T) {
 	if !strings.Contains(migrations[5].sql, "SET expires_at = NULL") {
 		t.Fatal("deferred chat retention migration does not clear pending expirations")
 	}
-	if !strings.Contains(migrations[6].sql, "wechat_openid VARCHAR(128) NULL UNIQUE") {
+	if !strings.Contains(migrations[6].sql,
+		"wechat_openid VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL UNIQUE") {
 		t.Fatal("WeChat identity migration is missing the unique OpenID column")
 	}
 }
