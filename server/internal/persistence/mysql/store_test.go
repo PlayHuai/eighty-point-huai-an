@@ -530,9 +530,10 @@ func TestLoadMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 6 || migrations[0].version != 1 || migrations[1].version != 2 ||
+	if len(migrations) != 7 || migrations[0].version != 1 || migrations[1].version != 2 ||
 		migrations[2].version != 3 || migrations[3].version != 4 ||
-		migrations[4].version != 5 || migrations[5].version != 6 {
+		migrations[4].version != 5 || migrations[5].version != 6 ||
+		migrations[6].version != 7 {
 		t.Fatalf("unexpected migrations: %#v", migrations)
 	}
 	for _, required := range []string{
@@ -567,6 +568,10 @@ func TestLoadMigrations(t *testing.T) {
 	if !strings.Contains(migrations[5].sql, "SET expires_at = NULL") {
 		t.Fatal("deferred chat retention migration does not clear pending expirations")
 	}
+	if !strings.Contains(migrations[6].sql,
+		"wechat_openid VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL UNIQUE") {
+		t.Fatal("WeChat identity migration is missing the unique OpenID column")
+	}
 }
 
 func TestApplyMigrationsRecordsVersionsAndIsIdempotent(t *testing.T) {
@@ -585,12 +590,13 @@ func TestApplyMigrationsRecordsVersionsAndIsIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	firstDDLCount := db.state.ddlCount
-	if len(db.state.migrations) != 6 || db.state.migrations[1].name != "0001_initial.sql" ||
+	if len(db.state.migrations) != 7 || db.state.migrations[1].name != "0001_initial.sql" ||
 		db.state.migrations[2].name != "0002_session_access_tokens.sql" ||
 		db.state.migrations[3].name != "0003_player_result_outcomes.sql" ||
 		db.state.migrations[4].name != "0004_private_chat_requests.sql" ||
 		db.state.migrations[5].name != "0005_chat_retention_and_visibility.sql" ||
-		db.state.migrations[6].name != "0006_defer_chat_retention.sql" {
+		db.state.migrations[6].name != "0006_defer_chat_retention.sql" ||
+		db.state.migrations[7].name != "0007_wechat_openid.sql" {
 		t.Fatalf("migration version was not recorded: %+v", db.state.migrations)
 	}
 	if err := ApplyMigrations(context.Background(), sqlDB); err != nil {

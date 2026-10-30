@@ -75,3 +75,7 @@ Testing/
 .flutter-plugins-dependencies
 /client/lib/src/generated/
 /client/lib/**/*.g.dart
+
+# WeChat mini-program dependencies and generated npm output
+/miniprogram/node_modules/
+/miniprogram/miniprogram_npm/

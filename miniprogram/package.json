@@ -1,0 +1,16 @@
+{
+  "name": "miniprogram",
+  "version": "1.0.0",
+  "description": "Native WeChat mini-program client for 淮安80分",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test tests/*.test.ts"
+  },
+  "private": true,
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "miniprogram-api-typings": "5.2.3",
+    "typescript": "5.9.3"
+  }
+}

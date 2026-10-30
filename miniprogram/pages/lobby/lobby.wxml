@@ -1,0 +1,53 @@
+<view class="page-shell lobby">
+  <view class="brand">
+    <text class="brand-mark">80</text>
+    <view>
+      <text class="brand-title">淮安80分</text>
+      <text class="muted brand-subtitle">四人两两配合 · 微信专属娱乐厅</text>
+    </view>
+  </view>
+
+  <view class="profile panel">
+    <view class="avatar">ID</view>
+    <view class="profile-copy">
+      <text class="nickname">微信用户</text>
+      <text class="muted">ID {{profile.userId || '—'}}</text>
+    </view>
+    <button class="settings" bindtap="openSettings">设置</button>
+  </view>
+
+  <view class="room-card">
+    <text class="eyebrow">微信专属大厅</text>
+    <text class="room-title">{{halls.length ? halls[0].name : '娱乐厅'}}</text>
+    <text class="muted room-description">{{roomStatus}}</text>
+    <button class="primary-button" loading="{{creating}}" disabled="{{creating}}" bindtap="createRoom">
+      {{creating ? '正在创建…' : '创建娱乐房'}}
+    </button>
+  </view>
+
+  <view class="room-list">
+    <view class="list-heading">
+      <text class="room-title">娱乐厅房间</text>
+      <text class="muted">仅显示娱乐厅</text>
+    </view>
+    <view wx:if="{{loading}}" class="panel muted">正在加载房间…</view>
+    <view wx:elif="{{!rooms.length}}" class="panel muted">暂无可加入的娱乐房</view>
+    <view wx:for="{{rooms}}" wx:key="roomId" class="room-row panel">
+      <view class="room-details">
+        <text class="room-name">{{item.name}}</text>
+        <text class="muted">{{item.occupiedSeats}} / {{item.capacity}} 人 · {{item.status === 'PLAYING' ? '进行中' : '等待中'}}</text>
+      </view>
+      <button
+        class="join-button"
+        data-room-id="{{item.roomId}}"
+        data-version="{{item.version}}"
+        bindtap="enterRoom"
+      >加入</button>
+    </view>
+    <button wx:if="{{nextPageToken}}" class="join-button" loading="{{loadingMore}}" disabled="{{loadingMore}}" bindtap="loadMoreRooms">
+      {{loadingMore ? '正在加载…' : '加载更多'}}
+    </button>
+  </view>
+
+  <view class="footer muted">无需申请头像或昵称权限 · 好友可分享房间链接</view>
+</view>

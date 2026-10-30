@@ -1,0 +1,40 @@
+<view class="page-shell table-page">
+  <view class="table-header">
+    <view>
+      <text class="table-title">牌桌</text>
+      <text class="muted room-number">房号 {{roomId || '—'}}</text>
+    </view>
+    <button class="share-button" open-type="share">邀请好友</button>
+  </view>
+
+  <view class="table-surface">
+    <view class="seat seat-top">
+      <text class="seat-name">{{roomMembers[2]}}</text>
+      <text class="muted">对家</text>
+    </view>
+    <view class="side-seats">
+      <view class="seat">
+        <text class="seat-name">{{roomMembers[1]}}</text>
+        <text class="muted">左侧</text>
+      </view>
+      <view class="center-status">
+        <text class="room-number">房间 {{roomId || '—'}}</text>
+        <text class="muted">{{status}}</text>
+      </view>
+      <view class="seat">
+        <text class="seat-name">{{roomMembers[3]}}</text>
+        <text class="muted">右侧</text>
+      </view>
+    </view>
+    <view class="seat seat-bottom">
+      <text class="seat-name">你 · {{seat || '—'}}号位</text>
+      <text class="muted">本地牌局操作尚未接入</text>
+    </view>
+  </view>
+
+  <view class="notice panel">
+    <text class="notice-title">牌局服务接入中</text>
+    <text class="muted">当前服务端尚未提供小程序对局快照与动作接口。牌面和出牌结果不会由客户端推算。</text>
+  </view>
+  <button class="leave-button" bindtap="leaveRoom">返回大厅</button>
+</view>

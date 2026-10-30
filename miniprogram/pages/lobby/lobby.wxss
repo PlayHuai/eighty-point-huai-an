@@ -1,0 +1,139 @@
+.lobby {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-s5);
+  padding-top: calc(var(--spacing-s6) * 4);
+}
+
+.brand,
+.profile {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-s3);
+}
+
+.brand-mark {
+  display: flex;
+  width: calc(var(--spacing-s6) * 2.5);
+  height: calc(var(--spacing-s6) * 2.5);
+  align-items: center;
+  justify-content: center;
+  border: 2rpx solid var(--color-gold-primary);
+  border-radius: var(--radius-badge);
+  color: var(--color-gold-bright);
+  font-size: var(--font-size-l3);
+  font-weight: 700;
+}
+
+.brand-title,
+.room-title {
+  display: block;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-l3);
+  font-weight: 700;
+}
+
+.brand-subtitle {
+  display: block;
+  margin-top: var(--spacing-s1);
+}
+
+.profile {
+  padding: var(--spacing-s3);
+}
+
+.avatar {
+  display: flex;
+  width: 72rpx;
+  height: 72rpx;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-badge);
+  background: var(--color-bg-card);
+  color: var(--color-gold-bright);
+}
+
+.profile-copy {
+  flex: 1;
+}
+
+.nickname {
+  display: block;
+  margin-bottom: var(--spacing-s1);
+}
+
+.settings {
+  padding: var(--spacing-s2) var(--spacing-s3);
+  background: var(--color-bg-card);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-l6);
+}
+
+.room-card {
+  padding: var(--spacing-s5);
+  border: 1rpx solid var(--color-gold-dark);
+  border-radius: var(--radius-panel);
+  background: var(--color-bg-panel);
+}
+
+.room-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-s2);
+}
+
+.list-heading,
+.room-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.room-row {
+  gap: var(--spacing-s3);
+}
+
+.room-details {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--spacing-s1);
+}
+
+.room-name {
+  color: var(--color-text-primary);
+}
+
+.join-button {
+  padding: var(--spacing-s2) var(--spacing-s3);
+  background: var(--color-bg-card);
+  color: var(--color-gold-bright);
+  font-size: var(--font-size-l6);
+}
+
+.eyebrow {
+  display: block;
+  margin-bottom: var(--spacing-s2);
+  color: var(--color-gold-primary);
+  font-size: var(--font-size-l6);
+}
+
+.room-description {
+  display: block;
+  margin: var(--spacing-s2) 0 var(--spacing-s5);
+}
+
+.primary-button {
+  background: var(--color-gold-primary);
+  color: var(--color-bg-base);
+  font-weight: 700;
+}
+
+.primary-button[disabled] {
+  opacity: 0.6;
+}
+
+.footer {
+  margin-top: auto;
+  text-align: center;
+}
