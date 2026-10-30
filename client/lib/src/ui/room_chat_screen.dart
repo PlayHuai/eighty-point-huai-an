@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:grpc/grpc.dart';
 
 import '../api/lobby_models.dart';
 import '../api/player_models.dart';
@@ -26,6 +29,7 @@ class _RoomChatScreenState extends ConsumerState<RoomChatScreen> {
   String? _pendingBody;
   String? _pendingRequestId;
   late int _roomVersion;
+  String? _leaveRequestId;
   bool _sending = false;
   bool _leaving = false;
 
@@ -43,6 +47,10 @@ class _RoomChatScreenState extends ConsumerState<RoomChatScreen> {
   }
 
   void _receive(RealtimeEvent event) {
+    if (event.type == 'CONNECTION_RESTORED') {
+      unawaited(_refreshRoomVersion());
+      return;
+    }
     if (event.roomId != widget.room.id) return;
     if (event.type == 'ROOM_STATE_CHANGED') {
       if (event.version > _roomVersion) {
@@ -59,6 +67,22 @@ class _RoomChatScreenState extends ConsumerState<RoomChatScreen> {
         createdAt: DateTime.now(),
       ),
     );
+  }
+
+  Future<void> _refreshRoomVersion() async {
+    final session = widget.auth.session;
+    if (session == null) return;
+    try {
+      final room = await ref.read(apiClientProvider).getRoom(
+            accessToken: session.accessToken,
+            roomId: widget.room.id,
+          );
+      if (mounted && room.version > _roomVersion) {
+        setState(() => _roomVersion = room.version);
+      }
+    } catch (_) {
+      return;
+    }
   }
 
   void _addMessage(ChatMessage message) {
@@ -115,14 +139,23 @@ class _RoomChatScreenState extends ConsumerState<RoomChatScreen> {
     }
     setState(() => _leaving = true);
     try {
-      await ref
-          .read(apiClientProvider)
-          .leaveRoom(
+      final api = ref.read(apiClientProvider);
+      _leaveRequestId ??= createRequestId();
+      for (var attempt = 0; ; attempt++) {
+        try {
+          await api.leaveRoom(
             accessToken: session.accessToken,
             roomId: widget.room.id,
             expectedVersion: _roomVersion,
-            requestId: createRequestId(),
+            requestId: _leaveRequestId!,
           );
+          _leaveRequestId = null;
+          break;
+        } on GrpcError catch (error) {
+          if (error.code != StatusCode.aborted || attempt != 0) rethrow;
+          await _refreshRoomVersion();
+        }
+      }
       if (mounted) Navigator.of(context).pop();
     } catch (_) {
       if (mounted) {

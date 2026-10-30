@@ -81,6 +81,9 @@ func (s *friendServer) RespondRequest(ctx context.Context, request *huaiv1.Respo
 	if err := s.service.RespondFriendRequest(ctx, userID, request.GetRequesterUserId(), request.GetAccept()); err != nil {
 		return nil, socialError(err)
 	}
+	if request.GetAccept() {
+		s.updatePresenceFriendship(userID, request.GetRequesterUserId(), true)
+	}
 	s.publishFriendChange(userID, request.GetRequesterUserId(), "friend_request")
 	return &huaiv1.Empty{}, nil
 }
@@ -139,6 +142,7 @@ func (s *friendServer) RemoveFriend(ctx context.Context, request *huaiv1.FriendR
 	if err := s.service.RemoveFriend(ctx, userID, request.GetTargetUserId()); err != nil {
 		return nil, socialError(err)
 	}
+	s.updatePresenceFriendship(userID, request.GetTargetUserId(), false)
 	s.publishFriendChange(userID, request.GetTargetUserId(), "friend_list")
 	return &huaiv1.Empty{}, nil
 }
@@ -194,6 +198,14 @@ func (s *friendServer) publishFriendChange(firstUserID, secondUserID, kind strin
 		secondUserID,
 		[]byte(`{"kind":"`+kind+`"}`),
 	)
+}
+
+func (s *friendServer) updatePresenceFriendship(firstUserID, secondUserID string, friends bool) {
+	if presence, ok := s.presence.(interface {
+		SetFriendship(string, string, bool)
+	}); ok {
+		presence.SetFriendship(firstUserID, secondUserID, friends)
+	}
 }
 
 func socialError(err error) error {

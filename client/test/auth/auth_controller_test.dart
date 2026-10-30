@@ -121,6 +121,20 @@ class _FakeApiClient implements ApiClient {
   }) => throw UnimplementedError();
 
   @override
+  Future<void> leaveRoom({
+    required String accessToken,
+    required String roomId,
+    required int expectedVersion,
+    required String requestId,
+  }) async {}
+
+  @override
+  Future<LobbyRoom> getRoom({
+    required String accessToken,
+    required String roomId,
+  }) => throw UnimplementedError();
+
+  @override
   Future<LobbyRoom> joinByCode({
     required String accessToken,
     required String roomCode,

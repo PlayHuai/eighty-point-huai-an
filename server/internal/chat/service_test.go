@@ -76,9 +76,13 @@ func (p *testPublisher) PublishRoomMessage(userIDs []string, message Message) {
 type testRoomAccess struct {
 	members []string
 	err     error
+	calls   *int
 }
 
 func (r testRoomAccess) RoomMemberIDs(context.Context, string, string) ([]string, error) {
+	if r.calls != nil {
+		*r.calls++
+	}
 	return r.members, r.err
 }
 
@@ -205,12 +209,40 @@ func TestRoomMessageRequiresCurrentMembership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	if _, err := service.SendRoomMessage(context.Background(), "sender", "room", "request", "hello"); !errors.Is(err, ErrNotRoomMember) {
 		t.Fatalf("SendRoomMessage() error = %v, want ErrNotRoomMember", err)
 	}
 	if len(publisher.messages) != 0 {
 		t.Fatalf("unauthorized message was published: %+v", publisher.messages)
+	}
+}
+
+func TestRoomMessageRetriesAreIdempotentAndRejectConflictingBodies(t *testing.T) {
+	publisher := &testPublisher{}
+	calls := 0
+	members := []string{"sender", "original-member"}
+	service, err := NewServiceWithRoomAccess(&testRepository{}, publisher, testRoomAccess{
+		members: members, calls: &calls,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := service.SendRoomMessage(context.Background(), "sender", "room", "request", "hello")
+	if err != nil {
+		t.Fatalf("SendRoomMessage() error = %v", err)
+	}
+	members[1] = "later-member"
+	retry, err := service.SendRoomMessage(context.Background(), "sender", "room", "request", " hello ")
+	if err != nil || retry.ID != first.ID || retry.CreatedAt != first.CreatedAt {
+		t.Fatalf("identical retry = %+v, %v; want original message %+v", retry, err, first)
+	}
+	if _, err := service.SendRoomMessage(context.Background(), "sender", "room", "request", "different"); !errors.Is(err, ErrRequestConflict) {
+		t.Fatalf("conflicting retry error = %v, want ErrRequestConflict", err)
+	}
+	if calls != 1 || !reflect.DeepEqual(publisher.roomUsers, []string{"sender", "original-member"}) ||
+		len(publisher.messages) != 1 {
+		t.Fatalf("room access calls=%d recipients=%v messages=%+v", calls, publisher.roomUsers, publisher.messages)
 	}
 }
 

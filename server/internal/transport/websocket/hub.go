@@ -38,6 +38,7 @@ type Hub struct {
 	mu          sync.Mutex
 	subscribers map[string]map[*Subscription]struct{}
 	userFriends map[string]map[string]struct{}
+	userHalls   map[string]map[string]struct{}
 	watchers    map[string]map[string]struct{}
 	sequence    atomic.Uint64
 }
@@ -46,6 +47,7 @@ func NewHub() *Hub {
 	return &Hub{
 		subscribers: make(map[string]map[*Subscription]struct{}),
 		userFriends: make(map[string]map[string]struct{}),
+		userHalls:   make(map[string]map[string]struct{}),
 		watchers:    make(map[string]map[string]struct{}),
 	}
 }
@@ -55,6 +57,13 @@ func (h *Hub) Subscribe(userID string) (*Subscription, error) {
 }
 
 func (h *Hub) SubscribeWithFriends(userID string, friendIDs []string) (*Subscription, error) {
+	return h.SubscribeWithFriendsAndHalls(userID, friendIDs, nil)
+}
+
+func (h *Hub) SubscribeWithFriendsAndHalls(
+	userID string,
+	friendIDs, hallIDs []string,
+) (*Subscription, error) {
 	if userID == "" {
 		return nil, errors.New("user ID is required")
 	}
@@ -79,6 +88,13 @@ func (h *Hub) SubscribeWithFriends(userID string, friendIDs []string) (*Subscrip
 			h.watchers[friendID][userID] = struct{}{}
 		}
 		h.userFriends[userID] = friends
+		halls := make(map[string]struct{}, len(hallIDs))
+		for _, hallID := range hallIDs {
+			if hallID != "" {
+				halls[hallID] = struct{}{}
+			}
+		}
+		h.userHalls[userID] = halls
 	}
 	h.subscribers[userID][subscription] = struct{}{}
 	if firstConnection {
@@ -106,10 +122,44 @@ func (s *Subscription) Close() {
 				}
 			}
 			delete(s.hub.userFriends, s.userID)
+			delete(s.hub.userHalls, s.userID)
 		}
 		close(s.events)
 		s.hub.mu.Unlock()
 	})
+}
+
+func (h *Hub) SetFriendship(firstUserID, secondUserID string, friends bool) {
+	if firstUserID == "" || secondUserID == "" || firstUserID == secondUserID {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.setFriendshipLocked(firstUserID, secondUserID, friends)
+	h.setFriendshipLocked(secondUserID, firstUserID, friends)
+}
+
+func (h *Hub) setFriendshipLocked(userID, friendID string, friends bool) {
+	userFriends := h.userFriends[userID]
+	if friends {
+		if userFriends == nil {
+			userFriends = make(map[string]struct{})
+			h.userFriends[userID] = userFriends
+		}
+		userFriends[friendID] = struct{}{}
+		if h.subscribers[userID] != nil {
+			if h.watchers[friendID] == nil {
+				h.watchers[friendID] = make(map[string]struct{})
+			}
+			h.watchers[friendID][userID] = struct{}{}
+		}
+		return
+	}
+	delete(userFriends, friendID)
+	delete(h.watchers[friendID], userID)
+	if len(h.watchers[friendID]) == 0 {
+		delete(h.watchers, friendID)
+	}
 }
 
 func (h *Hub) IsOnline(userID string) bool {
@@ -163,16 +213,24 @@ func (h *Hub) PublishRoomMessage(userIDs []string, message chat.Message) {
 	h.publishUsers(userIDs, event)
 }
 
-func (h *Hub) PublishLobbyUpdate(entityID string, version uint64, payload json.RawMessage) {
+func (h *Hub) PublishLobbyUpdate(hallID, entityID string, version uint64, payload json.RawMessage) {
 	h.mu.Lock()
-	userIDs := make([]string, 0, len(h.subscribers))
-	for userID := range h.subscribers {
-		userIDs = append(userIDs, userID)
+	defer h.mu.Unlock()
+	event := Event{
+		Type: "LOBBY_STATE_CHANGED", Sequence: h.sequence.Add(1),
+		EntityID: entityID, Version: version, Payload: payload,
 	}
-	h.mu.Unlock()
-	h.publishUsers(userIDs, Event{
-		Type: "LOBBY_STATE_CHANGED", EntityID: entityID, Version: version, Payload: payload,
-	})
+	for userID, halls := range h.userHalls {
+		if _, eligible := halls[hallID]; !eligible {
+			continue
+		}
+		for subscription := range h.subscribers[userID] {
+			select {
+			case subscription.events <- event:
+			default:
+			}
+		}
+	}
 }
 
 func (h *Hub) PublishRoomUpdate(userIDs []string, roomID string, version uint64, payload json.RawMessage) {
@@ -188,12 +246,12 @@ func (h *Hub) PublishUserUpdate(userIDs []string, userID string, payload []byte)
 }
 
 func (h *Hub) publishUsers(userIDs []string, event Event) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	event.Sequence = h.sequence.Add(1)
 	if event.Type == "ROOM_MESSAGE_CREATED" && event.MessageID == "" {
 		event.MessageID = strconv.FormatUint(event.Sequence, 10)
 	}
-	h.mu.Lock()
-	defer h.mu.Unlock()
 	seen := make(map[string]struct{}, len(userIDs))
 	for _, userID := range userIDs {
 		if _, ok := seen[userID]; ok {

@@ -73,7 +73,6 @@ func runServer(ctx context.Context, address string) error {
 	if err != nil {
 		return err
 	}
-	go app.purgeExpiredMessages(ctx)
 	grpcAddress := os.Getenv("GRPC_ADDR")
 	if grpcAddress == "" {
 		grpcAddress = ":8081"
@@ -174,7 +173,9 @@ func newApplication(db *sql.DB, allowedOrigins []string) (*application, error) {
 			return nil, fmt.Errorf("register gRPC service: %w", err)
 		}
 	}
-	eventHandler, err := websocket.NewHandler(hub, authService, allowedOrigins, store)
+	eventHandler, err := websocket.NewHandlerWithLobbyProfiles(
+		hub, authService, allowedOrigins, store, store,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("create WebSocket handler: %w", err)
 	}

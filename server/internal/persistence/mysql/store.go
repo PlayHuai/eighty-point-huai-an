@@ -789,8 +789,8 @@ func (s *Store) SendPrivateMessage(
 	}
 
 	result, err := tx.ExecContext(ctx, `INSERT INTO chat_messages
-			(room_id, sender_id, recipient_id, request_id, body, expires_at)
-			VALUES (NULL, ?, ?, ?, ?, DATE_ADD(UTC_TIMESTAMP(6), INTERVAL 30 DAY))`,
+			(room_id, sender_id, recipient_id, request_id, body)
+			VALUES (NULL, ?, ?, ?, ?)`,
 		senderID, recipientID, requestID, body)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {

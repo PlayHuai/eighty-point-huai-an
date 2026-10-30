@@ -31,6 +31,10 @@ class RealtimeEventClient {
     while (!_closed) {
       try {
         final socket = await connectEventSocket(_uri, _accessToken);
+        if (_closed) {
+          await socket.close();
+          return;
+        }
         _socket = socket;
         if (_connectedOnce) {
           _events.add(const RealtimeEvent(type: 'CONNECTION_RESTORED'));

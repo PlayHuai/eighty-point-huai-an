@@ -91,11 +91,11 @@ func TestHubPublishesRoomMessagesOnlyToProvidedMembers(t *testing.T) {
 
 func TestHubBroadcastsLobbyUpdatesToConnectedUsers(t *testing.T) {
 	hub := NewHub()
-	first, _ := hub.Subscribe("first")
+	first, _ := hub.SubscribeWithFriendsAndHalls("first", nil, []string{"ordinary"})
 	defer first.Close()
-	second, _ := hub.Subscribe("second")
+	second, _ := hub.SubscribeWithFriendsAndHalls("second", nil, []string{"ordinary"})
 	defer second.Close()
-	hub.PublishLobbyUpdate("room-1", 3, []byte(`{"status":"WAITING"}`))
+	hub.PublishLobbyUpdate("ordinary", "room-1", 3, []byte(`{"status":"WAITING"}`))
 	for _, subscription := range []*Subscription{first, second} {
 		select {
 		case event := <-subscription.Events():
@@ -146,6 +146,40 @@ func TestHubPublishesOnlineAndOfflineOnlyToFriends(t *testing.T) {
 	}
 	user.Close()
 	assertPresence(false)
+}
+
+func TestHubUpdatesFriendWatchersWhenFriendshipChanges(t *testing.T) {
+	hub := NewHub()
+	friend, _ := hub.Subscribe("friend")
+	defer friend.Close()
+	user, _ := hub.Subscribe("user")
+	hub.SetFriendship("user", "friend", true)
+	user.Close()
+	select {
+	case event := <-friend.Events():
+		if string(event.Payload) != `{"online":false}` {
+			t.Fatalf("friend state = %+v, want offline update", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("new friend did not receive subsequent presence update")
+	}
+
+	user, _ = hub.SubscribeWithFriends("user", []string{"friend"})
+	select {
+	case event := <-friend.Events():
+		if string(event.Payload) != `{"online":true}` {
+			t.Fatalf("friend state = %+v, want online update", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("friend did not receive subsequent online update")
+	}
+	hub.SetFriendship("user", "friend", false)
+	user.Close()
+	select {
+	case event := <-friend.Events():
+		t.Fatalf("removed friend received presence update: %+v", event)
+	default:
+	}
 }
 
 func TestHubSubscriptionCloseIsIdempotent(t *testing.T) {

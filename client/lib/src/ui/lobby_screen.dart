@@ -208,13 +208,18 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
             requestId: _createRequestId!,
           );
       if (!mounted) return;
-      final joinedRoom = await ref
-          .read(apiClientProvider)
-          .joinRoom(
-            accessToken: session.accessToken,
-            roomId: room.id,
-            expectedVersion: room.version,
-          );
+      final api = ref.read(apiClientProvider);
+      final joinedRoom = password.isEmpty
+          ? await api.joinRoom(
+              accessToken: session.accessToken,
+              roomId: room.id,
+              expectedVersion: room.version,
+            )
+          : await api.joinByCode(
+              accessToken: session.accessToken,
+              roomCode: room.id,
+              password: password,
+            );
       if (!mounted) return;
       _createRequestKey = null;
       _createRequestId = null;

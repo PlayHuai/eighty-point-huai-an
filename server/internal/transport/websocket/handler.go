@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/lobby"
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/player"
 	xwebsocket "golang.org/x/net/websocket"
 )
 
@@ -24,6 +26,10 @@ type FriendResolver interface {
 	ListFriendIDs(ctx context.Context, userID string) ([]string, error)
 }
 
+type LobbyProfileResolver interface {
+	FindProfile(ctx context.Context, userID string) (player.Profile, error)
+}
+
 type requestContextKey struct{}
 
 type connectionContext struct {
@@ -35,6 +41,7 @@ type Handler struct {
 	hub            *Hub
 	authenticator  AccessAuthenticator
 	friends        FriendResolver
+	profiles       LobbyProfileResolver
 	allowedOrigins map[string]struct{}
 }
 
@@ -64,6 +71,24 @@ func NewHandler(
 	if len(friendResolvers) == 1 {
 		handler.friends = friendResolvers[0]
 	}
+	return handler, nil
+}
+
+func NewHandlerWithLobbyProfiles(
+	hub *Hub,
+	authenticator AccessAuthenticator,
+	allowedOrigins []string,
+	friends FriendResolver,
+	profiles LobbyProfileResolver,
+) (*Handler, error) {
+	if profiles == nil {
+		return nil, errors.New("lobby profile resolver is required")
+	}
+	handler, err := NewHandler(hub, authenticator, allowedOrigins, friends)
+	if err != nil {
+		return nil, err
+	}
+	handler.profiles = profiles
 	return handler, nil
 }
 
@@ -110,7 +135,19 @@ func (h *Handler) handshake(config *xwebsocket.Config, request *http.Request) er
 			return errors.New("could not load friend connections")
 		}
 	}
-	subscription, err := h.hub.SubscribeWithFriends(userID, friendIDs)
+	var hallIDs []string
+	if h.profiles != nil {
+		profile, err := h.profiles.FindProfile(ctx, userID)
+		if err != nil {
+			return errors.New("could not load player profile")
+		}
+		for _, hall := range lobby.Halls() {
+			if lobby.CanEnter(profile.Points, hall.ID) {
+				hallIDs = append(hallIDs, hall.ID)
+			}
+		}
+	}
+	subscription, err := h.hub.SubscribeWithFriendsAndHalls(userID, friendIDs, hallIDs)
 	if err != nil {
 		return err
 	}

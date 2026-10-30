@@ -2,8 +2,10 @@ package grpc
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"sync"
 
 	"github.com/Derek0120/eighty-point-huai-an/server/gen/huai/v1"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/lobby"
@@ -17,8 +19,34 @@ import (
 
 type lobbyServer struct {
 	huaiv1.UnimplementedLobbyServiceServer
-	rooms    *room.Manager
-	profiles lobbyProfileRepository
+	rooms        *room.Manager
+	profiles     lobbyProfileRepository
+	requestMu    sync.Mutex
+	createdRooms map[roomRequestKey]createRoomResult
+	leftRooms    map[roomRequestKey]leaveRoomRequest
+}
+
+type roomRequestKey struct {
+	userID    string
+	requestID string
+}
+
+type createRoomRequest struct {
+	hallID          string
+	name            string
+	passwordHash    [32]byte
+	allowSpectators bool
+	minimumPoints   int64
+}
+
+type createRoomResult struct {
+	request createRoomRequest
+	room    room.Summary
+}
+
+type leaveRoomRequest struct {
+	roomID          string
+	expectedVersion uint64
 }
 
 type lobbyProfileRepository interface {
@@ -125,17 +153,39 @@ func (s *lobbyServer) CreateRoom(
 	if err != nil {
 		return nil, err
 	}
+	requestID := request.GetRequestId()
+	if !validLobbyRequestID(requestID) {
+		return nil, status.Error(codes.InvalidArgument, "valid request ID is required")
+	}
+	requestData := createRoomRequest{
+		hallID: request.GetHallId(), name: request.GetName(),
+		passwordHash: sha256.Sum256([]byte(request.GetPassword())),
+		allowSpectators: request.GetAllowSpectators(), minimumPoints: request.GetMinimumPoints(),
+	}
+	key := roomRequestKey{userID: userID, requestID: requestID}
+	s.requestMu.Lock()
+	defer s.requestMu.Unlock()
+	if s.createdRooms == nil {
+		s.createdRooms = make(map[roomRequestKey]createRoomResult)
+	}
+	if previous, ok := s.createdRooms[key]; ok {
+		if previous.request != requestData {
+			return nil, status.Error(codes.AlreadyExists, "request ID was reused with different room settings")
+		}
+		return roomSummaryMessage(previous.room, &huaiv1.UserProfile{UserId: userID}), nil
+	}
 	profile, err := s.profiles.FindProfile(ctx, userID)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "could not load player profile")
 	}
-	details, err := s.rooms.CreateRoom(request.GetHallId(), userID, profile.Points, room.Settings{
-		Name: request.GetName(), Password: request.GetPassword(),
-		AllowSpectators: request.GetAllowSpectators(), MinimumPoints: request.GetMinimumPoints(),
+	details, err := s.rooms.CreateRoom(requestData.hallID, userID, profile.Points, room.Settings{
+		Name: requestData.name, Password: request.GetPassword(),
+		AllowSpectators: requestData.allowSpectators, MinimumPoints: requestData.minimumPoints,
 	})
 	if err != nil {
 		return nil, roomOperationError(err)
 	}
+	s.createdRooms[key] = createRoomResult{request: requestData, room: details.Room}
 	return roomSummaryMessage(details.Room, &huaiv1.UserProfile{UserId: userID}), nil
 }
 
@@ -168,9 +218,29 @@ func (s *lobbyServer) LeaveRoom(
 	if err != nil {
 		return nil, err
 	}
+	requestID := request.GetRequestId()
+	if !validLobbyRequestID(requestID) {
+		return nil, status.Error(codes.InvalidArgument, "valid request ID is required")
+	}
+	key := roomRequestKey{userID: userID, requestID: requestID}
+	requestData := leaveRoomRequest{
+		roomID: request.GetRoomId(), expectedVersion: request.GetExpectedVersion(),
+	}
+	s.requestMu.Lock()
+	defer s.requestMu.Unlock()
+	if s.leftRooms == nil {
+		s.leftRooms = make(map[roomRequestKey]leaveRoomRequest)
+	}
+	if previous, ok := s.leftRooms[key]; ok {
+		if previous != requestData {
+			return nil, status.Error(codes.AlreadyExists, "request ID was reused with different room settings")
+		}
+		return &huaiv1.Empty{}, nil
+	}
 	if _, err := s.rooms.LeaveRoom(request.GetRoomId(), userID, request.GetExpectedVersion()); err != nil {
 		return nil, roomOperationError(err)
 	}
+	s.leftRooms[key] = requestData
 	return &huaiv1.Empty{}, nil
 }
 
@@ -243,6 +313,18 @@ func roomPageWindow(token string, requestedSize uint32) (string, uint32, error) 
 		return "", 0, errors.New("room page is out of range")
 	}
 	return token, requestedSize, nil
+}
+
+func validLobbyRequestID(value string) bool {
+	if value == "" || len(value) > 128 {
+		return false
+	}
+	for _, char := range value {
+		if char < 0x21 || char > 0x7e {
+			return false
+		}
+	}
+	return true
 }
 
 var _ huaiv1.LobbyServiceServer = (*lobbyServer)(nil)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 )
@@ -33,20 +34,39 @@ type Service struct {
 	repository Repository
 	publisher  Publisher
 	rooms      RoomAccess
+	roomMu     sync.Mutex
+	roomSent   map[roomMessageKey]roomMessageResult
+}
+
+type roomMessageKey struct {
+	roomID    string
+	senderID  string
+	requestID string
+}
+
+type roomMessageResult struct {
+	body    string
+	message Message
 }
 
 func NewService(repository Repository, publisher Publisher) (*Service, error) {
 	if repository == nil {
 		return nil, errors.New("chat repository is required")
 	}
-	return &Service{repository: repository, publisher: publisher}, nil
+	return &Service{
+		repository: repository, publisher: publisher,
+		roomSent: make(map[roomMessageKey]roomMessageResult),
+	}, nil
 }
 
 func NewServiceWithRoomAccess(repository Repository, publisher Publisher, rooms RoomAccess) (*Service, error) {
 	if repository == nil || rooms == nil {
 		return nil, errors.New("chat repository and room access are required")
 	}
-	return &Service{repository: repository, publisher: publisher, rooms: rooms}, nil
+	return &Service{
+		repository: repository, publisher: publisher, rooms: rooms,
+		roomSent: make(map[roomMessageKey]roomMessageResult),
+	}, nil
 }
 
 func (s *Service) SendPrivateMessage(
@@ -122,6 +142,15 @@ func (s *Service) SendRoomMessage(
 		body == "" || !utf8.ValidString(body) || utf8.RuneCountInString(body) > maxMessageRunes {
 		return Message{}, ErrInvalidInput
 	}
+	key := roomMessageKey{roomID: roomID, senderID: userID, requestID: requestID}
+	s.roomMu.Lock()
+	defer s.roomMu.Unlock()
+	if previous, ok := s.roomSent[key]; ok {
+		if previous.body != body {
+			return Message{}, ErrRequestConflict
+		}
+		return previous.message, nil
+	}
 	members, err := s.rooms.RoomMemberIDs(ctx, roomID, userID)
 	if err != nil {
 		return Message{}, err
@@ -131,6 +160,7 @@ func (s *Service) SendRoomMessage(
 		CreatedAt: time.Now().UTC(),
 	}
 	s.publisher.PublishRoomMessage(members, message)
+	s.roomSent[key] = roomMessageResult{body: body, message: message}
 	return message, nil
 }
 

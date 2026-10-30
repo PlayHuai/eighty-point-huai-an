@@ -256,6 +256,42 @@ void main() {
     },
   );
 
+  testWidgets('password-protected room creation joins with its password', (
+    tester,
+  ) async {
+    final api = _FakeApiClient()
+      ..halls = const [
+        LobbyHall(
+          id: 'normal',
+          name: '普通大厅',
+          minimumPoints: 0,
+          maximumPoints: 9999,
+          multiplier: 1,
+        ),
+      ];
+    final auth = AuthController(api: api, store: _FakeSessionStore());
+    final login = auth.login('account', 'password');
+    api.loginCompleter.complete(_session);
+    await login;
+
+    await tester.pumpWidget(ClientApp(auth: auth));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('创建房间'));
+    await tester.pumpAndSettle();
+    final fields = find.descendant(
+      of: find.byType(AlertDialog),
+      matching: find.byType(TextField),
+    );
+    await tester.enterText(fields.at(0), '密码房');
+    await tester.enterText(fields.at(1), 'secret');
+    await tester.tap(find.widgetWithText(FilledButton, '创建'));
+    await tester.pumpAndSettle();
+
+    expect(api.joinedRoomCode, 'created-friend-room');
+    expect(find.text('密码房 · 房间聊天'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('lobby renders server halls and joins a waiting room', (
     tester,
   ) async {
@@ -803,6 +839,7 @@ class _FakeApiClient implements ApiClient {
   final chatRequestIds = <String>[];
   final sentMessages = <ChatMessage>[];
   final createdRoomMinimumPoints = <int>[];
+  final leftRoomIds = <String>[];
   bool failNextChatSend = false;
 
   @override
@@ -863,7 +900,7 @@ class _FakeApiClient implements ApiClient {
     String requestId = '',
   }) async {
     createdRoomMinimumPoints.add(minimumPoints);
-    return LobbyRoom(
+    final room = LobbyRoom(
       id: 'created-friend-room',
       hallId: hallId,
       name: name,
@@ -873,6 +910,11 @@ class _FakeApiClient implements ApiClient {
       hasPassword: password.isNotEmpty,
       version: 1,
     );
+    roomsByHall = {
+      ...roomsByHall,
+      hallId: [...(roomsByHall[hallId] ?? const <LobbyRoom>[]), room],
+    };
+    return room;
   }
 
   @override
@@ -882,6 +924,26 @@ class _FakeApiClient implements ApiClient {
     int expectedVersion = 0,
   }) async {
     joinedRoomId = roomId;
+    return roomsByHall.values
+        .expand((rooms) => rooms)
+        .firstWhere((room) => room.id == roomId);
+  }
+
+  @override
+  Future<void> leaveRoom({
+    required String accessToken,
+    required String roomId,
+    required int expectedVersion,
+    required String requestId,
+  }) async {
+    leftRoomIds.add(roomId);
+  }
+
+  @override
+  Future<LobbyRoom> getRoom({
+    required String accessToken,
+    required String roomId,
+  }) async {
     return roomsByHall.values
         .expand((rooms) => rooms)
         .firstWhere((room) => room.id == roomId);
