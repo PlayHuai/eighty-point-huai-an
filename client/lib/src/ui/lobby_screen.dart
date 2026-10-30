@@ -91,7 +91,11 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     try {
       final joined = await ref
           .read(apiClientProvider)
-          .joinRoom(accessToken: session.accessToken, roomId: room.id);
+          .joinRoom(
+            accessToken: session.accessToken,
+            roomId: room.id,
+            expectedVersion: room.version,
+          );
       if (!mounted) return;
       _openRoom(joined);
     } catch (error) {
@@ -204,6 +208,14 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
             requestId: _createRequestId!,
           );
       if (!mounted) return;
+      final joinedRoom = await ref
+          .read(apiClientProvider)
+          .joinRoom(
+            accessToken: session.accessToken,
+            roomId: room.id,
+            expectedVersion: room.version,
+          );
+      if (!mounted) return;
       _createRequestKey = null;
       _createRequestId = null;
       if (dialogContext.mounted &&
@@ -216,6 +228,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       if (hallId == friendRoomHallId) {
         await _showFriendInviteDialog(room.id);
       }
+      if (mounted) _openRoom(joinedRoom);
     } catch (error) {
       _showError(error);
     } finally {

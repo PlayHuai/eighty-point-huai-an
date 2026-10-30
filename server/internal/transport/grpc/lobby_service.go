@@ -117,6 +117,109 @@ func (s *lobbyServer) ListRooms(
 	return response, nil
 }
 
+func (s *lobbyServer) CreateRoom(
+	ctx context.Context,
+	request *huaiv1.CreateRoomRequest,
+) (*huaiv1.RoomSummary, error) {
+	userID, err := authenticatedUserID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	profile, err := s.profiles.FindProfile(ctx, userID)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "could not load player profile")
+	}
+	details, err := s.rooms.CreateRoom(request.GetHallId(), userID, profile.Points, room.Settings{
+		Name: request.GetName(), Password: request.GetPassword(),
+		AllowSpectators: request.GetAllowSpectators(), MinimumPoints: request.GetMinimumPoints(),
+	})
+	if err != nil {
+		return nil, roomOperationError(err)
+	}
+	return roomSummaryMessage(details.Room, &huaiv1.UserProfile{UserId: userID}), nil
+}
+
+func (s *lobbyServer) JoinRoom(
+	ctx context.Context,
+	request *huaiv1.RoomRequest,
+) (*huaiv1.RoomSummary, error) {
+	userID, err := authenticatedUserID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	profile, err := s.profiles.FindProfile(ctx, userID)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "could not load player profile")
+	}
+	details, err := s.rooms.JoinRoom(
+		request.GetRoomId(), userID, profile.Points, "", request.GetExpectedVersion(),
+	)
+	if err != nil {
+		return nil, roomOperationError(err)
+	}
+	return roomSummaryMessage(details.Room, &huaiv1.UserProfile{UserId: details.Room.OwnerID}), nil
+}
+
+func (s *lobbyServer) LeaveRoom(
+	ctx context.Context,
+	request *huaiv1.RoomRequest,
+) (*huaiv1.Empty, error) {
+	userID, err := authenticatedUserID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.rooms.LeaveRoom(request.GetRoomId(), userID, request.GetExpectedVersion()); err != nil {
+		return nil, roomOperationError(err)
+	}
+	return &huaiv1.Empty{}, nil
+}
+
+func (s *lobbyServer) JoinByCode(
+	ctx context.Context,
+	request *huaiv1.JoinByCodeRequest,
+) (*huaiv1.RoomSummary, error) {
+	userID, err := authenticatedUserID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	profile, err := s.profiles.FindProfile(ctx, userID)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "could not load player profile")
+	}
+	summary, err := s.rooms.GetSummary(request.GetRoomCode())
+	if err != nil {
+		return nil, roomOperationError(err)
+	}
+	details, err := s.rooms.JoinRoom(
+		summary.ID, userID, profile.Points, request.GetPassword(), summary.Version,
+	)
+	if err != nil {
+		return nil, roomOperationError(err)
+	}
+	return roomSummaryMessage(details.Room, &huaiv1.UserProfile{UserId: details.Room.OwnerID}), nil
+}
+
+func roomOperationError(err error) error {
+	switch {
+	case errors.Is(err, lobby.ErrUnknownHall), errors.Is(err, room.ErrInvalidInput):
+		return status.Error(codes.InvalidArgument, "invalid room request")
+	case errors.Is(err, room.ErrRoomNotFound):
+		return status.Error(codes.NotFound, "room not found")
+	case errors.Is(err, room.ErrVersionConflict):
+		return status.Error(codes.Aborted, "room state changed")
+	case errors.Is(err, room.ErrNotMember), errors.Is(err, room.ErrInvitationRequired),
+		errors.Is(err, room.ErrAdmissionDenied), errors.Is(err, room.ErrInvalidPassword):
+		return status.Error(codes.PermissionDenied, "room access denied")
+	case errors.Is(err, room.ErrAlreadyMember):
+		return status.Error(codes.AlreadyExists, "already a room member")
+	case errors.Is(err, room.ErrRoomFull), errors.Is(err, room.ErrRoomStarted),
+		errors.Is(err, room.ErrRoomClosed), errors.Is(err, room.ErrRoomNotReady):
+		return status.Error(codes.FailedPrecondition, "room is not available")
+	default:
+		return status.Error(codes.Internal, "room operation failed")
+	}
+}
+
 func roomSummaryMessage(summary room.Summary, owner *huaiv1.UserProfile) *huaiv1.RoomSummary {
 	return &huaiv1.RoomSummary{
 		RoomId: summary.ID, HallId: summary.HallID, Name: summary.Name,

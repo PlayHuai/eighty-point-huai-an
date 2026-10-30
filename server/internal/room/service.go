@@ -764,6 +764,17 @@ func (m *Manager) GetRoom(roomID, userID string) (Details, error) {
 	return snapshotLocked(state), nil
 }
 
+func (m *Manager) GetSummary(roomID string) (Summary, error) {
+	state, err := m.lockRoom(roomID)
+	if err != nil {
+		return Summary{}, err
+	}
+	defer state.mu.Unlock()
+	summary := state.summary
+	summary.Version = state.version
+	return summary, nil
+}
+
 func (m *Manager) RoomMemberIDs(_ context.Context, roomID, userID string) ([]string, error) {
 	details, err := m.GetRoom(roomID, userID)
 	if err != nil {

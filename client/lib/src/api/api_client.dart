@@ -51,7 +51,15 @@ abstract interface class ApiClient {
   Future<LobbyRoom> joinRoom({
     required String accessToken,
     required String roomId,
+    int expectedVersion = 0,
   });
+
+  Future<void> leaveRoom({
+    required String accessToken,
+    required String roomId,
+    required int expectedVersion,
+    required String requestId,
+  }) => throw UnsupportedError('Room departure is not supported.');
 
   Future<LobbyRoom> joinByCode({
     required String accessToken,
@@ -299,12 +307,31 @@ class GrpcApiClient implements ApiClient {
   Future<LobbyRoom> joinRoom({
     required String accessToken,
     required String roomId,
+    int expectedVersion = 0,
   }) async {
     final response = await _lobby.joinRoom(
-      api.RoomRequest()..roomId = roomId,
+      api.RoomRequest()
+        ..roomId = roomId
+        ..expectedVersion = Int64(expectedVersion),
       options: _authenticatedOptions(accessToken),
     );
     return _roomFrom(response);
+  }
+
+  @override
+  Future<void> leaveRoom({
+    required String accessToken,
+    required String roomId,
+    required int expectedVersion,
+    required String requestId,
+  }) async {
+    await _lobby.leaveRoom(
+      api.RoomRequest()
+        ..roomId = roomId
+        ..requestId = requestId
+        ..expectedVersion = Int64(expectedVersion),
+      options: _authenticatedOptions(accessToken),
+    );
   }
 
   @override

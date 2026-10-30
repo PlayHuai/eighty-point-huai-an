@@ -25,7 +25,9 @@ class _RoomChatScreenState extends ConsumerState<RoomChatScreen> {
   final _messages = <ChatMessage>[];
   String? _pendingBody;
   String? _pendingRequestId;
+  late int _roomVersion;
   bool _sending = false;
+  bool _leaving = false;
 
   @override
   void dispose() {
@@ -34,11 +36,21 @@ class _RoomChatScreenState extends ConsumerState<RoomChatScreen> {
     super.dispose();
   }
 
+  @override
+  void initState() {
+    super.initState();
+    _roomVersion = widget.room.version;
+  }
+
   void _receive(RealtimeEvent event) {
-    if (event.type != 'ROOM_MESSAGE_CREATED' ||
-        event.roomId != widget.room.id) {
+    if (event.roomId != widget.room.id) return;
+    if (event.type == 'ROOM_STATE_CHANGED') {
+      if (event.version > _roomVersion) {
+        setState(() => _roomVersion = event.version);
+      }
       return;
     }
+    if (event.type != 'ROOM_MESSAGE_CREATED') return;
     _addMessage(
       ChatMessage(
         id: event.messageId,
@@ -94,91 +106,134 @@ class _RoomChatScreenState extends ConsumerState<RoomChatScreen> {
     }
   }
 
+  Future<void> _leaveAndPop() async {
+    if (_leaving) return;
+    final session = widget.auth.session;
+    if (session == null) {
+      Navigator.of(context).pop();
+      return;
+    }
+    setState(() => _leaving = true);
+    try {
+      await ref
+          .read(apiClientProvider)
+          .leaveRoom(
+            accessToken: session.accessToken,
+            roomId: widget.room.id,
+            expectedVersion: _roomVersion,
+            requestId: createRequestId(),
+          );
+      if (mounted) Navigator.of(context).pop();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('离开房间失败，请稍后重试。')));
+      }
+    } finally {
+      if (mounted) setState(() => _leaving = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.listen(realtimeEventsProvider, (previous, next) {
       next.whenData(_receive);
     });
     final userId = widget.auth.session?.userId;
-    return Scaffold(
-      appBar: AppBar(title: Text('${widget.room.name} · 房间聊天')),
-      body: Column(
-        children: [
-          Expanded(
-            child: _messages.isEmpty
-                ? const Center(child: Text('房间消息仅实时接收，不保留历史。'))
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.all(DarkTokens.spacingS3),
-                    itemCount: _messages.length,
-                    itemBuilder: (context, index) {
-                      final message = _messages[index];
-                      final own = message.senderUserId == userId;
-                      return Align(
-                        alignment: own
-                            ? Alignment.centerRight
-                            : Alignment.centerLeft,
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(
-                            maxWidth: MediaQuery.sizeOf(context).width * 0.75,
-                          ),
-                          child: Card(
-                            color: own ? DarkTokens.bgCard : DarkTokens.bgPanel,
-                            child: Padding(
-                              padding: const EdgeInsets.all(
-                                DarkTokens.spacingS3,
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (!own)
-                                    Text(
-                                      message.senderUserId,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall,
-                                    ),
-                                  Text(message.body),
-                                ],
+    return PopScope<void>(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _leaveAndPop();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text('${widget.room.name} · 房间聊天'),
+          leading: IconButton(
+            tooltip: '离开房间',
+            onPressed: _leaving ? null : _leaveAndPop,
+            icon: const Icon(Icons.arrow_back),
+          ),
+        ),
+        body: Column(
+          children: [
+            Expanded(
+              child: _messages.isEmpty
+                  ? const Center(child: Text('房间消息仅实时接收，不保留历史。'))
+                  : ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.all(DarkTokens.spacingS3),
+                      itemCount: _messages.length,
+                      itemBuilder: (context, index) {
+                        final message = _messages[index];
+                        final own = message.senderUserId == userId;
+                        return Align(
+                          alignment: own
+                              ? Alignment.centerRight
+                              : Alignment.centerLeft,
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth:
+                                  MediaQuery.sizeOf(context).width * 0.75,
+                            ),
+                            child: Card(
+                              color:
+                                  own ? DarkTokens.bgCard : DarkTokens.bgPanel,
+                              child: Padding(
+                                padding: const EdgeInsets.all(
+                                  DarkTokens.spacingS3,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    if (!own)
+                                      Text(
+                                        message.senderUserId,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall,
+                                      ),
+                                    Text(message.body),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      );
-                    },
-                  ),
-          ),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.all(DarkTokens.spacingS3),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _messageController,
-                      minLines: 1,
-                      maxLines: 3,
-                      decoration: const InputDecoration(hintText: '输入房间消息'),
-                      onSubmitted: (_) => _send(),
+                        );
+                      },
                     ),
-                  ),
-                  const SizedBox(width: DarkTokens.spacingS2),
-                  IconButton.filled(
-                    tooltip: '发送',
-                    onPressed: _sending ? null : _send,
-                    icon: _sending
-                        ? const SizedBox.square(
-                            dimension: DarkTokens.spacingS4,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.send),
-                  ),
-                ],
+            ),
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.all(DarkTokens.spacingS3),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _messageController,
+                        minLines: 1,
+                        maxLines: 3,
+                        decoration: const InputDecoration(hintText: '输入房间消息'),
+                        onSubmitted: (_) => _send(),
+                      ),
+                    ),
+                    const SizedBox(width: DarkTokens.spacingS2),
+                    IconButton.filled(
+                      tooltip: '发送',
+                      onPressed: _sending ? null : _send,
+                      icon: _sending
+                          ? const SizedBox.square(
+                              dimension: DarkTokens.spacingS4,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.send),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

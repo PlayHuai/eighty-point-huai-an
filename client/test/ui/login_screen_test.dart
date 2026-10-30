@@ -879,6 +879,7 @@ class _FakeApiClient implements ApiClient {
   Future<LobbyRoom> joinRoom({
     required String accessToken,
     required String roomId,
+    int expectedVersion = 0,
   }) async {
     joinedRoomId = roomId;
     return roomsByHall.values
