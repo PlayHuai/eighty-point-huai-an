@@ -2,7 +2,6 @@ package grpc
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"sync"
@@ -34,7 +33,6 @@ type roomRequestKey struct {
 type createRoomRequest struct {
 	hallID          string
 	name            string
-	passwordHash    [32]byte
 	allowSpectators bool
 	minimumPoints   int64
 }
@@ -159,7 +157,6 @@ func (s *lobbyServer) CreateRoom(
 	}
 	requestData := createRoomRequest{
 		hallID: request.GetHallId(), name: request.GetName(),
-		passwordHash: sha256.Sum256([]byte(request.GetPassword())),
 		allowSpectators: request.GetAllowSpectators(), minimumPoints: request.GetMinimumPoints(),
 	}
 	key := roomRequestKey{userID: userID, requestID: requestID}
@@ -169,7 +166,8 @@ func (s *lobbyServer) CreateRoom(
 		s.createdRooms = make(map[roomRequestKey]createRoomResult)
 	}
 	if previous, ok := s.createdRooms[key]; ok {
-		if previous.request != requestData {
+		if previous.request != requestData ||
+			!s.rooms.MatchesRoomPassword(previous.room.ID, request.GetPassword()) {
 			return nil, status.Error(codes.AlreadyExists, "request ID was reused with different room settings")
 		}
 		return roomSummaryMessage(previous.room, &huaiv1.UserProfile{UserId: userID}), nil

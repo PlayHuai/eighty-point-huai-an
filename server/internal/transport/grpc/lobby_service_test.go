@@ -241,7 +241,7 @@ func TestCreateRoomIsIdempotentByUserAndRequestID(t *testing.T) {
 	}
 	ctx := ctxWithUserID(context.Background(), "owner")
 	request := &huaiv1.CreateRoomRequest{
-		HallId: lobby.HallOrdinary, Name: "room", RequestId: "create-once",
+		HallId: lobby.HallOrdinary, Name: "room", Password: "secret", RequestId: "create-once",
 	}
 	first, err := server.CreateRoom(ctx, request)
 	if err != nil {
@@ -250,6 +250,11 @@ func TestCreateRoomIsIdempotentByUserAndRequestID(t *testing.T) {
 	retry, err := server.CreateRoom(ctx, request)
 	if err != nil || retry.GetRoomId() != first.GetRoomId() {
 		t.Fatalf("identical CreateRoom retry = %+v, %v; want room %q", retry, err, first.GetRoomId())
+	}
+	conflictingPassword := *request
+	conflictingPassword.Password = "different"
+	if _, err := server.CreateRoom(ctx, &conflictingPassword); status.Code(err) != codes.AlreadyExists {
+		t.Fatalf("conflicting CreateRoom password error = %v", err)
 	}
 	conflicting := *request
 	conflicting.Name = "different room"

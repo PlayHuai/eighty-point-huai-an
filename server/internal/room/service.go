@@ -775,6 +775,18 @@ func (m *Manager) GetSummary(roomID string) (Summary, error) {
 	return summary, nil
 }
 
+func (m *Manager) MatchesRoomPassword(roomID, password string) bool {
+	state, err := m.lockRoom(roomID)
+	if err != nil {
+		return false
+	}
+	defer state.mu.Unlock()
+	if !state.summary.HasPassword {
+		return password == ""
+	}
+	return verifyPassword(password, state.passwordSalt[:], state.passwordHash)
+}
+
 func (m *Manager) RoomMemberIDs(_ context.Context, roomID, userID string) ([]string, error) {
 	details, err := m.GetRoom(roomID, userID)
 	if err != nil {
