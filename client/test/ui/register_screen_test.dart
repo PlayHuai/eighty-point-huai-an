@@ -13,120 +13,130 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grpc/grpc.dart';
 
 void main() {
-  testWidgets('registration validates password confirmation and required data', (
+  testWidgets(
+    'registration validates password confirmation and required data',
+    (tester) async {
+      final api = _FakeApiClient();
+      final auth = AuthController(api: api, store: _FakeSessionStore());
+      await auth.restoreSession();
+      await tester.pumpWidget(MaterialApp(home: RegisterScreen(auth: auth)));
+
+      await tester.ensureVisible(find.widgetWithText(FilledButton, '注册'));
+      await tester.tap(find.widgetWithText(FilledButton, '注册'));
+      await tester.pump();
+      expect(find.text('账号不能为空'), findsOneWidget);
+      expect(find.text('密码须为8到128字节且需包含字母和数字'), findsOneWidget);
+      expect(find.text('请确认密码'), findsOneWidget);
+      expect(find.text('昵称不能为空'), findsOneWidget);
+
+      await _enterText(tester, 'register-account-field', 'ab');
+      await _enterText(tester, 'register-password-field', 'Cards2026!');
+      await _enterText(
+        tester,
+        'register-confirm-password-field',
+        'Different2026!',
+      );
+      await _enterText(tester, 'register-nickname-field', '玩家');
+      await tester.ensureVisible(find.widgetWithText(FilledButton, '注册'));
+      await tester.tap(find.widgetWithText(FilledButton, '注册'));
+      await tester.pump();
+
+      expect(find.text('账号须为3到64字节且不能包含空格'), findsOneWidget);
+      expect(find.text('两次输入的密码不一致'), findsOneWidget);
+      await _enterText(tester, 'register-account-field', 'player01');
+      await tester.ensureVisible(find.widgetWithText(FilledButton, '注册'));
+      await tester.tap(find.widgetWithText(FilledButton, '注册'));
+      await tester.pump();
+      expect(find.text('两次输入的密码不一致'), findsOneWidget);
+      expect(api.registeredAccount, isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      auth.dispose();
+    },
+  );
+
+  testWidgets(
+    'registration submits avatar and enters the authenticated screen',
+    (tester) async {
+      final api = _FakeApiClient();
+      final auth = AuthController(api: api, store: _FakeSessionStore());
+      await tester.pumpWidget(ClientApp(auth: auth));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('创建账号'));
+      await tester.pumpAndSettle();
+      await _enterText(tester, 'register-account-field', ' player01 ');
+      await _enterText(tester, 'register-password-field', 'Cards2026!');
+      await _enterText(tester, 'register-confirm-password-field', 'Cards2026!');
+      await _enterText(tester, 'register-nickname-field', ' 玩家 ');
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('register-avatar-2')),
+      );
+      await tester.tap(find.byKey(const ValueKey('register-avatar-2')));
+      await tester.ensureVisible(find.widgetWithText(FilledButton, '注册'));
+      await tester.tap(find.widgetWithText(FilledButton, '注册'));
+      await tester.pump();
+
+      expect(api.registeredAccount, 'player01');
+      expect(api.registeredPassword, 'Cards2026!');
+      expect(api.registeredNickname, '玩家');
+      expect(api.registeredAvatarUrl, isNull);
+      final formAbsorber = find.ancestor(
+        of: find.byKey(const ValueKey('register-account-field')),
+        matching: find.byType(AbsorbPointer),
+      );
+      expect(
+        tester.widget<AbsorbPointer>(formAbsorber.first).absorbing,
+        isTrue,
+      );
+      expect(
+        tester
+            .widgetList<TextFormField>(find.byType(TextFormField))
+            .map((field) => field.controller!.text.trim()),
+        ['player01', 'Cards2026!', 'Cards2026!', '玩家'],
+      );
+
+      api.registerCompleter.complete(_session);
+      await tester.pumpAndSettle();
+      expect(api.profileAccessToken, 'access');
+      expect(api.profileNickname, '玩家');
+      expect(api.registeredAvatarUrl, 'huai-avatar://locked');
+      expect(find.text('游戏大厅'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'registration reports post-registration failures and enters app',
+    (tester) async {
+      final api = _FakeApiClient()..profileUpdateError = 'profile unavailable';
+      final auth = AuthController(
+        api: api,
+        store: _FakeSessionStore(failWrites: true),
+      );
+      await tester.pumpWidget(ClientApp(auth: auth));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('创建账号'));
+      await tester.pumpAndSettle();
+
+      await _enterText(tester, 'register-account-field', 'player01');
+      await _enterText(tester, 'register-password-field', 'Cards2026!');
+      await _enterText(tester, 'register-confirm-password-field', 'Cards2026!');
+      await _enterText(tester, 'register-nickname-field', '玩家');
+      await tester.ensureVisible(find.widgetWithText(FilledButton, '注册'));
+      await tester.tap(find.widgetWithText(FilledButton, '注册'));
+      await tester.pump();
+
+      api.registerCompleter.complete(_session);
+      await tester.pumpAndSettle();
+
+      expect(find.text('游戏大厅'), findsOneWidget);
+      expect(auth.error, contains('账号已创建，但登录状态无法保存。'));
+      expect(auth.error, contains('账号已创建，但头像暂未保存。'));
+    },
+  );
+
+  testWidgets('registration password visibility can be toggled', (
     tester,
   ) async {
-    final api = _FakeApiClient();
-    final auth = AuthController(api: api, store: _FakeSessionStore());
-    await auth.restoreSession();
-    await tester.pumpWidget(MaterialApp(home: RegisterScreen(auth: auth)));
-
-    await tester.ensureVisible(find.widgetWithText(FilledButton, '注册'));
-    await tester.tap(find.widgetWithText(FilledButton, '注册'));
-    await tester.pump();
-    expect(find.text('账号不能为空'), findsOneWidget);
-    expect(find.text('密码须为8到128字节且需包含字母和数字'), findsOneWidget);
-    expect(find.text('请确认密码'), findsOneWidget);
-    expect(find.text('昵称不能为空'), findsOneWidget);
-
-    await _enterText(tester, 'register-account-field', 'ab');
-    await _enterText(tester, 'register-password-field', 'Cards2026!');
-    await _enterText(
-      tester,
-      'register-confirm-password-field',
-      'Different2026!',
-    );
-    await _enterText(tester, 'register-nickname-field', '玩家');
-    await tester.ensureVisible(find.widgetWithText(FilledButton, '注册'));
-    await tester.tap(find.widgetWithText(FilledButton, '注册'));
-    await tester.pump();
-
-    expect(find.text('账号须为3到64字节且不能包含空格'), findsOneWidget);
-    expect(find.text('两次输入的密码不一致'), findsOneWidget);
-    await _enterText(tester, 'register-account-field', 'player01');
-    await tester.ensureVisible(find.widgetWithText(FilledButton, '注册'));
-    await tester.tap(find.widgetWithText(FilledButton, '注册'));
-    await tester.pump();
-    expect(find.text('两次输入的密码不一致'), findsOneWidget);
-    expect(api.registeredAccount, isNull);
-    await tester.pumpWidget(const SizedBox.shrink());
-    auth.dispose();
-  });
-
-  testWidgets('registration submits avatar and enters the authenticated screen', (
-    tester,
-  ) async {
-    final api = _FakeApiClient();
-    final auth = AuthController(api: api, store: _FakeSessionStore());
-    await tester.pumpWidget(ClientApp(auth: auth));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('创建账号'));
-    await tester.pumpAndSettle();
-    await _enterText(tester, 'register-account-field', ' player01 ');
-    await _enterText(tester, 'register-password-field', 'Cards2026!');
-    await _enterText(tester, 'register-confirm-password-field', 'Cards2026!');
-    await _enterText(tester, 'register-nickname-field', ' 玩家 ');
-    await tester.ensureVisible(find.byKey(const ValueKey('register-avatar-2')));
-    await tester.tap(find.byKey(const ValueKey('register-avatar-2')));
-    await tester.ensureVisible(find.widgetWithText(FilledButton, '注册'));
-    await tester.tap(find.widgetWithText(FilledButton, '注册'));
-    await tester.pump();
-
-    expect(api.registeredAccount, 'player01');
-    expect(api.registeredPassword, 'Cards2026!');
-    expect(api.registeredNickname, '玩家');
-    expect(api.registeredAvatarUrl, isNull);
-    final formAbsorber = find.ancestor(
-      of: find.byKey(const ValueKey('register-account-field')),
-      matching: find.byType(AbsorbPointer),
-    );
-    expect(tester.widget<AbsorbPointer>(formAbsorber.first).absorbing, isTrue);
-    expect(
-      tester.widgetList<TextFormField>(find.byType(TextFormField)).map(
-        (field) => field.controller!.text.trim(),
-      ),
-      ['player01', 'Cards2026!', 'Cards2026!', '玩家'],
-    );
-
-    api.registerCompleter.complete(_session);
-    await tester.pumpAndSettle();
-    expect(api.profileAccessToken, 'access');
-    expect(api.profileNickname, '玩家');
-    expect(api.registeredAvatarUrl, 'huai-avatar://locked');
-    expect(find.text('游戏大厅'), findsOneWidget);
-  });
-
-  testWidgets('registration reports post-registration failures and enters app', (
-    tester,
-  ) async {
-    final api = _FakeApiClient()..profileUpdateError = 'profile unavailable';
-    final auth = AuthController(
-      api: api,
-      store: _FakeSessionStore(failWrites: true),
-    );
-    await tester.pumpWidget(ClientApp(auth: auth));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('创建账号'));
-    await tester.pumpAndSettle();
-
-    await _enterText(tester, 'register-account-field', 'player01');
-    await _enterText(tester, 'register-password-field', 'Cards2026!');
-    await _enterText(tester, 'register-confirm-password-field', 'Cards2026!');
-    await _enterText(tester, 'register-nickname-field', '玩家');
-    await tester.ensureVisible(find.widgetWithText(FilledButton, '注册'));
-    await tester.tap(find.widgetWithText(FilledButton, '注册'));
-    await tester.pump();
-
-    api.registerCompleter.complete(_session);
-    await tester.pumpAndSettle();
-
-    expect(find.text('游戏大厅'), findsOneWidget);
-    expect(auth.error, contains('账号已创建，但登录状态无法保存。'));
-    expect(auth.error, contains('账号已创建，但头像暂未保存。'));
-  });
-
-  testWidgets('registration password visibility can be toggled', (tester) async {
     final auth = AuthController(
       api: _FakeApiClient(),
       store: _FakeSessionStore(),
@@ -134,9 +144,7 @@ void main() {
     await auth.restoreSession();
     await tester.pumpWidget(MaterialApp(home: RegisterScreen(auth: auth)));
 
-    final passwordField = find.byKey(
-      const ValueKey('register-password-field'),
-    );
+    final passwordField = find.byKey(const ValueKey('register-password-field'));
     final passwordTextField = find.descendant(
       of: passwordField,
       matching: find.byType(TextField),
@@ -461,6 +469,27 @@ class _FakeApiClient implements ApiClient {
   Future<LobbyRoom> joinInvitedRoom({
     required String accessToken,
     required String roomId,
+    required String requestId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<void> hidePrivateMessage({
+    required String accessToken,
+    required String messageId,
+  }) async {}
+
+  @override
+  Future<void> reportPrivateMessage({
+    required String accessToken,
+    required String messageId,
+    String reason = '',
+  }) async {}
+
+  @override
+  Future<ChatMessage> sendRoomMessage({
+    required String accessToken,
+    required String roomId,
+    required String body,
     required String requestId,
   }) => throw UnimplementedError();
 

@@ -7,17 +7,20 @@ import '../auth/auth_controller.dart';
 import 'client_providers.dart';
 import 'theme/app_theme.dart';
 
-final privateMessagesProvider =
-    FutureProvider.family<ChatMessagesPage, String>((ref, peerUserId) {
-      final session = ref.watch(
-        authControllerProvider.select((auth) => auth.session),
-      );
-      if (session == null) throw StateError('Authentication required.');
-      return ref.read(apiClientProvider).listPrivateMessages(
-        accessToken: session.accessToken,
-        peerUserId: peerUserId,
-      );
-    });
+final privateMessagesProvider = FutureProvider.family<ChatMessagesPage, String>(
+  (ref, peerUserId) {
+    final session = ref.watch(
+      authControllerProvider.select((auth) => auth.session),
+    );
+    if (session == null) throw StateError('Authentication required.');
+    return ref
+        .read(apiClientProvider)
+        .listPrivateMessages(
+          accessToken: session.accessToken,
+          peerUserId: peerUserId,
+        );
+  },
+);
 
 class ChatScreen extends ConsumerStatefulWidget {
   const ChatScreen({required this.auth, required this.peer, super.key});
@@ -53,12 +56,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
     setState(() => _sending = true);
     try {
-      await ref.read(apiClientProvider).sendPrivateMessage(
-        accessToken: session.accessToken,
-        peerUserId: widget.peer.userId,
-        body: body,
-        requestId: _pendingRequestId!,
-      );
+      await ref
+          .read(apiClientProvider)
+          .sendPrivateMessage(
+            accessToken: session.accessToken,
+            peerUserId: widget.peer.userId,
+            body: body,
+            requestId: _pendingRequestId!,
+          );
       if (!mounted) return;
       _pendingBody = null;
       _pendingRequestId = null;
@@ -66,11 +71,51 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       ref.invalidate(privateMessagesProvider(widget.peer.userId));
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('发送失败；重试将沿用本次请求编号。')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('发送失败；重试将沿用本次请求编号。')));
     } finally {
       if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _hideMessage(ChatMessage message) async {
+    final session = widget.auth.session;
+    if (session == null) return;
+    try {
+      await ref
+          .read(apiClientProvider)
+          .hidePrivateMessage(
+            accessToken: session.accessToken,
+            messageId: message.id,
+          );
+      if (mounted) ref.invalidate(privateMessagesProvider(widget.peer.userId));
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('隐藏消息失败，请重试。')));
+      }
+    }
+  }
+
+  Future<void> _reportMessage(ChatMessage message) async {
+    final session = widget.auth.session;
+    if (session == null) return;
+    try {
+      await ref
+          .read(apiClientProvider)
+          .reportPrivateMessage(
+            accessToken: session.accessToken,
+            messageId: message.id,
+          );
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('已举报，消息将保留供后续处理。')));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('举报失败，请重试。')));
+      }
     }
   }
 
@@ -86,57 +131,100 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     body: Column(
       children: [
         Expanded(
-          child: ref.watch(privateMessagesProvider(widget.peer.userId)).when(
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (_, _) => Center(
-              child: TextButton(
-                onPressed: () =>
-                    ref.invalidate(privateMessagesProvider(widget.peer.userId)),
-                child: const Text('消息加载失败，点击重试'),
-              ),
-            ),
-            data: (page) => page.messages.isEmpty
-                ? const Center(child: Text('暂无消息'))
-                : ListView.builder(
-                    controller: _scrollController,
-                    reverse: true,
-                    padding: const EdgeInsets.all(DarkTokens.spacingS3),
-                    itemCount: page.messages.length,
-                    itemBuilder: (context, index) {
-                      final message =
-                          page.messages[page.messages.length - index - 1];
-                      final own = message.senderUserId == widget.auth.session?.userId;
-                      return Align(
-                        alignment:
-                            own ? Alignment.centerRight : Alignment.centerLeft,
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(
-                            maxWidth: MediaQuery.sizeOf(context).width * 0.75,
-                          ),
-                          child: Card(
-                            color: own ? DarkTokens.bgCard : DarkTokens.bgPanel,
-                            child: Padding(
-                              padding: const EdgeInsets.all(
-                                DarkTokens.spacingS3,
+          child: ref
+              .watch(privateMessagesProvider(widget.peer.userId))
+              .when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (_, _) => Center(
+                  child: TextButton(
+                    onPressed: () => ref.invalidate(
+                      privateMessagesProvider(widget.peer.userId),
+                    ),
+                    child: const Text('消息加载失败，点击重试'),
+                  ),
+                ),
+                data: (page) => page.messages.isEmpty
+                    ? const Center(child: Text('暂无消息'))
+                    : ListView.builder(
+                        controller: _scrollController,
+                        reverse: true,
+                        padding: const EdgeInsets.all(DarkTokens.spacingS3),
+                        itemCount: page.messages.length,
+                        itemBuilder: (context, index) {
+                          final message =
+                              page.messages[page.messages.length - index - 1];
+                          final own =
+                              message.senderUserId ==
+                              widget.auth.session?.userId;
+                          return Align(
+                            alignment: own
+                                ? Alignment.centerRight
+                                : Alignment.centerLeft,
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth:
+                                    MediaQuery.sizeOf(context).width * 0.75,
                               ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  Text(message.body),
-                                  const SizedBox(height: DarkTokens.spacingS1),
-                                  Text(
-                                    message.createdAt.toLocal().toString(),
-                                    style: Theme.of(context).textTheme.bodySmall,
+                              child: Card(
+                                color: own
+                                    ? DarkTokens.bgCard
+                                    : DarkTokens.bgPanel,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(
+                                    DarkTokens.spacingS3,
                                   ),
-                                ],
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(message.body),
+                                      const SizedBox(
+                                        height: DarkTokens.spacingS2,
+                                      ),
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            message.createdAt
+                                                .toLocal()
+                                                .toString(),
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodySmall,
+                                          ),
+                                          PopupMenuButton<String>(
+                                            tooltip: '消息操作',
+                                            padding: EdgeInsets.zero,
+                                            onSelected: (action) {
+                                              if (action == 'hide') {
+                                                _hideMessage(message);
+                                              } else if (action == 'report') {
+                                                _reportMessage(message);
+                                              }
+                                            },
+                                            itemBuilder: (context) => [
+                                              const PopupMenuItem(
+                                                value: 'hide',
+                                                child: Text('仅对我隐藏'),
+                                              ),
+                                              if (!own)
+                                                const PopupMenuItem(
+                                                  value: 'report',
+                                                  child: Text('举报消息'),
+                                                ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-          ),
+                          );
+                        },
+                      ),
+              ),
         ),
         SafeArea(
           top: false,

@@ -13,6 +13,8 @@ type testRepository struct {
 	messages []Message
 	sent     []Message
 	sendErr  error
+	hidden   []string
+	reports  []string
 }
 
 func (r *testRepository) SendPrivateMessage(
@@ -45,9 +47,13 @@ func (r *testRepository) ListPrivateMessages(
 	return append([]Message(nil), r.messages[offset:end]...), nil
 }
 
-func (r *testRepository) HidePrivateMessage(context.Context, string, string) error { return nil }
+func (r *testRepository) HidePrivateMessage(_ context.Context, userID, messageID string) error {
+	r.hidden = append(r.hidden, userID+":"+messageID)
+	return nil
+}
 
-func (r *testRepository) ReportPrivateMessage(context.Context, string, string, string) error {
+func (r *testRepository) ReportPrivateMessage(_ context.Context, userID, messageID, _ string) error {
+	r.reports = append(r.reports, userID+":"+messageID)
 	return nil
 }
 
@@ -199,10 +205,34 @@ func TestRoomMessageRequiresCurrentMembership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if _, err := service.SendRoomMessage(context.Background(), "sender", "room", "request", "hello"); !errors.Is(err, ErrNotRoomMember) {
 		t.Fatalf("SendRoomMessage() error = %v, want ErrNotRoomMember", err)
 	}
 	if len(publisher.messages) != 0 {
 		t.Fatalf("unauthorized message was published: %+v", publisher.messages)
+	}
+}
+
+func TestPrivateMessageHideAndReportValidateAndDelegate(t *testing.T) {
+	repository := &testRepository{}
+	service, err := NewService(repository, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.HidePrivateMessage(context.Background(), "user", "42"); err != nil {
+		t.Fatalf("HidePrivateMessage() error = %v", err)
+	}
+	if err := service.ReportPrivateMessage(context.Background(), "user", "42", "  abuse  "); err != nil {
+		t.Fatalf("ReportPrivateMessage() error = %v", err)
+	}
+	if !reflect.DeepEqual(repository.hidden, []string{"user:42"}) ||
+		!reflect.DeepEqual(repository.reports, []string{"user:42"}) {
+		t.Fatalf("hide/report calls = %v / %v", repository.hidden, repository.reports)
+	}
+	for _, invalidID := range []string{"0", "-1", "18446744073709551616"} {
+		if err := service.HidePrivateMessage(context.Background(), "user", invalidID); !errors.Is(err, ErrInvalidInput) {
+			t.Errorf("HidePrivateMessage(%q) error = %v, want ErrInvalidInput", invalidID, err)
+		}
 	}
 }

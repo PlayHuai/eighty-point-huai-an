@@ -16,9 +16,9 @@ final friendListProvider = FutureProvider<List<PlayerFriend>>((ref) {
     authControllerProvider.select((auth) => auth.session),
   );
   if (session == null) return Future.value(const <PlayerFriend>[]);
-  return ref.read(apiClientProvider).listFriends(
-    accessToken: session.accessToken,
-  );
+  return ref
+      .read(apiClientProvider)
+      .listFriends(accessToken: session.accessToken);
 });
 
 final friendRequestsProvider = FutureProvider<List<PlayerFriend>>((ref) {
@@ -26,24 +26,25 @@ final friendRequestsProvider = FutureProvider<List<PlayerFriend>>((ref) {
     authControllerProvider.select((auth) => auth.session),
   );
   if (session == null) return Future.value(const <PlayerFriend>[]);
-  return ref.read(apiClientProvider).listFriendRequests(
-    accessToken: session.accessToken,
-  );
+  return ref
+      .read(apiClientProvider)
+      .listFriendRequests(accessToken: session.accessToken);
 });
 
-final playerSearchProvider =
-    FutureProvider.family<List<PlayerFriend>, String>((ref, query) {
-      final session = ref.watch(
-        authControllerProvider.select((auth) => auth.session),
-      );
-      if (session == null || query.trim().isEmpty) {
-        return Future.value(const <PlayerFriend>[]);
-      }
-      return ref.read(apiClientProvider).searchPlayers(
-        accessToken: session.accessToken,
-        query: query.trim(),
-      );
-    });
+final playerSearchProvider = FutureProvider.family<List<PlayerFriend>, String>((
+  ref,
+  query,
+) {
+  final session = ref.watch(
+    authControllerProvider.select((auth) => auth.session),
+  );
+  if (session == null || query.trim().isEmpty) {
+    return Future.value(const <PlayerFriend>[]);
+  }
+  return ref
+      .read(apiClientProvider)
+      .searchPlayers(accessToken: session.accessToken, query: query.trim());
+});
 
 class FriendListScreen extends ConsumerStatefulWidget {
   const FriendListScreen({required this.auth, super.key});
@@ -86,17 +87,15 @@ class _FriendListScreenState extends ConsumerState<FriendListScreen> {
       ref.invalidate(friendListProvider);
       ref.invalidate(playerSearchProvider);
       if (refreshRequests) ref.invalidate(friendRequestsProvider);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(successMessage)),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (error) {
       if (!mounted) return;
-      final text = error is GrpcError && error.code == StatusCode.failedPrecondition
+      final text =
+          error is GrpcError && error.code == StatusCode.failedPrecondition
           ? '当前好友关系状态不允许此操作。'
           : '操作失败，请检查网络后重试。';
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(text)));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
     } finally {
       if (mounted) setState(() => _isMutating = false);
     }
@@ -137,8 +136,9 @@ class _FriendListScreenState extends ConsumerState<FriendListScreen> {
                     labelText: '搜索玩家',
                     suffixIcon: IconButton(
                       tooltip: '搜索',
-                      onPressed: () =>
-                          setState(() => _query = _searchController.text.trim()),
+                      onPressed: () => setState(
+                        () => _query = _searchController.text.trim(),
+                      ),
                       icon: const Icon(Icons.search),
                     ),
                   ),
@@ -164,7 +164,9 @@ class _FriendListScreenState extends ConsumerState<FriendListScreen> {
                               Expanded(
                                 child: TabBarView(
                                   children: [
-                                    _buildPlayers(ref.watch(friendListProvider)),
+                                    _buildPlayers(
+                                      ref.watch(friendListProvider),
+                                    ),
                                     _buildRequests(
                                       ref.watch(friendRequestsProvider),
                                     ),
@@ -195,9 +197,7 @@ class _FriendListScreenState extends ConsumerState<FriendListScreen> {
     ),
     data: (items) {
       if (items.isEmpty) {
-        return Center(
-          child: Text(searching ? '没有匹配的玩家' : '暂无好友'),
-        );
+        return Center(child: Text(searching ? '没有匹配的玩家' : '暂无好友'));
       }
       return ListView.separated(
         itemCount: items.length,
@@ -209,8 +209,12 @@ class _FriendListScreenState extends ConsumerState<FriendListScreen> {
               backgroundColor: DarkTokens.bgCard,
               child: Text(_initial(friend)),
             ),
-            title: Text(friend.nickname.isEmpty ? friend.userId : friend.nickname),
-            subtitle: Text(friend.userId),
+            title: Text(
+              friend.nickname.isEmpty ? friend.userId : friend.nickname,
+            ),
+            subtitle: Text(
+              '${friend.userId} · ${friend.isOnline ? '在线' : '离线'}',
+            ),
             onTap: () => _openProfile(friend),
             trailing: searching
                 ? IconButton(

@@ -101,7 +101,19 @@ func TestRoomSummaryVersionFieldNumber(t *testing.T) {
 	if field == nil {
 		t.Fatal("RoomSummary.version is missing")
 	}
+
 	if got, want := field.Number(), protoreflect.FieldNumber(8); got != want {
 		t.Fatalf("RoomSummary.version field number = %d, want %d", got, want)
+	}
+}
+
+func TestFriendOnlineFieldNumber(t *testing.T) {
+	fields := (&Friend{}).ProtoReflect().Descriptor().Fields()
+	field := fields.ByName("online")
+	if field == nil {
+		t.Fatal("Friend.online is missing")
+	}
+	if got, want := field.Number(), protoreflect.FieldNumber(3); got != want {
+		t.Fatalf("Friend.online field number = %d, want %d", got, want)
 	}
 }

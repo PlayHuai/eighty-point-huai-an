@@ -3174,6 +3174,7 @@ type Friend struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Profile       *UserProfile           `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
 	FriendsSince  *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=friends_since,json=friendsSince,proto3" json:"friends_since,omitempty"`
+	Online        bool                   `protobuf:"varint,3,opt,name=online,proto3" json:"online,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3220,6 +3221,13 @@ func (x *Friend) GetFriendsSince() *timestamppb.Timestamp {
 		return x.FriendsSince
 	}
 	return nil
+}
+
+func (x *Friend) GetOnline() bool {
+	if x != nil {
+		return x.Online
+	}
+	return false
 }
 
 type ListFriendsResponse struct {
@@ -4296,10 +4304,11 @@ const file_huai_v1_api_proto_rawDesc = "" +
 	"\x11requester_user_id\x18\x01 \x01(\tR\x0frequesterUserId\x12\x16\n" +
 	"\x06accept\x18\x02 \x01(\bR\x06accept\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\x03 \x01(\tR\trequestId\"y\n" +
+	"request_id\x18\x03 \x01(\tR\trequestId\"\x91\x01\n" +
 	"\x06Friend\x12.\n" +
 	"\aprofile\x18\x01 \x01(\v2\x14.huai.v1.UserProfileR\aprofile\x12?\n" +
-	"\rfriends_since\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\ffriendsSince\"g\n" +
+	"\rfriends_since\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\ffriendsSince\x12\x16\n" +
+	"\x06online\x18\x03 \x01(\bR\x06online\"g\n" +
 	"\x13ListFriendsResponse\x12)\n" +
 	"\afriends\x18\x01 \x03(\v2\x0f.huai.v1.FriendR\afriends\x12%\n" +
 	"\x04page\x18\x02 \x01(\v2\x11.huai.v1.PageInfoR\x04page\"\x89\x01\n" +

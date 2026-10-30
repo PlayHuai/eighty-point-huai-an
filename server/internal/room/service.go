@@ -107,6 +107,23 @@ type Manager struct {
 	mu          sync.RWMutex
 	rooms       map[string]*roomState
 	hallRoomIDs map[string][]string
+	observerMu  sync.RWMutex
+	observer    func(Details)
+}
+
+func (m *Manager) SetObserver(observer func(Details)) {
+	m.observerMu.Lock()
+	m.observer = observer
+	m.observerMu.Unlock()
+}
+
+func (m *Manager) notifyRoom(details Details) {
+	m.observerMu.RLock()
+	observer := m.observer
+	m.observerMu.RUnlock()
+	if observer != nil {
+		observer(details)
+	}
 }
 
 func NewManager() *Manager {
@@ -159,7 +176,9 @@ func (m *Manager) CreateRoom(hallID, ownerID string, ownerPoints int64, settings
 	m.rooms[id] = state
 	m.insertRoomIDLocked(hallID, id)
 	m.mu.Unlock()
-	return snapshot(state), nil
+	details := snapshot(state)
+	m.notifyRoom(details)
+	return details, nil
 }
 
 func (m *Manager) ListRooms(hallID string, userPoints int64) ([]Summary, error) {
@@ -310,7 +329,9 @@ func (m *Manager) JoinRoom(roomID, userID string, points int64, password string,
 	state.members[userID] = memberState{Member: Member{UserID: userID, Role: RolePlayer, Seat: seat}}
 	state.summary.OccupiedSeats++
 	state.version++
-	return snapshotLocked(state), nil
+	details := snapshotLocked(state)
+	m.notifyRoom(details)
+	return details, nil
 }
 
 func (m *Manager) JoinSpectator(roomID, userID string, points int64, password string, viewSeat uint32, expectedVersion uint64) (Details, error) {
@@ -347,7 +368,9 @@ func (m *Manager) JoinSpectator(roomID, userID string, points int64, password st
 		UserID: userID, Role: RoleSpectator, ViewSeat: viewSeat,
 	}}
 	state.version++
-	return snapshotLocked(state), nil
+	details := snapshotLocked(state)
+	m.notifyRoom(details)
+	return details, nil
 }
 
 func (m *Manager) InviteFriend(roomID, inviterID, friendID string) error {
@@ -497,7 +520,9 @@ func (m *Manager) JoinInvitedFriendRoom(roomID, userID, password, requestID stri
 	state.inviteRequests[requestID] = userID
 	state.summary.OccupiedSeats++
 	state.version++
-	return snapshotLocked(state), nil
+	details := snapshotLocked(state)
+	m.notifyRoom(details)
+	return details, nil
 }
 
 func (m *Manager) SitDown(roomID, userID string, seat uint32, points int64, expectedVersion uint64) (Details, error) {
@@ -534,7 +559,9 @@ func (m *Manager) SitDown(roomID, userID string, seat uint32, points int64, expe
 	state.members[userID] = member
 	state.summary.OccupiedSeats++
 	state.version++
-	return snapshotLocked(state), nil
+	details := snapshotLocked(state)
+	m.notifyRoom(details)
+	return details, nil
 }
 
 func (m *Manager) StandUp(roomID, userID string, expectedVersion uint64) (Details, error) {
@@ -557,7 +584,9 @@ func (m *Manager) StandUp(roomID, userID string, expectedVersion uint64) (Detail
 	state.members[userID] = member
 	state.summary.OccupiedSeats--
 	state.version++
-	return snapshotLocked(state), nil
+	details := snapshotLocked(state)
+	m.notifyRoom(details)
+	return details, nil
 }
 
 func (m *Manager) ChangeSeat(roomID, userID string, seat uint32, expectedVersion uint64) (Details, error) {
@@ -588,7 +617,9 @@ func (m *Manager) ChangeSeat(roomID, userID string, seat uint32, expectedVersion
 	member.Seat = seat
 	state.members[userID] = member
 	state.version++
-	return snapshotLocked(state), nil
+	details := snapshotLocked(state)
+	m.notifyRoom(details)
+	return details, nil
 }
 
 func (m *Manager) LeaveRoom(roomID, userID string, expectedVersion uint64) (Details, error) {
@@ -617,7 +648,9 @@ func (m *Manager) LeaveRoom(roomID, userID string, expectedVersion uint64) (Deta
 	}
 	state.version++
 	m.evictIfEmpty(state)
-	return snapshotLocked(state), nil
+	details := snapshotLocked(state)
+	m.notifyRoom(details)
+	return details, nil
 }
 
 func (m *Manager) SetSpectatorView(roomID, userID string, viewSeat uint32, expectedVersion uint64) (Details, error) {
@@ -639,7 +672,9 @@ func (m *Manager) SetSpectatorView(roomID, userID string, viewSeat uint32, expec
 	member.ViewSeat = viewSeat
 	state.members[userID] = member
 	state.version++
-	return snapshotLocked(state), nil
+	details := snapshotLocked(state)
+	m.notifyRoom(details)
+	return details, nil
 }
 
 func (m *Manager) SetHandVisibility(roomID, userID string, visible bool, expectedVersion uint64) (Details, error) {
@@ -658,7 +693,9 @@ func (m *Manager) SetHandVisibility(roomID, userID string, visible bool, expecte
 	member.ShowHand = visible
 	state.members[userID] = member
 	state.version++
-	return snapshotLocked(state), nil
+	details := snapshotLocked(state)
+	m.notifyRoom(details)
+	return details, nil
 }
 
 func (m *Manager) Start(roomID, userID string, expectedVersion uint64) (Details, error) {
@@ -681,7 +718,9 @@ func (m *Manager) Start(roomID, userID string, expectedVersion uint64) (Details,
 	}
 	state.summary.Status = StatusPlaying
 	state.version++
-	return snapshotLocked(state), nil
+	details := snapshotLocked(state)
+	m.notifyRoom(details)
+	return details, nil
 }
 
 func (m *Manager) Close(roomID, userID string, expectedVersion uint64) (Details, error) {
@@ -708,7 +747,9 @@ func (m *Manager) Close(roomID, userID string, expectedVersion uint64) (Details,
 	m.removeRoomIDLocked(state.summary.HallID, state.summary.ID)
 	m.mu.Unlock()
 	m.evictIfEmpty(state)
-	return snapshotLocked(state), nil
+	details := snapshotLocked(state)
+	m.notifyRoom(details)
+	return details, nil
 }
 
 func (m *Manager) GetRoom(roomID, userID string) (Details, error) {

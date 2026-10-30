@@ -121,6 +121,24 @@ abstract interface class ApiClient {
     required String requestId,
   }) => throw UnsupportedError('Private messages are not supported.');
 
+  Future<void> hidePrivateMessage({
+    required String accessToken,
+    required String messageId,
+  }) => throw UnsupportedError('Private message hiding is not supported.');
+
+  Future<void> reportPrivateMessage({
+    required String accessToken,
+    required String messageId,
+    String reason = '',
+  }) => throw UnsupportedError('Private message reporting is not supported.');
+
+  Future<ChatMessage> sendRoomMessage({
+    required String accessToken,
+    required String roomId,
+    required String body,
+    required String requestId,
+  }) => throw UnsupportedError('Room chat is not supported.');
+
   Future<void> sendRoomInvite({
     required String accessToken,
     required String roomId,
@@ -147,7 +165,9 @@ class GrpcApiClient implements ApiClient {
   late final api.AuthServiceClient _auth;
   late final api.PlayerServiceClient _player;
   late final api.LobbyServiceClient _lobby = api.LobbyServiceClient(_channel);
-  late final api.FriendServiceClient _friends = api.FriendServiceClient(_channel);
+  late final api.FriendServiceClient _friends = api.FriendServiceClient(
+    _channel,
+  );
   late final api.RoomServiceClient _room = api.RoomServiceClient(_channel);
   late final api.ChatServiceClient _chat = api.ChatServiceClient(_channel);
 
@@ -430,6 +450,7 @@ class GrpcApiClient implements ApiClient {
             userId: friend.profile.userId,
             nickname: friend.profile.nickname,
             avatarUrl: friend.profile.avatarUrl,
+            isOnline: friend.online,
           ),
         ),
       );
@@ -578,6 +599,53 @@ class GrpcApiClient implements ApiClient {
   }
 
   @override
+  Future<void> hidePrivateMessage({
+    required String accessToken,
+    required String messageId,
+  }) async {
+    await _chat.hidePrivateMessage(
+      api.HidePrivateMessageRequest()..messageId = messageId,
+      options: _authenticatedOptions(accessToken),
+    );
+  }
+
+  @override
+  Future<void> reportPrivateMessage({
+    required String accessToken,
+    required String messageId,
+    String reason = '',
+  }) async {
+    await _chat.reportPrivateMessage(
+      api.ReportPrivateMessageRequest()
+        ..messageId = messageId
+        ..reason = reason,
+      options: _authenticatedOptions(accessToken),
+    );
+  }
+
+  @override
+  Future<ChatMessage> sendRoomMessage({
+    required String accessToken,
+    required String roomId,
+    required String body,
+    required String requestId,
+  }) async {
+    final message = await _chat.sendRoomMessage(
+      api.SendRoomMessageRequest()
+        ..roomId = roomId
+        ..requestId = requestId
+        ..body = body,
+      options: _authenticatedOptions(accessToken),
+    );
+    return ChatMessage(
+      id: message.messageId,
+      senderUserId: message.senderUserId,
+      body: message.body,
+      createdAt: message.createdAt.toDateTime(),
+    );
+  }
+
+  @override
   Future<LobbyRoom> joinInvitedRoom({
     required String accessToken,
     required String roomId,
@@ -592,9 +660,8 @@ class GrpcApiClient implements ApiClient {
     return _roomFrom(response.room);
   }
 
-  CallOptions _authenticatedOptions(String accessToken) => CallOptions(
-    metadata: {'authorization': 'Bearer ' + accessToken},
-  );
+  CallOptions _authenticatedOptions(String accessToken) =>
+      CallOptions(metadata: {'authorization': 'Bearer ' + accessToken});
 
   LobbyRoom _roomFrom(api.RoomSummary room) => LobbyRoom(
     id: room.roomId,

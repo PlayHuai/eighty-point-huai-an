@@ -123,11 +123,7 @@ void main() {
         ),
       ]
       ..friends = const [
-        PlayerFriend(
-          userId: 'friend-1',
-          nickname: '好友甲',
-          avatarUrl: '',
-        ),
+        PlayerFriend(userId: 'friend-1', nickname: '好友甲', avatarUrl: ''),
       ]
       ..failNextChatSend = true;
     final auth = AuthController(api: api, store: _FakeSessionStore());
@@ -210,58 +206,55 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('friend-room creation offers invites from the authenticated list', (
-    tester,
-  ) async {
-    final api = _FakeApiClient()
-      ..halls = const [
-        LobbyHall(
-          id: friendRoomHallId,
-          name: '好友房',
-          minimumPoints: 0,
-          maximumPoints: 0,
-          multiplier: 1,
-        ),
-      ]
-      ..friends = const [
-        PlayerFriend(
-          userId: 'friend-1',
-          nickname: '好友乙',
-          avatarUrl: '',
-        ),
-      ];
-    final auth = AuthController(api: api, store: _FakeSessionStore());
-    final login = auth.login('account', 'password');
-    api.loginCompleter.complete(_session);
-    await login;
+  testWidgets(
+    'friend-room creation offers invites from the authenticated list',
+    (tester) async {
+      final api = _FakeApiClient()
+        ..halls = const [
+          LobbyHall(
+            id: friendRoomHallId,
+            name: '好友房',
+            minimumPoints: 0,
+            maximumPoints: 0,
+            multiplier: 1,
+          ),
+        ]
+        ..friends = const [
+          PlayerFriend(userId: 'friend-1', nickname: '好友乙', avatarUrl: ''),
+        ];
+      final auth = AuthController(api: api, store: _FakeSessionStore());
+      final login = auth.login('account', 'password');
+      api.loginCompleter.complete(_session);
+      await login;
 
-    await tester.pumpWidget(ClientApp(auth: auth));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('创建房间'));
-    await tester.pumpAndSettle();
-    await tester.enterText(
-      find
-          .descendant(
-            of: find.byType(AlertDialog),
-            matching: find.byType(TextField),
-          )
-          .first,
-      '周末好友局',
-    );
-    await tester.tap(find.widgetWithText(FilledButton, '创建'));
-    await tester.pumpAndSettle();
+      await tester.pumpWidget(ClientApp(auth: auth));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('创建房间'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find
+            .descendant(
+              of: find.byType(AlertDialog),
+              matching: find.byType(TextField),
+            )
+            .first,
+        '周末好友局',
+      );
+      await tester.tap(find.widgetWithText(FilledButton, '创建'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('邀请好友加入好友房'), findsOneWidget);
-    expect(find.text('好友乙'), findsOneWidget);
-    await tester.pump(const Duration(seconds: 5));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('发送邀请'));
-    await tester.pumpAndSettle();
-    expect(api.invitedRoomId, 'created-friend-room');
-    expect(api.invitedFriendId, 'friend-1');
-    expect(find.text('好友房邀请已发送。'), findsOneWidget);
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
+      expect(find.text('邀请好友加入好友房'), findsOneWidget);
+      expect(find.text('好友乙'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('发送邀请'));
+      await tester.pumpAndSettle();
+      expect(api.invitedRoomId, 'created-friend-room');
+      expect(api.invitedFriendId, 'friend-1');
+      expect(find.text('好友房邀请已发送。'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 
   testWidgets('lobby renders server halls and joins a waiting room', (
     tester,
@@ -423,18 +416,14 @@ void main() {
     await tester.pumpAndSettle();
 
     final roomCodeField = find.byWidgetPredicate(
-      (widget) =>
-          widget is TextField && widget.decoration?.labelText == '房间号',
+      (widget) => widget is TextField && widget.decoration?.labelText == '房间号',
     );
     expect(
       tester.widget<TextField>(roomCodeField).controller!.text,
       'locked-room',
     );
     await tester.tap(
-      find.descendant(
-        of: find.byType(AlertDialog),
-        matching: find.text('加入'),
-      ),
+      find.descendant(of: find.byType(AlertDialog), matching: find.text('加入')),
     );
     await tester.pumpAndSettle();
     expect(api.joinedRoomCode, 'locked-room');
@@ -463,8 +452,7 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, '创建房间'));
     await tester.pumpAndSettle();
     final roomNameField = find.byWidgetPredicate(
-      (widget) =>
-          widget is TextField && widget.decoration?.labelText == '房间名称',
+      (widget) => widget is TextField && widget.decoration?.labelText == '房间名称',
     );
     final minimumPointsField = find.byWidgetPredicate(
       (widget) =>
@@ -495,15 +483,19 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, '登录'));
     await tester.pump();
     expect(
-      tester.state<FormFieldState<String>>(
-        find.byKey(const ValueKey('login-account-field')),
-      ).errorText,
+      tester
+          .state<FormFieldState<String>>(
+            find.byKey(const ValueKey('login-account-field')),
+          )
+          .errorText,
       '请输入账号',
     );
     expect(
-      tester.state<FormFieldState<String>>(
-        find.byKey(const ValueKey('login-password-field')),
-      ).errorText,
+      tester
+          .state<FormFieldState<String>>(
+            find.byKey(const ValueKey('login-password-field')),
+          )
+          .errorText,
       '请输入密码',
     );
 
@@ -557,9 +549,14 @@ void main() {
 
     final passwordField = find.byKey(const ValueKey('login-password-field'));
     expect(
-      tester.widget<TextField>(
-        find.descendant(of: passwordField, matching: find.byType(TextField)),
-      ).obscureText,
+      tester
+          .widget<TextField>(
+            find.descendant(
+              of: passwordField,
+              matching: find.byType(TextField),
+            ),
+          )
+          .obscureText,
       isTrue,
     );
     await tester.tap(
@@ -567,9 +564,14 @@ void main() {
     );
     await tester.pump();
     expect(
-      tester.widget<TextField>(
-        find.descendant(of: passwordField, matching: find.byType(TextField)),
-      ).obscureText,
+      tester
+          .widget<TextField>(
+            find.descendant(
+              of: passwordField,
+              matching: find.byType(TextField),
+            ),
+          )
+          .obscureText,
       isFalse,
     );
 
@@ -578,9 +580,14 @@ void main() {
     );
     await tester.pump();
     expect(
-      tester.widget<TextField>(
-        find.descendant(of: passwordField, matching: find.byType(TextField)),
-      ).obscureText,
+      tester
+          .widget<TextField>(
+            find.descendant(
+              of: passwordField,
+              matching: find.byType(TextField),
+            ),
+          )
+          .obscureText,
       isTrue,
     );
 
@@ -604,10 +611,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('账号不能为空'), findsOneWidget);
-    expect(
-      find.text('密码须为8到128字节且需包含字母和数字'),
-      findsOneWidget,
-    );
+    expect(find.text('密码须为8到128字节且需包含字母和数字'), findsOneWidget);
     expect(find.text('请确认密码'), findsOneWidget);
     expect(find.text('昵称不能为空'), findsOneWidget);
 
@@ -632,79 +636,81 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, '注册'));
     await tester.pump();
 
-    expect(
-      find.text('密码须为8到128字节且需包含字母和数字'),
-      findsOneWidget,
-    );
+    expect(find.text('密码须为8到128字节且需包含字母和数字'), findsOneWidget);
     expect(find.text('两次输入的密码不一致'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('keeps registration fields mounted while the request is pending', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(400, 500));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    final api = _FakeApiClient();
-    final auth = AuthController(api: api, store: _FakeSessionStore());
+  testWidgets(
+    'keeps registration fields mounted while the request is pending',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(400, 500));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final api = _FakeApiClient();
+      final auth = AuthController(api: api, store: _FakeSessionStore());
 
-    await tester.pumpWidget(ClientApp(auth: auth));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('创建账号'));
-    await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byKey(const ValueKey('register-account-field')),
-      'account',
-    );
-    await tester.enterText(
-      find.byKey(const ValueKey('register-password-field')),
-      'password123',
-    );
-    await tester.enterText(
-      find.byKey(const ValueKey('register-confirm-password-field')),
-      'password123',
-    );
-    await tester.enterText(
-      find.byKey(const ValueKey('register-nickname-field')),
-      'nickname',
-    );
-    await tester.ensureVisible(find.widgetWithText(FilledButton, '注册'));
-    await tester.tap(find.widgetWithText(FilledButton, '注册'));
-    await tester.pump();
+      await tester.pumpWidget(ClientApp(auth: auth));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('创建账号'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('register-account-field')),
+        'account',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('register-password-field')),
+        'password123',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('register-confirm-password-field')),
+        'password123',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('register-nickname-field')),
+        'nickname',
+      );
+      await tester.ensureVisible(find.widgetWithText(FilledButton, '注册'));
+      await tester.tap(find.widgetWithText(FilledButton, '注册'));
+      await tester.pump();
 
-    expect(find.text('选择头像'), findsOneWidget);
-    expect(find.byType(CircularProgressIndicator), findsWidgets);
-    expect(auth.isLoading, isTrue);
-    expect(
-      tester.widget<AbsorbPointer>(
-        find.ancestor(
-          of: find.byKey(const ValueKey('register-account-field')),
-          matching: find.byType(AbsorbPointer),
-        ).first,
-      ).absorbing,
-      isTrue,
-    );
-    expect(
-      tester.widgetList<TextFormField>(find.byType(TextFormField)).map(
-        (field) => field.controller!.text,
-      ),
-      ['account', 'password123', 'password123', 'nickname'],
-    );
+      expect(find.text('选择头像'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsWidgets);
+      expect(auth.isLoading, isTrue);
+      expect(
+        tester
+            .widget<AbsorbPointer>(
+              find
+                  .ancestor(
+                    of: find.byKey(const ValueKey('register-account-field')),
+                    matching: find.byType(AbsorbPointer),
+                  )
+                  .first,
+            )
+            .absorbing,
+        isTrue,
+      );
+      expect(
+        tester
+            .widgetList<TextFormField>(find.byType(TextFormField))
+            .map((field) => field.controller!.text),
+        ['account', 'password123', 'password123', 'nickname'],
+      );
 
-    api.registerCompleter.completeError(
-      GrpcError.unauthenticated('registration failed'),
-    );
-    await tester.pumpAndSettle();
+      api.registerCompleter.completeError(
+        GrpcError.unauthenticated('registration failed'),
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.text('选择头像'), findsOneWidget);
-    expect(
-      tester.widgetList<TextFormField>(find.byType(TextFormField)).map(
-        (field) => field.controller!.text,
-      ),
-      ['account', 'password123', 'password123', 'nickname'],
-    );
-    await tester.binding.setSurfaceSize(null);
-  });
+      expect(find.text('选择头像'), findsOneWidget);
+      expect(
+        tester
+            .widgetList<TextFormField>(find.byType(TextFormField))
+            .map((field) => field.controller!.text),
+        ['account', 'password123', 'password123', 'nickname'],
+      );
+      await tester.binding.setSurfaceSize(null);
+    },
+  );
 
   testWidgets('registration updates the selected avatar before opening lobby', (
     tester,
@@ -875,9 +881,9 @@ class _FakeApiClient implements ApiClient {
     required String roomId,
   }) async {
     joinedRoomId = roomId;
-    return roomsByHall.values.expand((rooms) => rooms).firstWhere(
-      (room) => room.id == roomId,
-    );
+    return roomsByHall.values
+        .expand((rooms) => rooms)
+        .firstWhere((room) => room.id == roomId);
   }
 
   @override
@@ -913,6 +919,27 @@ class _FakeApiClient implements ApiClient {
   Future<PlayerStatistics> getFriendStatistics({
     required String accessToken,
     required String userId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<void> hidePrivateMessage({
+    required String accessToken,
+    required String messageId,
+  }) async {}
+
+  @override
+  Future<void> reportPrivateMessage({
+    required String accessToken,
+    required String messageId,
+    String reason = '',
+  }) async {}
+
+  @override
+  Future<ChatMessage> sendRoomMessage({
+    required String accessToken,
+    required String roomId,
+    required String body,
+    required String requestId,
   }) => throw UnimplementedError();
 
   @override

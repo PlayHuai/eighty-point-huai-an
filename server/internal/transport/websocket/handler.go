@@ -20,6 +20,10 @@ type AccessAuthenticator interface {
 	AuthenticateAccess(ctx context.Context, token string) (string, error)
 }
 
+type FriendResolver interface {
+	ListFriendIDs(ctx context.Context, userID string) ([]string, error)
+}
+
 type requestContextKey struct{}
 
 type connectionContext struct {
@@ -30,12 +34,21 @@ type connectionContext struct {
 type Handler struct {
 	hub            *Hub
 	authenticator  AccessAuthenticator
+	friends        FriendResolver
 	allowedOrigins map[string]struct{}
 }
 
-func NewHandler(hub *Hub, authenticator AccessAuthenticator, allowedOrigins []string) (*Handler, error) {
+func NewHandler(
+	hub *Hub,
+	authenticator AccessAuthenticator,
+	allowedOrigins []string,
+	friendResolvers ...FriendResolver,
+) (*Handler, error) {
 	if hub == nil || authenticator == nil {
 		return nil, errors.New("event hub and access authenticator are required")
+	}
+	if len(friendResolvers) > 1 {
+		return nil, errors.New("only one friend resolver is allowed")
 	}
 	origins := make(map[string]struct{}, len(allowedOrigins))
 	for _, origin := range allowedOrigins {
@@ -47,7 +60,11 @@ func NewHandler(hub *Hub, authenticator AccessAuthenticator, allowedOrigins []st
 		}
 		origins[parsed.Scheme+"://"+parsed.Host] = struct{}{}
 	}
-	return &Handler{hub: hub, authenticator: authenticator, allowedOrigins: origins}, nil
+	handler := &Handler{hub: hub, authenticator: authenticator, allowedOrigins: origins}
+	if len(friendResolvers) == 1 {
+		handler.friends = friendResolvers[0]
+	}
+	return handler, nil
 }
 
 func (h *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -86,7 +103,14 @@ func (h *Handler) handshake(config *xwebsocket.Config, request *http.Request) er
 	if err != nil || userID == "" {
 		return errors.New("invalid or expired access token")
 	}
-	subscription, err := h.hub.Subscribe(userID)
+	var friendIDs []string
+	if h.friends != nil {
+		friendIDs, err = h.friends.ListFriendIDs(ctx, userID)
+		if err != nil {
+			return errors.New("could not load friend connections")
+		}
+	}
+	subscription, err := h.hub.SubscribeWithFriends(userID, friendIDs)
 	if err != nil {
 		return err
 	}

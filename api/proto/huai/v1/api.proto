@@ -367,6 +367,7 @@ message RespondFriendRequest {
 message Friend {
   UserProfile profile = 1;
   google.protobuf.Timestamp friends_since = 2;
+  bool online = 3;
 }
 
 message ListFriendsResponse {

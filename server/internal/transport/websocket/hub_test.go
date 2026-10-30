@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"strconv"
 	"testing"
 	"time"
 
@@ -106,6 +107,45 @@ func TestHubBroadcastsLobbyUpdatesToConnectedUsers(t *testing.T) {
 			t.Fatal("connected user did not receive lobby update")
 		}
 	}
+}
+
+func TestHubPublishesOnlineAndOfflineOnlyToFriends(t *testing.T) {
+	hub := NewHub()
+	friend, err := hub.SubscribeWithFriends("friend", []string{"user"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer friend.Close()
+	unrelated, err := hub.Subscribe("unrelated")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unrelated.Close()
+
+	user, err := hub.SubscribeWithFriends("user", []string{"friend"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertPresence := func(wantOnline bool) {
+		t.Helper()
+		select {
+		case event := <-friend.Events():
+			if event.Type != "FRIEND_STATE_CHANGED" || event.EntityID != "user" ||
+				string(event.Payload) != `{"online":`+strconv.FormatBool(wantOnline)+`}` {
+				t.Fatalf("unexpected presence event: %+v", event)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("friend did not receive presence update")
+		}
+	}
+	assertPresence(true)
+	select {
+	case event := <-unrelated.Events():
+		t.Fatalf("unrelated user received presence: %+v", event)
+	default:
+	}
+	user.Close()
+	assertPresence(false)
 }
 
 func TestHubSubscriptionCloseIsIdempotent(t *testing.T) {

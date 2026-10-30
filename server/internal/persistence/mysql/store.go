@@ -708,6 +708,27 @@ func (s *Store) ListFriends(ctx context.Context, userID string, offset, limit ui
 	return friends, nil
 }
 
+func (s *Store) ListFriendIDs(ctx context.Context, userID string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT friend_id FROM friendships
+		WHERE user_id = ? AND status = 'ACCEPTED' ORDER BY friend_id`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list accepted friend IDs: %w", err)
+	}
+	defer rows.Close()
+	friendIDs := make([]string, 0)
+	for rows.Next() {
+		var friendID string
+		if err := rows.Scan(&friendID); err != nil {
+			return nil, fmt.Errorf("scan accepted friend ID: %w", err)
+		}
+		friendIDs = append(friendIDs, friendID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read accepted friend IDs: %w", err)
+	}
+	return friendIDs, nil
+}
+
 func (s *Store) RemoveFriend(ctx context.Context, userID, friendID string) error {
 	if userID == "" || friendID == "" || userID == friendID {
 		return social.ErrInvalidInput
@@ -826,17 +847,6 @@ func (s *Store) ListPrivateMessages(
 ) ([]chat.Message, error) {
 	if limit == 0 || limit > 101 {
 		return nil, chat.ErrInvalidInput
-	}
-	var status string
-	err := s.db.QueryRowContext(ctx, `SELECT f.status FROM friendships f
-			JOIN users user ON user.id = f.user_id AND user.status = 'ACTIVE'
-			JOIN users peer ON peer.id = f.friend_id AND peer.status = 'ACTIVE'
-			WHERE f.user_id = ? AND f.friend_id = ?`, userID, peerID).Scan(&status)
-	if errors.Is(err, sql.ErrNoRows) || (err == nil && status != "ACCEPTED") {
-		return nil, chat.ErrNotFriends
-	}
-	if err != nil {
-		return nil, fmt.Errorf("authorize private message history: %w", err)
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT CAST(id AS CHAR), sender_id, recipient_id, body, created_at
 			FROM chat_messages

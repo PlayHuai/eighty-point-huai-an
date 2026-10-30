@@ -15,5 +15,5 @@ void main() {
   );
   final api = GrpcApiClient(endpoint);
   final auth = AuthController(api: api, store: SecureSessionStore());
-  runApp(ClientApp(auth: auth));
+  runApp(ClientApp(auth: auth, endpoint: endpoint));
 }

@@ -37,14 +37,24 @@ type Subscription struct {
 type Hub struct {
 	mu          sync.Mutex
 	subscribers map[string]map[*Subscription]struct{}
+	userFriends map[string]map[string]struct{}
+	watchers    map[string]map[string]struct{}
 	sequence    atomic.Uint64
 }
 
 func NewHub() *Hub {
-	return &Hub{subscribers: make(map[string]map[*Subscription]struct{})}
+	return &Hub{
+		subscribers: make(map[string]map[*Subscription]struct{}),
+		userFriends: make(map[string]map[string]struct{}),
+		watchers:    make(map[string]map[string]struct{}),
+	}
 }
 
 func (h *Hub) Subscribe(userID string) (*Subscription, error) {
+	return h.SubscribeWithFriends(userID, nil)
+}
+
+func (h *Hub) SubscribeWithFriends(userID string, friendIDs []string) (*Subscription, error) {
 	if userID == "" {
 		return nil, errors.New("user ID is required")
 	}
@@ -52,10 +62,28 @@ func (h *Hub) Subscribe(userID string) (*Subscription, error) {
 		hub: h, userID: userID, events: make(chan Event, subscriberBufferSize),
 	}
 	h.mu.Lock()
+	firstConnection := len(h.subscribers[userID]) == 0
 	if h.subscribers[userID] == nil {
 		h.subscribers[userID] = make(map[*Subscription]struct{})
 	}
+	if firstConnection {
+		friends := make(map[string]struct{}, len(friendIDs))
+		for _, friendID := range friendIDs {
+			if friendID == "" || friendID == userID {
+				continue
+			}
+			friends[friendID] = struct{}{}
+			if h.watchers[friendID] == nil {
+				h.watchers[friendID] = make(map[string]struct{})
+			}
+			h.watchers[friendID][userID] = struct{}{}
+		}
+		h.userFriends[userID] = friends
+	}
 	h.subscribers[userID][subscription] = struct{}{}
+	if firstConnection {
+		h.publishPresenceLocked(userID, true)
+	}
 	h.mu.Unlock()
 	return subscription, nil
 }
@@ -70,10 +98,42 @@ func (s *Subscription) Close() {
 		delete(s.hub.subscribers[s.userID], s)
 		if len(s.hub.subscribers[s.userID]) == 0 {
 			delete(s.hub.subscribers, s.userID)
+			s.hub.publishPresenceLocked(s.userID, false)
+			for friendID := range s.hub.userFriends[s.userID] {
+				delete(s.hub.watchers[friendID], s.userID)
+				if len(s.hub.watchers[friendID]) == 0 {
+					delete(s.hub.watchers, friendID)
+				}
+			}
+			delete(s.hub.userFriends, s.userID)
 		}
 		close(s.events)
 		s.hub.mu.Unlock()
 	})
+}
+
+func (h *Hub) IsOnline(userID string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.subscribers[userID]) > 0
+}
+
+func (h *Hub) publishPresenceLocked(userID string, online bool) {
+	payload, _ := json.Marshal(struct {
+		Online bool `json:"online"`
+	}{Online: online})
+	event := Event{
+		Type: "FRIEND_STATE_CHANGED", Sequence: h.sequence.Add(1),
+		EntityID: userID, Payload: payload,
+	}
+	for watcherID := range h.watchers[userID] {
+		for subscription := range h.subscribers[watcherID] {
+			select {
+			case subscription.events <- event:
+			default:
+			}
+		}
+	}
 }
 
 func (h *Hub) PublishPrivateMessage(userID string, message chat.Message) {
@@ -121,9 +181,9 @@ func (h *Hub) PublishRoomUpdate(userIDs []string, roomID string, version uint64,
 	})
 }
 
-func (h *Hub) PublishUserUpdate(userIDs []string, userID string, payload json.RawMessage) {
+func (h *Hub) PublishUserUpdate(userIDs []string, userID string, payload []byte) {
 	h.publishUsers(userIDs, Event{
-		Type: "FRIEND_STATE_CHANGED", EntityID: userID, Payload: payload,
+		Type: "FRIEND_STATE_CHANGED", EntityID: userID, Payload: json.RawMessage(payload),
 	})
 }
 
