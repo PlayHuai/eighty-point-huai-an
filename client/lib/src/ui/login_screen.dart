@@ -218,7 +218,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                         ? null
                                         : _submit,
                                     style: FilledButton.styleFrom(
-                                      foregroundColor: DarkTokens.textPrimary,
                                       textStyle: const TextStyle(
                                         fontSize: DarkTokens.fontSizeL5,
                                         fontWeight: FontWeight.w700,
@@ -283,7 +282,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     child: Text(
                                       '多次输错将临时锁定账号，请谨慎输入',
                                       style: TextStyle(
-                                        color: DarkTokens.suitRed,
+                                        color: DarkTokens.textPrimary,
                                         fontSize: DarkTokens.fontSizeL5,
                                         height: 1.2,
                                       ),
