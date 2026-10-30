@@ -49,12 +49,30 @@ export async function request<T>(
   });
 }
 
-export function joinDefaultRoom(): Promise<import('../types/api').RoomEntry> {
-  return request('/api/lobby/joinDefault', { method: 'POST', data: {} });
+export function listEntertainmentHalls(): Promise<{ halls: import('../types/api').Hall[] }> {
+  return request('/api/lobby/halls');
 }
 
-export function joinRoom(roomId: string): Promise<import('../types/api').RoomEntry> {
-  return request('/api/lobby/joinRoom', { method: 'POST', data: { roomId } });
+export function listEntertainmentRooms(): Promise<{
+  hallId: string;
+  rooms: import('../types/api').RoomSummary[];
+  nextPageToken: string;
+}> {
+  return request('/api/lobby/rooms?hallId=entertainment');
+}
+
+export function joinRoom(roomId: string, expectedVersion: number): Promise<import('../types/api').RoomEntry> {
+  return request('/api/lobby/joinRoom', {
+    method: 'POST',
+    data: { roomId, expectedVersion }
+  });
+}
+
+export function createEntertainmentRoom(requestId: string): Promise<import('../types/api').RoomEntry> {
+  return request('/api/lobby/createRoom', {
+    method: 'POST',
+    data: { requestId }
+  });
 }
 
 export function submitGameAction(

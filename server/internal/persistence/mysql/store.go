@@ -186,10 +186,12 @@ func (s *Store) FindByAccount(ctx context.Context, account string, email bool) (
 		column = "email"
 	}
 	var credential auth.Credential
-	err := s.db.QueryRowContext(ctx, `SELECT u.id, p.nickname, u.password_hash, u.created_at
+	err := s.db.QueryRowContext(ctx, `SELECT u.id, p.nickname, u.password_hash, u.created_at,
+		u.wechat_openid IS NOT NULL
 		FROM users u JOIN player_profiles p ON p.user_id = u.id
 		WHERE u.`+column+` = ? AND u.status = 'ACTIVE'`, account).Scan(
-		&credential.UserID, &credential.Nickname, &credential.PasswordHash, &credential.CreatedAt)
+		&credential.UserID, &credential.Nickname, &credential.PasswordHash, &credential.CreatedAt,
+		&credential.WeChatAccount)
 	if errors.Is(err, sql.ErrNoRows) {
 		return auth.Credential{}, auth.ErrCredentialNotFound
 	}
@@ -198,13 +200,28 @@ func (s *Store) FindByAccount(ctx context.Context, account string, email bool) (
 
 func (s *Store) FindByUserID(ctx context.Context, userID string) (auth.Credential, error) {
 	var credential auth.Credential
-	err := s.db.QueryRowContext(ctx, `SELECT u.id, p.nickname, u.password_hash, u.created_at
+	err := s.db.QueryRowContext(ctx, `SELECT u.id, p.nickname, u.password_hash, u.created_at,
+		u.wechat_openid IS NOT NULL
 		FROM users u JOIN player_profiles p ON p.user_id = u.id
 		WHERE u.id = ? AND u.status = 'ACTIVE'`, userID).Scan(
+		&credential.UserID, &credential.Nickname, &credential.PasswordHash, &credential.CreatedAt,
+		&credential.WeChatAccount)
+	if errors.Is(err, sql.ErrNoRows) {
+		return auth.Credential{}, auth.ErrCredentialNotFound
+	}
+	return credential, err
+}
+
+func (s *Store) FindByWeChatOpenID(ctx context.Context, openID string) (auth.Credential, error) {
+	var credential auth.Credential
+	err := s.db.QueryRowContext(ctx, `SELECT u.id, p.nickname, u.password_hash, u.created_at
+		FROM users u JOIN player_profiles p ON p.user_id = u.id
+		WHERE u.wechat_openid = ? AND u.status = 'ACTIVE'`, openID).Scan(
 		&credential.UserID, &credential.Nickname, &credential.PasswordHash, &credential.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return auth.Credential{}, auth.ErrCredentialNotFound
 	}
+	credential.WeChatAccount = err == nil
 	return credential, err
 }
 
@@ -237,6 +254,32 @@ func (s *Store) CreateAccount(ctx context.Context, account auth.NewAccount) erro
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit account creation: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) CreateWeChatAccount(ctx context.Context, account auth.NewWeChatAccount) error {
+	if account.UserID == "" || account.OpenID == "" || account.Nickname == "" || len(account.PasswordHash) == 0 {
+		return errors.New("invalid WeChat account")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin WeChat account creation: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO users (id, wechat_openid, password_hash)
+		VALUES (?, ?, ?)`, account.UserID, account.OpenID, account.PasswordHash); err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
+			return auth.ErrAccountExists
+		}
+		return fmt.Errorf("insert WeChat account: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO player_profiles (user_id, nickname, points, rank_name)
+		VALUES (?, ?, 0, '青铜')`, account.UserID, account.Nickname); err != nil {
+		return fmt.Errorf("insert initial WeChat player profile: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit WeChat account creation: %w", err)
 	}
 	return nil
 }

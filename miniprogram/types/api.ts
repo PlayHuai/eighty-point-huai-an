@@ -1,12 +1,24 @@
 export interface UserProfile {
   userId: string;
-  nickname?: string;
-  avatar?: string;
 }
 
-export interface LoginResponse extends UserProfile {
+export interface LoginResponse {
   token: string;
-  openid: string;
+  userId: string;
+}
+
+export interface Hall {
+  hallId: string;
+  name: string;
+}
+
+export interface RoomSummary {
+  roomId: string;
+  name: string;
+  status: 'WAITING' | 'PLAYING' | 'CLOSED';
+  occupiedSeats: number;
+  capacity: number;
+  version: number;
 }
 
 export interface RoomMember {
@@ -17,6 +29,7 @@ export interface RoomMember {
 
 export interface RoomEntry {
   roomId: string;
+  name: string;
   seat: number;
   baseScore: number;
   members: RoomMember[];

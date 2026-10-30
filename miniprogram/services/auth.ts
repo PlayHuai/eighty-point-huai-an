@@ -36,16 +36,12 @@ export function silentLogin(): Promise<UserProfile> {
           success: (response) => {
             const result = response.data;
             if (response.statusCode < 200 || response.statusCode >= 300 ||
-              !result?.token || !result.openid) {
+              !result?.token || !result.userId) {
               reject(new Error('静默登录暂不可用'));
               return;
             }
             wx.setStorageSync(accessTokenKey, result.token);
-            const profile = {
-              userId: result.userId,
-              nickname: result.nickname,
-              avatar: result.avatar
-            };
+            const profile = { userId: result.userId };
             wx.setStorageSync('profile', profile);
             resolve(profile);
           },

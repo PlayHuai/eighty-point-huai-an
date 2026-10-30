@@ -22,6 +22,7 @@ import (
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/room"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/social"
 	grpctransport "github.com/Derek0120/eighty-point-huai-an/server/internal/transport/grpc"
+	miniprogramtransport "github.com/Derek0120/eighty-point-huai-an/server/internal/transport/miniprogram"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/transport/websocket"
 	mysqlDriver "github.com/go-sql-driver/mysql"
 	grpcgo "google.golang.org/grpc"
@@ -164,7 +165,7 @@ func newApplication(db *sql.DB, allowedOrigins []string) (*application, error) {
 		func() error { return grpctransport.RegisterAuthService(grpcServer, authService) },
 		func() error { return grpctransport.RegisterPlayerService(grpcServer, playerService) },
 		func() error { return grpctransport.RegisterFriendService(grpcServer, socialService, hub) },
-		func() error { return grpctransport.RegisterLobbyService(grpcServer, rooms, store) },
+		func() error { return grpctransport.RegisterLobbyService(grpcServer, rooms, store, authService) },
 		func() error { return grpctransport.RegisterRoomService(grpcServer, rooms) },
 		func() error { return grpctransport.RegisterChatService(grpcServer, chatService) },
 	}
@@ -179,6 +180,12 @@ func newApplication(db *sql.DB, allowedOrigins []string) (*application, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create WebSocket handler: %w", err)
 	}
+	miniProgramHandler, err := miniprogramtransport.NewHandler(
+		authService, authService, store, rooms, miniprogramtransport.NewWeChatCodeExchangerFromEnv(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create mini-program handler: %w", err)
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -188,6 +195,7 @@ func newApplication(db *sql.DB, allowedOrigins []string) (*application, error) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.Handle("/events", eventHandler)
+	mux.Handle("/api/", miniProgramHandler)
 	return &application{
 		grpcServer: grpcServer, httpHandler: mux, messagePurger: store,
 	}, nil

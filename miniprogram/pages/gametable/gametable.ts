@@ -1,4 +1,4 @@
-import { joinDefaultRoom, joinRoom } from '../../services/api';
+import { joinRoom } from '../../services/api';
 import { ensureLogin } from '../../services/auth';
 import type { RoomEntry } from '../../types/api';
 
@@ -13,9 +13,11 @@ Page({
   async onLoad(options: Record<string, string | undefined>) {
     try {
       await ensureLogin();
-      const room = options.roomId
-        ? await joinRoom(options.roomId)
-        : await joinDefaultRoom();
+      if (!options.roomId) {
+        wx.reLaunch({ url: '/pages/lobby/lobby' });
+        return;
+      }
+      const room = await joinRoom(options.roomId, Number(options.version) || 0);
       this.setData({
         roomId: room.roomId,
         seat: room.seat,

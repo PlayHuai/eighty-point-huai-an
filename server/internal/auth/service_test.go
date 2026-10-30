@@ -10,6 +10,7 @@ import (
 
 type testRepository struct {
 	credentials map[string]Credential
+	wechatIDs   map[string]string
 	sessions    map[string]Session
 	revoked     map[string]bool
 }
@@ -17,6 +18,7 @@ type testRepository struct {
 func newTestRepository() *testRepository {
 	return &testRepository{
 		credentials: make(map[string]Credential),
+		wechatIDs:   make(map[string]string),
 		sessions:    make(map[string]Session),
 		revoked:     make(map[string]bool),
 	}
@@ -46,6 +48,14 @@ func (r *testRepository) FindByUserID(_ context.Context, userID string) (Credent
 	return Credential{}, ErrCredentialNotFound
 }
 
+func (r *testRepository) FindByWeChatOpenID(_ context.Context, openID string) (Credential, error) {
+	userID, ok := r.wechatIDs[openID]
+	if !ok {
+		return Credential{}, ErrCredentialNotFound
+	}
+	return r.FindByUserID(context.Background(), userID)
+}
+
 func (r *testRepository) CreateAccount(_ context.Context, account NewAccount) error {
 	key := accountKey(account.Account, account.Email)
 	if _, ok := r.credentials[key]; ok {
@@ -54,6 +64,18 @@ func (r *testRepository) CreateAccount(_ context.Context, account NewAccount) er
 	r.credentials[key] = Credential{
 		UserID: account.UserID, Nickname: account.Nickname,
 		PasswordHash: account.PasswordHash, CreatedAt: time.Now().UTC(),
+	}
+	return nil
+}
+
+func (r *testRepository) CreateWeChatAccount(_ context.Context, account NewWeChatAccount) error {
+	if _, ok := r.wechatIDs[account.OpenID]; ok {
+		return ErrAccountExists
+	}
+	r.wechatIDs[account.OpenID] = account.UserID
+	r.credentials["wechat:"+account.OpenID] = Credential{
+		UserID: account.UserID, Nickname: account.Nickname, PasswordHash: account.PasswordHash,
+		CreatedAt: time.Now().UTC(), WeChatAccount: true,
 	}
 	return nil
 }
@@ -133,6 +155,7 @@ func TestRegisterLoginAndPasswordStorage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if registered.Profile.UserID == "" || registered.Profile.Nickname != "Alice" {
 		t.Fatalf("unexpected profile: %+v", registered.Profile)
 	}
@@ -163,6 +186,45 @@ func TestRegisterLoginAndPasswordStorage(t *testing.T) {
 	}
 	if _, err := service.AuthenticateAccess(ctx, "invalid"); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("malformed access token error = %v, want unauthenticated", err)
+	}
+}
+
+func TestLoginWithWeChatOpenIDCreatesAndReusesAccount(t *testing.T) {
+	repository := newTestRepository()
+	service := newTestService(t, repository)
+	ctx := context.Background()
+
+	first, err := service.LoginWithWeChatOpenID(ctx, "trusted-open-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.LoginWithWeChatOpenID(ctx, "trusted-open-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Profile.UserID == "" || first.Profile.UserID != second.Profile.UserID ||
+		first.Profile.Nickname != second.Profile.Nickname {
+		t.Fatalf("WeChat account was not reused: first=%+v second=%+v", first.Profile, second.Profile)
+	}
+	if first.AccessToken == second.AccessToken {
+		t.Fatal("separate login sessions unexpectedly shared an access token")
+	}
+	credential, err := repository.FindByWeChatOpenID(ctx, "trusted-open-id")
+	if err != nil || !credential.WeChatAccount ||
+		!strings.HasPrefix(string(credential.PasswordHash), "$argon2id$") {
+		t.Fatalf("WeChat account credential = %+v, %v", credential, err)
+	}
+	if isWeChat, err := service.IsWeChatUser(ctx, first.Profile.UserID); err != nil || !isWeChat {
+		t.Fatalf("IsWeChatUser() = %v, %v", isWeChat, err)
+	}
+}
+
+func TestLoginWithWeChatOpenIDRejectsInvalidIDs(t *testing.T) {
+	service := newTestService(t, newTestRepository())
+	for _, openID := range []string{"", strings.Repeat("x", 129), "id\nforged"} {
+		if _, err := service.LoginWithWeChatOpenID(context.Background(), openID); !errors.Is(err, ErrInvalidInput) {
+			t.Errorf("LoginWithWeChatOpenID(%q) error = %v, want invalid input", openID, err)
+		}
 	}
 }
 

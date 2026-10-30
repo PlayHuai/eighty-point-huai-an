@@ -3,10 +3,11 @@ package lobby
 import "errors"
 
 const (
-	HallOrdinary = "ordinary"
-	HallAdvanced = "advanced"
-	HallSupreme  = "supreme"
-	HallFriend   = "friend"
+	HallOrdinary      = "ordinary"
+	HallAdvanced      = "advanced"
+	HallSupreme       = "supreme"
+	HallFriend        = "friend"
+	HallEntertainment = "entertainment"
 )
 
 var ErrUnknownHall = errors.New("unknown hall")
@@ -24,6 +25,7 @@ var halls = [...]Hall{
 	{ID: HallAdvanced, Name: "高手大厅", MinimumPoints: 10000, MaximumPoints: 39999, MultiplierBasisPoints: 15000},
 	{ID: HallSupreme, Name: "至尊大厅", MinimumPoints: 40000, MaximumPoints: 0, MultiplierBasisPoints: 20000},
 	{ID: HallFriend, Name: "好友房", MinimumPoints: 0, MaximumPoints: 0, MultiplierBasisPoints: 10000},
+	{ID: HallEntertainment, Name: "娱乐厅", MinimumPoints: 0, MaximumPoints: 0, MultiplierBasisPoints: 10000},
 }
 
 func Halls() []Hall {

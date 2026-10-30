@@ -70,11 +70,45 @@
 }
 
 .room-card {
-  margin-top: calc(var(--spacing-s6) * 3);
   padding: var(--spacing-s5);
   border: 1rpx solid var(--color-gold-dark);
   border-radius: var(--radius-panel);
   background: var(--color-bg-panel);
+}
+
+.room-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-s2);
+}
+
+.list-heading,
+.room-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.room-row {
+  gap: var(--spacing-s3);
+}
+
+.room-details {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--spacing-s1);
+}
+
+.room-name {
+  color: var(--color-text-primary);
+}
+
+.join-button {
+  padding: var(--spacing-s2) var(--spacing-s3);
+  background: var(--color-bg-card);
+  color: var(--color-gold-bright);
+  font-size: var(--font-size-l6);
 }
 
 .eyebrow {

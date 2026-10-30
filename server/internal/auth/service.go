@@ -183,6 +183,52 @@ func (s *Service) AuthenticateAccess(ctx context.Context, token string) (string,
 	return userID, nil
 }
 
+func (s *Service) LoginWithWeChatOpenID(ctx context.Context, openID string) (Result, error) {
+	if !validWeChatOpenID(openID) {
+		return Result{}, ErrInvalidInput
+	}
+	credential, err := s.repository.FindByWeChatOpenID(ctx, openID)
+	if errors.Is(err, ErrCredentialNotFound) {
+		userID, idErr := randomID()
+		if idErr != nil {
+			return Result{}, idErr
+		}
+		password, passwordErr := randomToken()
+		if passwordErr != nil {
+			return Result{}, passwordErr
+		}
+		passwordHash, hashErr := hashPassword(password)
+		if hashErr != nil {
+			return Result{}, hashErr
+		}
+		nickname := "微信用户" + userID[len(userID)-6:]
+		err = s.repository.CreateWeChatAccount(ctx, NewWeChatAccount{
+			UserID: userID, OpenID: openID, Nickname: nickname, PasswordHash: passwordHash,
+		})
+		if err != nil && !errors.Is(err, ErrAccountExists) {
+			return Result{}, err
+		}
+		credential, err = s.repository.FindByWeChatOpenID(ctx, openID)
+	}
+	if err != nil {
+		return Result{}, err
+	}
+	if !credential.WeChatAccount {
+		return Result{}, ErrInvalidCredentials
+	}
+	return s.createSession(ctx, Profile{
+		UserID: credential.UserID, Nickname: credential.Nickname, CreatedAt: credential.CreatedAt,
+	}, "wechat-miniprogram")
+}
+
+func (s *Service) IsWeChatUser(ctx context.Context, userID string) (bool, error) {
+	credential, err := s.repository.FindByUserID(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	return credential.WeChatAccount, nil
+}
+
 func (s *Service) createSession(ctx context.Context, profile Profile, deviceID string) (Result, error) {
 	accessToken, err := randomToken()
 	if err != nil {
@@ -212,6 +258,18 @@ func (s *Service) createSession(ctx context.Context, profile Profile, deviceID s
 		AccessToken: accessToken, RefreshToken: refreshToken,
 		AccessTokenExpiresAt: session.AccessTokenExpiresAt, Profile: profile,
 	}, nil
+}
+
+func validWeChatOpenID(openID string) bool {
+	if openID == "" || len(openID) > 128 || !utf8.ValidString(openID) {
+		return false
+	}
+	for _, character := range openID {
+		if unicode.IsControl(character) {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeAccount(account string) (string, bool, error) {
