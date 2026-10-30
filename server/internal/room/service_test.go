@@ -123,6 +123,62 @@ func TestRoomSpectatingAndHallIsolation(t *testing.T) {
 	}
 }
 
+func TestJoinRoomFallsBackToSpectatingForFullOrPlayingRooms(t *testing.T) {
+	manager := NewManager()
+	created, err := manager.CreateRoom(lobby.HallOrdinary, "owner", 0, Settings{
+		Name: "watchable", AllowSpectators: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	current := created
+	for _, userID := range []string{"owner", "player-2", "player-3", "player-4"} {
+		current, err = manager.JoinRoom(created.Room.ID, userID, 0, "", current.Version)
+		if err != nil {
+			t.Fatalf("JoinRoom(%q): %v", userID, err)
+		}
+	}
+	watching, err := manager.JoinRoom(created.Room.ID, "waiting-spectator", 0, "", current.Version)
+	if err != nil {
+		t.Fatalf("JoinRoom to full waiting room: %v", err)
+	}
+	if watching.Room.OccupiedSeats != 4 {
+		t.Fatalf("spectator counted as a seated player: %+v", watching.Room)
+	}
+	member := memberFor(t, watching, "waiting-spectator")
+	if member.Role != RoleSpectator || member.ViewSeat != 1 || member.Seat != 0 {
+		t.Fatalf("full-room join member = %+v; want spectator viewing seat 1", member)
+	}
+
+	started, err := manager.Start(created.Room.ID, "owner", watching.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	playingSpectator, err := manager.JoinRoom(created.Room.ID, "playing-spectator", 0, "", started.Version)
+	if err != nil {
+		t.Fatalf("JoinRoom to playing room: %v", err)
+	}
+	member = memberFor(t, playingSpectator, "playing-spectator")
+	if member.Role != RoleSpectator || member.ViewSeat != 1 || playingSpectator.Room.Status != StatusPlaying {
+		t.Fatalf("playing-room join member = %+v room=%+v", member, playingSpectator.Room)
+	}
+
+	closedSpectating, err := manager.CreateRoom(lobby.HallOrdinary, "closed-owner", 0, Settings{Name: "not watchable"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	full := closedSpectating
+	for _, userID := range []string{"closed-owner", "closed-2", "closed-3", "closed-4"} {
+		full, err = manager.JoinRoom(closedSpectating.Room.ID, userID, 0, "", full.Version)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := manager.JoinRoom(closedSpectating.Room.ID, "blocked-spectator", 0, "", full.Version); !errors.Is(err, ErrRoomFull) {
+		t.Fatalf("full non-spectatable room join = %v, want ErrRoomFull", err)
+	}
+}
+
 func TestFriendRoomBypassesRankedAdmissionOnlyForInvitedFriends(t *testing.T) {
 	manager := NewManager()
 	created, err := manager.CreateRoom(lobby.HallFriend, "owner", 0, Settings{Name: "friends"})

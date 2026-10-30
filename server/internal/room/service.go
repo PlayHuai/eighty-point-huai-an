@@ -79,9 +79,10 @@ type Member struct {
 }
 
 type Details struct {
-	Room    Summary
-	Members []Member
-	Version uint64
+	Room           Summary
+	Members        []Member
+	Version        uint64
+	GameSessionID  string
 }
 
 type memberState struct {
@@ -313,8 +314,8 @@ func (m *Manager) JoinRoom(roomID, userID string, points int64, password string,
 			return Details{}, err
 		}
 	}
-	if state.summary.Status != StatusWaiting {
-		return Details{}, ErrRoomStarted
+	if state.summary.Status == StatusClosed {
+		return Details{}, ErrRoomClosed
 	}
 	if _, exists := state.members[userID]; exists {
 		return Details{}, ErrAlreadyMember
@@ -323,11 +324,20 @@ func (m *Manager) JoinRoom(roomID, userID string, points int64, password string,
 		return Details{}, ErrInvalidPassword
 	}
 	seat := firstOpenSeat(state.members)
-	if seat == 0 {
-		return Details{}, ErrRoomFull
+	if state.summary.Status == StatusPlaying || seat == 0 {
+		if !state.summary.AllowSpectators {
+			if state.summary.Status == StatusPlaying {
+				return Details{}, ErrRoomStarted
+			}
+			return Details{}, ErrRoomFull
+		}
+		state.members[userID] = memberState{Member: Member{
+			UserID: userID, Role: RoleSpectator, ViewSeat: 1,
+		}}
+	} else {
+		state.members[userID] = memberState{Member: Member{UserID: userID, Role: RolePlayer, Seat: seat}}
+		state.summary.OccupiedSeats++
 	}
-	state.members[userID] = memberState{Member: Member{UserID: userID, Role: RolePlayer, Seat: seat}}
-	state.summary.OccupiedSeats++
 	state.version++
 	details := snapshotLocked(state)
 	m.notifyRoom(details)

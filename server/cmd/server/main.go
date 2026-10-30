@@ -166,7 +166,7 @@ func newApplication(db *sql.DB, allowedOrigins []string) (*application, error) {
 		func() error { return grpctransport.RegisterPlayerService(grpcServer, playerService) },
 		func() error { return grpctransport.RegisterFriendService(grpcServer, socialService, hub) },
 		func() error { return grpctransport.RegisterLobbyService(grpcServer, rooms, store, authService) },
-		func() error { return grpctransport.RegisterRoomService(grpcServer, rooms) },
+		func() error { return grpctransport.RegisterRoomService(grpcServer, rooms, store) },
 		func() error { return grpctransport.RegisterChatService(grpcServer, chatService) },
 	}
 	for _, register := range registrations {

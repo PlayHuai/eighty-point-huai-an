@@ -39,6 +39,7 @@ flutter:
     - assets/fonts/Inter/OFL.txt
     - assets/fonts/NotoSansSC/OFL.txt
     - assets/app_icon.png
+    - ../ui-design/asserts/ic_lighter/lighter.png
     - assets/cards/
     - assets/icons/ic_add_friend/
     - assets/icons/ic_autoplay/

@@ -13,7 +13,7 @@ import 'components/design_icon.dart';
 import 'create_room_dialog.dart';
 import 'friend_list_screen.dart';
 import 'responsive_breakpoints.dart';
-import 'room_chat_screen.dart';
+import 'game_table_screen.dart';
 import 'theme/app_theme.dart';
 
 final lobbyHallsProvider = FutureProvider<List<LobbyHall>>((ref) {
@@ -169,7 +169,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   Future<void> _openRoom(LobbyRoom room) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => RoomChatScreen(auth: widget.auth, room: room),
+        builder: (_) => GameTableScreen(auth: widget.auth, room: room),
       ),
     );
     if (!mounted) return;
@@ -718,6 +718,9 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         final canJoin =
             room.status == LobbyRoomStatus.waiting &&
             room.occupiedSeats < room.capacity;
+        final canSpectate = room.allowSpectators &&
+            (room.status == LobbyRoomStatus.waiting ||
+                room.status == LobbyRoomStatus.playing);
         return Card(
           color: DarkTokens.bgCard,
           child: Padding(
@@ -765,10 +768,12 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: FilledButton(
-                    onPressed: canJoin && !_isJoining
+                    onPressed: (canJoin || canSpectate) && !_isJoining
                         ? () => _joinRoom(room)
                         : null,
-                    child: Text(_isJoining ? '加入中…' : '加入'),
+                    child: Text(
+                      _isJoining ? '加入中…' : canJoin ? '加入' : '观战',
+                    ),
                   ),
                 ),
               ],

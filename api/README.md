@@ -10,6 +10,20 @@ cards the authenticated connection is authorized to see. Authenticated RPCs
 carry credentials in gRPC metadata; user IDs in request bodies are never an
 authorization identity.
 
+GameTable room mutations use `request_id` UUIDs and the current `expected_version`.
+The server deduplicates an identical retry and rejects request-ID reuse for a
+different operation. `RoomMember.show_hand` is a player's opt-in spectator
+visibility flag; `view_seat` is only meaningful for spectators, and `team` is
+derived from the player's seat.
+
+Game snapshots retain the existing string-card fields for wire compatibility.
+Card strings use the stable `suit:rank:copy` identity (`clubs`, `diamonds`,
+`hearts`, `spades`, or `joker`; ranks 2 through 14, small joker 15, big joker
+16; copy 0 or 1). `bottom_cards` must remain empty for unauthorized viewers
+while play is active and may be populated for everyone only after bottom
+capture. `available_actions` contains server-authorized action labels and is
+not a client-side rules hint.
+
 ## Generate bindings
 
 Install `buf` and the pinned Go plugins:

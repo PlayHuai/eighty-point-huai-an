@@ -202,12 +202,17 @@ message RoomMember {
   RoomMemberRole role = 2;
   uint32 seat_no = 3;
   UserProfile profile = 4;
+  bool show_hand = 5;
+  uint32 view_seat = 6;
+  uint32 team = 7;
+  string rank = 8;
 }
 
 message RoomDetails {
   RoomSummary room = 1;
   repeated RoomMember members = 2;
   uint64 version = 3;
+  string game_session_id = 4;
 }
 
 message JoinInvitedRoomRequest {
@@ -233,6 +238,7 @@ message SpectatorViewRequest {
   bool show_hand = 2;
   uint64 expected_version = 3;
   string request_id = 4;
+  uint32 view_seat = 5;
 }
 
 service RoomService {
@@ -264,6 +270,10 @@ message ConfirmAutoplayAction {
   bool accept = 1;
 }
 
+message PassAction {}
+
+message ContinueAction {}
+
 message GameAction {
   oneof payload {
     DeclareTrumpAction declare_trump = 1;
@@ -272,6 +282,8 @@ message GameAction {
     BuryCardsAction bury_cards = 4;
     PlayCardsAction play_cards = 5;
     ConfirmAutoplayAction confirm_autoplay = 6;
+    PassAction pass = 7;
+    ContinueAction continue_action = 8;
   }
 }
 
@@ -289,6 +301,11 @@ message SubmitActionResponse {
   uint64 state_version = 3;
 }
 
+message PublicPlay {
+  uint32 seat_no = 1;
+  repeated string cards = 2;
+}
+
 message GameSnapshotRequest {
   string game_session_id = 1;
 }
@@ -302,6 +319,24 @@ message GameSnapshot {
   repeated string visible_hand = 6;
   repeated string public_cards = 7;
   int64 captured_points = 8;
+  uint32 round_no = 9;
+  string team_one_level = 10;
+  string team_two_level = 11;
+  uint32 scoring_team = 12;
+  uint32 view_seat = 13;
+  uint32 viewer_team = 14;
+  uint32 visible_hand_count = 15;
+  repeated string bottom_cards = 16;
+  bool bottom_public = 17;
+  string bottom_owner_user_id = 18;
+  repeated string available_actions = 19;
+  repeated PublicPlay public_plays = 20;
+  string trump_suit = 21;
+  uint32 trump_level = 22;
+  string state = 23;
+  uint64 seq = 24;
+  string dealer_user_id = 25;
+  uint32 dealer_seat = 26;
 }
 
 message ListEventsAfterRequest {
