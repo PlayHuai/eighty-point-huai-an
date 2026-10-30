@@ -12,7 +12,7 @@
 ./deploy/scripts/init.sh
 ```
 
-首次运行会从示例文件创建 `deploy/.env`，并退出。请将两个数据库密码占位值替换为不同的强密码，妥善保护该文件后再次运行命令。该文件已加入 Git 忽略规则。HTTP 和 gRPC 默认只绑定到主机本地地址 `127.0.0.1:8080` 和 `127.0.0.1:8081`；可分别通过 `HTTP_PORT`、`GRPC_PORT` 修改端口。部署 Web 客户端时，将其确切 Origin 加入 `WEBSOCKET_ALLOWED_ORIGINS`，并由 TLS 反向代理转发 WebSocket `/events` 和 gRPC。
+首次运行会从示例文件创建 `deploy/.env`，并退出。请将两个数据库密码占位值替换为不同的强密码，妥善保护该文件后再次运行命令。该文件已加入 Git 忽略规则。HTTP 和 gRPC 默认只绑定到主机本地地址 `127.0.0.1:8080` 和 `127.0.0.1:8081`；可分别通过 `HTTP_PORT`、`GRPC_PORT` 修改端口。绑定地址也可分别通过 `HTTP_BIND_ADDRESS`、`GRPC_BIND_ADDRESS` 显式覆盖；仅在需要从其他主机访问且已配置防火墙/私有网络保护时，才设置为可对外访问的地址。原始 HTTP 和 gRPC 监听器不启用 TLS，不应直接暴露到公网。部署 Web 客户端时，将其确切 Origin 加入 `WEBSOCKET_ALLOWED_ORIGINS`，并由 TLS 反向代理转发 WebSocket `/events` 和 gRPC。
 
 `/healthz` 只表示进程存活，不代表数据库依赖已就绪。对外访问必须经 TLS 反向代理，并按部署域名配置允许的 WebSocket Origin。
 

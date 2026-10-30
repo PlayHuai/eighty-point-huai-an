@@ -20,12 +20,14 @@ final authControllerProvider = ChangeNotifierProvider<AuthController>(
 );
 
 final apiEndpointProvider = Provider<Uri?>((ref) => null);
+final websocketEndpointProvider = Provider<Uri?>((ref) => null);
 
 final realtimeEventsProvider = StreamProvider<RealtimeEvent>((ref) {
   final session = ref.watch(
     authControllerProvider.select((auth) => auth.session),
   );
-  final endpoint = ref.watch(apiEndpointProvider);
+  final endpoint =
+      ref.watch(websocketEndpointProvider) ?? ref.watch(apiEndpointProvider);
   if (session == null || endpoint == null) {
     return const Stream<RealtimeEvent>.empty();
   }

@@ -65,8 +65,8 @@ services:
       WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:-}
       HEALTHCHECK_URL: http://127.0.0.1:8080/healthz
     ports:
-      - "${HTTP_PORT:-8080}:8080"
-      - "${GRPC_PORT:-8081}:8081"
+      - "${HTTP_BIND_ADDRESS:-127.0.0.1}:${HTTP_PORT:-8080}:8080"
+      - "${GRPC_BIND_ADDRESS:-127.0.0.1}:${GRPC_PORT:-8081}:8081"
     depends_on:
       mysql:
         condition: service_healthy

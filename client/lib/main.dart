@@ -10,10 +10,20 @@ void main() {
   final endpoint = Uri.parse(
     const String.fromEnvironment(
       'API_ENDPOINT',
-      defaultValue: 'http://8.140.35.154:8081',
+      defaultValue: 'https://localhost:8443',
     ),
   );
+  const websocketEndpointValue = String.fromEnvironment('WEBSOCKET_ENDPOINT');
+  final websocketEndpoint = websocketEndpointValue.isEmpty
+      ? null
+      : Uri.parse(websocketEndpointValue);
   final api = GrpcApiClient(endpoint);
   final auth = AuthController(api: api, store: SecureSessionStore());
-  runApp(ClientApp(auth: auth, endpoint: endpoint));
+  runApp(
+    ClientApp(
+      auth: auth,
+      endpoint: endpoint,
+      websocketEndpoint: websocketEndpoint,
+    ),
+  );
 }

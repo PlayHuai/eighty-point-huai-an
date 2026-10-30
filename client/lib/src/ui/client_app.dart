@@ -17,12 +17,14 @@ class ClientApp extends StatefulWidget {
   const ClientApp({
     required this.auth,
     this.endpoint,
+    this.websocketEndpoint,
     this.routes = const {},
     super.key,
   });
 
   final AuthController auth;
   final Uri? endpoint;
+  final Uri? websocketEndpoint;
   final Map<String, WidgetBuilder> routes;
 
   @override
@@ -49,6 +51,7 @@ class _ClientAppState extends State<ClientApp> {
     overrides: [
       apiClientProvider.overrideWithValue(widget.auth.api),
       apiEndpointProvider.overrideWithValue(widget.endpoint),
+      websocketEndpointProvider.overrideWithValue(widget.websocketEndpoint),
       authControllerProvider.overrideWith(
         (ref) => widget.auth,
         disposeNotifier: false,
