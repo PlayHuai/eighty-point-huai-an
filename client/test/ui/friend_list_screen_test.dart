@@ -107,7 +107,7 @@ void main() {
 Widget _friendListApp(AuthController auth, _FakeApiClient api) => ProviderScope(
   overrides: [
     apiClientProvider.overrideWithValue(api),
-    authControllerProvider.overrideWithValue(auth),
+    authControllerProvider.overrideWith((ref) => auth),
   ],
   child: MaterialApp(home: FriendListScreen(auth: auth)),
 );

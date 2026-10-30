@@ -10,7 +10,7 @@ void main() {
   final endpoint = Uri.parse(
     const String.fromEnvironment(
       'API_ENDPOINT',
-      defaultValue: 'https://localhost:8443',
+      defaultValue: 'http://8.140.35.154:8081',
     ),
   );
   final api = GrpcApiClient(endpoint);

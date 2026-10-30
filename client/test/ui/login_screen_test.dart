@@ -202,7 +202,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(api.joinedInvitationRoomId, 'friend-room-1');
     expect(api.joinedInvitationRequestId, matches(RegExp(r'^[0-9a-f-]{36}$')));
-    expect(find.textContaining('已加入 好友房'), findsOneWidget);
+    expect(find.text('好友房 · 房间聊天'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
@@ -338,8 +338,203 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, '加入'));
     await tester.pumpAndSettle();
     expect(api.joinedRoomId, 'room-1');
-    expect(find.textContaining('已加入 周末牌局'), findsOneWidget);
+    expect(find.text('周末牌局 · 房间聊天'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  testWidgets(
+    'advanced hall admission errors explain the server points requirement',
+    (tester) async {
+      final api = _FakeApiClient()
+        ..halls = const [
+          _ordinaryHall,
+          LobbyHall(
+            id: 'advanced',
+            name: '高手大厅',
+            minimumPoints: 10000,
+            maximumPoints: 39999,
+            multiplier: 1.5,
+          ),
+        ]
+        ..roomListErrors['advanced'] = GrpcError.permissionDenied(
+          'hall admission denied',
+        );
+      final auth = AuthController(api: api, store: _FakeSessionStore());
+      final login = auth.login('account', 'password');
+      api.loginCompleter.complete(_session);
+      await login;
+
+      await tester.pumpWidget(ClientApp(auth: auth));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('高手大厅'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('积分不足，进入高手大厅至少需要 10000 分。'), findsOneWidget);
+      expect(find.textContaining('检查网络'), findsNothing);
+      expect(api.requestedRoomHallIds, ['ordinary', 'advanced']);
+
+      api.roomListErrors.clear();
+      await tester.tap(find.text('重试'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('积分不足'), findsNothing);
+      expect(api.requestedRoomHallIds, ['ordinary', 'advanced', 'advanced']);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: TargetPlatformVariant({
+      TargetPlatform.iOS,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets('room list network errors retain an explicit retry', (
+    tester,
+  ) async {
+    final api = _FakeApiClient()
+      ..halls = const [_ordinaryHall]
+      ..roomListErrors['ordinary'] = GrpcError.unavailable('offline');
+    final auth = AuthController(api: api, store: _FakeSessionStore());
+    final login = auth.login('account', 'password');
+    api.loginCompleter.complete(_session);
+    await login;
+
+    await tester.pumpWidget(ClientApp(auth: auth));
+    await tester.pumpAndSettle();
+    expect(find.text('连接服务失败，请检查网络后重试。'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 5));
+    expect(api.requestedRoomHallIds, ['ordinary']);
+
+    api.roomListErrors.clear();
+    await tester.tap(find.text('重试'));
+    await tester.pumpAndSettle();
+    expect(api.requestedRoomHallIds, ['ordinary', 'ordinary']);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets(
+    'leaving a created room refreshes the lobby without realtime events',
+    (tester) async {
+      final api = _FakeApiClient()
+        ..halls = const [_ordinaryHall]
+        ..removeRoomOnLeave = true;
+      final auth = AuthController(api: api, store: _FakeSessionStore());
+      final login = auth.login('account', 'password');
+      api.loginCompleter.complete(_session);
+      await login;
+
+      await tester.pumpWidget(ClientApp(auth: auth));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('创建房间'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find
+            .descendant(
+              of: find.byType(AlertDialog),
+              matching: find.byType(TextField),
+            )
+            .first,
+        'test',
+      );
+      await tester.tap(find.widgetWithText(FilledButton, '创建'));
+      await tester.pumpAndSettle();
+      expect(find.text('test · 房间聊天'), findsOneWidget);
+      final readsBeforeLeaving = api.requestedRoomHallIds.length;
+
+      await tester.tap(find.byTooltip('离开房间'));
+      await tester.pumpAndSettle();
+      expect(api.leftRoomIds, ['created-friend-room']);
+      expect(api.requestedRoomHallIds.length, readsBeforeLeaving + 1);
+      expect(find.text('test'), findsNothing);
+      expect(find.widgetWithText(FilledButton, '加入'), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: TargetPlatformVariant({
+      TargetPlatform.iOS,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'returning to an open room uses its refreshed expected version',
+    (tester) async {
+      final api = _FakeApiClient()
+        ..halls = const [_ordinaryHall]
+        ..roomsByHall = const {
+          'ordinary': [_waitingRoom],
+        };
+      final auth = AuthController(api: api, store: _FakeSessionStore());
+      final login = auth.login('account', 'password');
+      api.loginCompleter.complete(_session);
+      await login;
+
+      await tester.pumpWidget(ClientApp(auth: auth));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, '加入'));
+      await tester.pumpAndSettle();
+      api.roomsByHall = const {
+        'ordinary': [
+          LobbyRoom(
+            id: 'room-1',
+            hallId: 'ordinary',
+            name: '周末牌局',
+            status: LobbyRoomStatus.waiting,
+            occupiedSeats: 1,
+            capacity: 4,
+            hasPassword: false,
+            version: 5,
+          ),
+        ],
+      };
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(api.leftRoomIds, ['room-1']);
+      expect(find.text('1/4 人  ·  等待中'), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, '加入'));
+      await tester.pumpAndSettle();
+      expect(api.joinedExpectedVersions, [3, 5]);
+      expect(find.text('周末牌局 · 房间聊天'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: TargetPlatformVariant({
+      TargetPlatform.iOS,
+      TargetPlatform.windows,
+    }),
+  );
+
+  for (final (error, message) in [
+    (GrpcError.notFound('room not found'), '房间不存在或已解散，请选择其他房间。'),
+    (GrpcError.aborted('room state changed'), '房间状态已变化，请根据刷新后的列表重新加入。'),
+    (GrpcError.failedPrecondition('room is not available'), '当前阶段暂不可执行此操作。'),
+  ]) {
+    testWidgets('stale join ${error.code} refreshes rooms without retrying', (
+      tester,
+    ) async {
+      final api = _FakeApiClient()
+        ..halls = const [_ordinaryHall]
+        ..roomsByHall = const {
+          'ordinary': [_waitingRoom],
+        }
+        ..joinError = error;
+      final auth = AuthController(api: api, store: _FakeSessionStore());
+      final login = auth.login('account', 'password');
+      api.loginCompleter.complete(_session);
+      await login;
+
+      await tester.pumpWidget(ClientApp(auth: auth));
+      await tester.pumpAndSettle();
+      api.roomsByHall = const {};
+      await tester.tap(find.widgetWithText(FilledButton, '加入'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(message), findsOneWidget);
+      expect(find.textContaining('检查网络'), findsNothing);
+      expect(api.requestedRoomHallIds, ['ordinary', 'ordinary']);
+      expect(api.joinedExpectedVersions, [3]);
+      expect(find.text('周末牌局'), findsNothing);
+      expect(find.text('周末牌局 · 房间聊天'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
 
   for (final width in [599.0, 600.0, 601.0]) {
     testWidgets(
@@ -816,6 +1011,25 @@ void main() {
   });
 }
 
+const _ordinaryHall = LobbyHall(
+  id: 'ordinary',
+  name: '普通大厅',
+  minimumPoints: 0,
+  maximumPoints: 9999,
+  multiplier: 1,
+);
+
+const _waitingRoom = LobbyRoom(
+  id: 'room-1',
+  hallId: 'ordinary',
+  name: '周末牌局',
+  status: LobbyRoomStatus.waiting,
+  occupiedSeats: 2,
+  capacity: 4,
+  hasPassword: false,
+  version: 3,
+);
+
 class _FakeApiClient implements ApiClient {
   var closeCount = 0;
   var hallListCount = 0;
@@ -830,6 +1044,10 @@ class _FakeApiClient implements ApiClient {
   List<RoomInvitation> roomInvitations = const [];
   List<PlayerFriend> friends = const [];
   final requestedRoomHallIds = <String>[];
+  final roomListErrors = <String, GrpcError>{};
+  final joinedExpectedVersions = <int>[];
+  GrpcError? joinError;
+  bool removeRoomOnLeave = false;
   String? joinedRoomId;
   String? joinedRoomCode;
   String? joinedInvitationRoomId;
@@ -886,6 +1104,8 @@ class _FakeApiClient implements ApiClient {
     required String hallId,
   }) async {
     requestedRoomHallIds.add(hallId);
+    final error = roomListErrors[hallId];
+    if (error != null) throw error;
     return roomsByHall[hallId] ?? const [];
   }
 
@@ -924,6 +1144,9 @@ class _FakeApiClient implements ApiClient {
     int expectedVersion = 0,
   }) async {
     joinedRoomId = roomId;
+    joinedExpectedVersions.add(expectedVersion);
+    final error = joinError;
+    if (error != null) throw error;
     return roomsByHall.values
         .expand((rooms) => rooms)
         .firstWhere((room) => room.id == roomId);
@@ -937,6 +1160,12 @@ class _FakeApiClient implements ApiClient {
     required String requestId,
   }) async {
     leftRoomIds.add(roomId);
+    if (removeRoomOnLeave) {
+      roomsByHall = {
+        for (final entry in roomsByHall.entries)
+          entry.key: entry.value.where((room) => room.id != roomId).toList(),
+      };
+    }
   }
 
   @override
