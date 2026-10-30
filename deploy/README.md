@@ -2,7 +2,7 @@
 
 本文介绍两种部署方式：使用 Docker Compose 部署服务，或将编译后的服务端程序安装为 Linux `systemd` 服务。Compose 方式使用独立容器运行 MySQL 8.4 和 Redis 7，并通过持久化卷保存数据；`systemd` 方式使用主机上安装的 MySQL 和 Redis。
 
-**当前服务端能力说明：**可执行程序目前提供 HTTP 存活检查和 MySQL 数据库迁移命令；RPC/WebSocket 业务服务尚未接入，程序当前也没有连接 Redis。因此，进程或健康检查正常不代表游戏业务服务已经就绪。
+服务端通过独立 TCP 端口提供 gRPC（默认 `8081`）和带令牌认证的 WebSocket（HTTP `/events`），并保留 `/healthz` 存活检查。数据库迁移仍由独立 `migrate` 服务执行；运行时连接 MySQL。Redis 当前尚未接入。
 
 ## 首次部署（Docker Compose）
 
@@ -12,9 +12,9 @@
 ./deploy/scripts/init.sh
 ```
 
-首次运行会从示例文件创建 `deploy/.env`，并退出。请将两个数据库密码占位值替换为不同的强密码，妥善保护该文件后再次运行命令。该文件已加入 Git 忽略规则。服务默认只绑定到主机本地地址 `127.0.0.1:8080`；可通过 `HTTP_PORT` 修改端口。
+首次运行会从示例文件创建 `deploy/.env`，并退出。请将两个数据库密码占位值替换为不同的强密码，妥善保护该文件后再次运行命令。该文件已加入 Git 忽略规则。HTTP 和 gRPC 默认只绑定到主机本地地址 `127.0.0.1:8080` 和 `127.0.0.1:8081`；可分别通过 `HTTP_PORT`、`GRPC_PORT` 修改端口。部署 Web 客户端时，将其确切 Origin 加入 `WEBSOCKET_ALLOWED_ORIGINS`，并由 TLS 反向代理转发 WebSocket `/events` 和 gRPC。
 
-当前服务端仅通过 `/healthz` 提供存活检查，尚未接入业务传输层和服务装配。若要从外部访问主机，请在服务前配置 TLS 反向代理。
+`/healthz` 只表示进程存活，不代表数据库依赖已就绪。对外访问必须经 TLS 反向代理，并按部署域名配置允许的 WebSocket Origin。
 
 ## 编译并打包 Linux 可执行文件
 

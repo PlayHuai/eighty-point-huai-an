@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -61,6 +62,7 @@ func TestDatabaseConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("databaseConfig() error = %v", err)
 	}
+
 	if config.Addr != "mysql:3307" || config.DBName != "game" || config.User != "service" {
 		t.Fatalf("unexpected database config: %+v", config)
 	}
@@ -68,5 +70,43 @@ func TestDatabaseConfig(t *testing.T) {
 	t.Setenv("DB_PORT", "invalid")
 	if _, err := databaseConfig(); err == nil {
 		t.Fatal("databaseConfig() accepted an invalid port")
+	}
+}
+
+func TestNewApplicationRegistersChatAndRealtimeEndpoints(t *testing.T) {
+	db, err := sql.Open("mysql", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	app, err := newApplication(db, []string{"https://client.example"})
+	if err != nil {
+		t.Fatalf("newApplication() error = %v", err)
+	}
+	services := app.grpcServer.GetServiceInfo()
+	if _, ok := services["huai.v1.ChatService"]; !ok {
+		t.Fatal("ChatService was not registered")
+	}
+	if _, ok := services["huai.v1.FriendService"]; !ok {
+		t.Fatal("FriendService was not registered")
+	}
+	server := httptest.NewServer(app.httpHandler)
+	defer server.Close()
+	response, err := http.Get(server.URL + "/healthz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("health status = %d, want %d", response.StatusCode, http.StatusNoContent)
+	}
+	response, err = http.Get(server.URL + "/events?access_token=secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("WebSocket auth query returned %d", response.StatusCode)
 	}
 }

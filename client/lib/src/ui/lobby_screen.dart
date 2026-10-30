@@ -12,6 +12,7 @@ import 'client_providers.dart';
 import 'components/design_icon.dart';
 import 'friend_list_screen.dart';
 import 'responsive_breakpoints.dart';
+import 'room_chat_screen.dart';
 import 'theme/app_theme.dart';
 
 final lobbyHallsProvider = FutureProvider<List<LobbyHall>>((ref) {
@@ -58,11 +59,7 @@ final lobbyPlayerStatisticsProvider = FutureProvider<PlayerStatistics?>((ref) {
 });
 
 class LobbyScreen extends ConsumerStatefulWidget {
-  const LobbyScreen({
-    required this.auth,
-    required this.nickname,
-    super.key,
-  });
+  const LobbyScreen({required this.auth, required this.nickname, super.key});
 
   final AuthController auth;
   final String nickname;
@@ -92,14 +89,15 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     }
     setState(() => _isJoining = true);
     try {
-      final joined = await ref.read(apiClientProvider).joinRoom(
-        accessToken: session.accessToken,
-        roomId: room.id,
-      );
+      final joined = await ref
+          .read(apiClientProvider)
+          .joinRoom(
+            accessToken: session.accessToken,
+            roomId: room.id,
+            expectedVersion: room.version,
+          );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已加入 ${joined.name}（房间号 ${joined.id}）')),
-      );
+      _openRoom(joined);
     } catch (error) {
       _showError(error);
     } finally {
@@ -115,26 +113,25 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     final session = widget.auth.session;
     if (session == null || _isJoining) return;
     if (code.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入房间号。')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('请输入房间号。')));
       return;
     }
     setState(() => _isJoining = true);
     try {
-      final room = await ref.read(apiClientProvider).joinByCode(
-        accessToken: session.accessToken,
-        roomCode: code,
-        password: password,
-      );
+      final room = await ref
+          .read(apiClientProvider)
+          .joinByCode(
+            accessToken: session.accessToken,
+            roomCode: code,
+            password: password,
+          );
       if (!mounted) return;
       if (dialogContext.mounted &&
           ModalRoute.of(dialogContext)?.isCurrent == true) {
         Navigator.of(dialogContext).pop();
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已加入 ${room.name}（房间号 ${room.id}）')),
-      );
+      _openRoom(room);
     } catch (error) {
       _showError(error);
     } finally {
@@ -151,21 +148,29 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       createRequestId,
     );
     try {
-      final room = await ref.read(apiClientProvider).joinInvitedRoom(
-        accessToken: session.accessToken,
-        roomId: invitation.roomId,
-        requestId: requestId,
-      );
+      final room = await ref
+          .read(apiClientProvider)
+          .joinInvitedRoom(
+            accessToken: session.accessToken,
+            roomId: invitation.roomId,
+            requestId: requestId,
+          );
       _invitationRequestIds.remove(invitation.roomId);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已加入 ${room.name}（房间号 ${room.id}）')),
-      );
+      _openRoom(room);
     } catch (error) {
       _showError(error);
     } finally {
       if (mounted) setState(() => _isJoiningInvitation = false);
     }
+  }
+
+  void _openRoom(LobbyRoom room) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => RoomChatScreen(auth: widget.auth, room: room),
+      ),
+    );
   }
 
   Future<void> _createRoom(
@@ -179,27 +184,42 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     final session = widget.auth.session;
     if (session == null || _isCreating) return;
     if (name.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入房间名称。')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('请输入房间名称。')));
       return;
     }
-    final requestKey = '$hallId\u0000$name\u0000$password\u0000$allowSpectators\u0000$minimumPoints';
+    final requestKey =
+        '$hallId\u0000$name\u0000$password\u0000$allowSpectators\u0000$minimumPoints';
     if (_createRequestKey != requestKey) {
       _createRequestKey = requestKey;
       _createRequestId = createRequestId();
     }
     setState(() => _isCreating = true);
     try {
-      final room = await ref.read(apiClientProvider).createRoom(
-        accessToken: session.accessToken,
-        hallId: hallId,
-        name: name,
-        password: password,
-        allowSpectators: allowSpectators,
-        minimumPoints: minimumPoints,
-        requestId: _createRequestId!,
-      );
+      final room = await ref
+          .read(apiClientProvider)
+          .createRoom(
+            accessToken: session.accessToken,
+            hallId: hallId,
+            name: name,
+            password: password,
+            allowSpectators: allowSpectators,
+            minimumPoints: minimumPoints,
+            requestId: _createRequestId!,
+          );
+      if (!mounted) return;
+      final api = ref.read(apiClientProvider);
+      final joinedRoom = password.isEmpty
+          ? await api.joinRoom(
+              accessToken: session.accessToken,
+              roomId: room.id,
+              expectedVersion: room.version,
+            )
+          : await api.joinByCode(
+              accessToken: session.accessToken,
+              roomCode: room.id,
+              password: password,
+            );
       if (!mounted) return;
       _createRequestKey = null;
       _createRequestId = null;
@@ -208,12 +228,12 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         Navigator.of(dialogContext).pop();
       }
       ref.invalidate(lobbyRoomsProvider(hallId));
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('房间已创建（房间号 ${room.id}）')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('房间已创建（房间号 ${room.id}）')));
       if (hallId == friendRoomHallId) {
         await _showFriendInviteDialog(room.id);
       }
+      if (mounted) _openRoom(joinedRoom);
     } catch (error) {
       _showError(error);
     } finally {
@@ -229,9 +249,8 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       GrpcError(code: StatusCode.permissionDenied) => '没有执行此操作的权限。',
       _ => '操作失败，请检查网络后重试。',
     };
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _showJoinByCodeDialog({String initialCode = ''}) async {
@@ -316,9 +335,8 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                   contentPadding: EdgeInsets.zero,
                   value: allowSpectators,
                   title: const Text('允许观战'),
-                  onChanged: (value) => setDialogState(
-                    () => allowSpectators = value ?? false,
-                  ),
+                  onChanged: (value) =>
+                      setDialogState(() => allowSpectators = value ?? false),
                 ),
               ],
             ],
@@ -450,21 +468,22 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     );
     setState(() => _isSendingInvite = true);
     try {
-      await ref.read(apiClientProvider).sendRoomInvite(
-        accessToken: session.accessToken,
-        roomId: roomId,
-        friendId: friendId,
-        requestId: requestId,
-      );
+      await ref
+          .read(apiClientProvider)
+          .sendRoomInvite(
+            accessToken: session.accessToken,
+            roomId: roomId,
+            friendId: friendId,
+            requestId: requestId,
+          );
       if (!mounted) return;
       _roomInviteRequestIds.remove(requestKey);
       if (!dialogContext.mounted ||
           ModalRoute.of(dialogContext)?.isCurrent != true) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('好友房邀请已发送。')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('好友房邀请已发送。')));
     } catch (error) {
       _showError(error);
     } finally {
@@ -542,131 +561,140 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         ),
         Align(
           alignment: Alignment.centerRight,
-          child: ref.watch(lobbyPlayerStatisticsProvider).when(
-            data: (statistics) => Text(
-              statistics == null
-                  ? widget.nickname
-                  : '${widget.nickname} · ${statistics.points} 分 · ${statistics.rank}',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            error: (_, _) => Text(
-              widget.nickname,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            loading: () => Text(
-              widget.nickname,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          ),
+          child: ref
+              .watch(lobbyPlayerStatisticsProvider)
+              .when(
+                data: (statistics) => Text(
+                  statistics == null
+                      ? widget.nickname
+                      : '${widget.nickname} · ${statistics.points} 分 · ${statistics.rank}',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                error: (_, _) => Text(
+                  widget.nickname,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                loading: () => Text(
+                  widget.nickname,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
         ),
         const SizedBox(height: DarkTokens.spacingS3),
         Expanded(
-          child: ref.watch(lobbyHallsProvider).when(
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (_, _) => _loadError(
-              onRetry: () => ref.invalidate(lobbyHallsProvider),
-            ),
-            data: (halls) {
-              if (halls.isEmpty) return const Center(child: Text('暂无可进入的大厅'));
-              final selectedHall = halls.firstWhere(
-                (hall) => hall.id == _selectedHallId,
-                orElse: () => halls.first,
-              );
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Wrap(
-                    spacing: DarkTokens.spacingS2,
-                    runSpacing: DarkTokens.spacingS2,
-                    crossAxisAlignment: WrapCrossAlignment.center,
+          child: ref
+              .watch(lobbyHallsProvider)
+              .when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (_, _) => _loadError(
+                  onRetry: () => ref.invalidate(lobbyHallsProvider),
+                ),
+                data: (halls) {
+                  if (halls.isEmpty)
+                    return const Center(child: Text('暂无可进入的大厅'));
+                  final selectedHall = halls.firstWhere(
+                    (hall) => hall.id == _selectedHallId,
+                    orElse: () => halls.first,
+                  );
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      for (final hall in halls)
-                        ChoiceChip(
-                          label: Text(hall.name),
-                          selected: hall.id == selectedHall.id,
-                          onSelected: (_) =>
-                              setState(() => _selectedHallId = hall.id),
-                        ),
-                      OutlinedButton.icon(
-                        onPressed: _showJoinByCodeDialog,
-                        icon: const DesignIcon(
-                          name: DesignIconName.search,
-                          enabled: true,
-                          size: DarkTokens.spacingS4,
-                        ),
-                        label: const Text('房间号加入'),
-                      ),
-                      FilledButton.icon(
-                        onPressed: _isCreating
-                            ? null
-                            : () => _showCreateRoomDialog(selectedHall),
-                        icon: const Icon(Icons.add),
-                        label: const Text('创建房间'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: DarkTokens.spacingS4),
-                  Wrap(
-                    spacing: DarkTokens.spacingS3,
-                    children: [
-                      Text(
-                        '积分 ${selectedHall.minimumPoints}–${selectedHall.maximumPoints == 0 ? '不限' : selectedHall.maximumPoints}',
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                      Text(
-                        '大厅系数 ${selectedHall.multiplier}×',
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: DarkTokens.spacingS3),
-                  TextField(
-                    decoration: const InputDecoration(
-                      hintText: '搜索房间号或名称',
-                      prefixIcon: DesignIcon(
-                        name: DesignIconName.search,
-                        enabled: true,
-                      ),
-                    ),
-                    onChanged: (value) => setState(() => _roomQuery = value),
-                  ),
-                  const SizedBox(height: DarkTokens.spacingS3),
-                  Expanded(
-                    child: selectedHall.id == friendRoomHallId
-                        ? _buildFriendRoomInvitations()
-                        : ref.watch(lobbyRoomsProvider(selectedHall.id)).when(
-                            loading: () => const Center(
-                              child: CircularProgressIndicator(),
+                      Wrap(
+                        spacing: DarkTokens.spacingS2,
+                        runSpacing: DarkTokens.spacingS2,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          for (final hall in halls)
+                            ChoiceChip(
+                              label: Text(hall.name),
+                              selected: hall.id == selectedHall.id,
+                              onSelected: (_) =>
+                                  setState(() => _selectedHallId = hall.id),
                             ),
-                            error: (_, _) => _loadError(
-                              onRetry: () => ref.invalidate(
-                                lobbyRoomsProvider(selectedHall.id),
-                              ),
+                          OutlinedButton.icon(
+                            onPressed: _showJoinByCodeDialog,
+                            icon: const DesignIcon(
+                              name: DesignIconName.search,
+                              enabled: true,
+                              size: DarkTokens.spacingS4,
                             ),
-                            data: (rooms) =>
-                                _buildRooms(rooms, size, availableWidth),
+                            label: const Text('房间号加入'),
                           ),
-                  ),
-                ],
-              );
-            },
-          ),
+                          FilledButton.icon(
+                            onPressed: _isCreating
+                                ? null
+                                : () => _showCreateRoomDialog(selectedHall),
+                            icon: const Icon(Icons.add),
+                            label: const Text('创建房间'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: DarkTokens.spacingS4),
+                      Wrap(
+                        spacing: DarkTokens.spacingS3,
+                        children: [
+                          Text(
+                            '积分 ${selectedHall.minimumPoints}–${selectedHall.maximumPoints == 0 ? '不限' : selectedHall.maximumPoints}',
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                          Text(
+                            '大厅系数 ${selectedHall.multiplier}×',
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: DarkTokens.spacingS3),
+                      TextField(
+                        decoration: const InputDecoration(
+                          hintText: '搜索房间号或名称',
+                          prefixIcon: DesignIcon(
+                            name: DesignIconName.search,
+                            enabled: true,
+                          ),
+                        ),
+                        onChanged: (value) =>
+                            setState(() => _roomQuery = value),
+                      ),
+                      const SizedBox(height: DarkTokens.spacingS3),
+                      Expanded(
+                        child: selectedHall.id == friendRoomHallId
+                            ? _buildFriendRoomInvitations()
+                            : ref
+                                  .watch(lobbyRoomsProvider(selectedHall.id))
+                                  .when(
+                                    loading: () => const Center(
+                                      child: CircularProgressIndicator(),
+                                    ),
+                                    error: (_, _) => _loadError(
+                                      onRetry: () => ref.invalidate(
+                                        lobbyRoomsProvider(selectedHall.id),
+                                      ),
+                                    ),
+                                    data: (rooms) => _buildRooms(
+                                      rooms,
+                                      size,
+                                      availableWidth,
+                                    ),
+                                  ),
+                      ),
+                    ],
+                  );
+                },
+              ),
         ),
       ],
     ),
   );
 
-  Widget _buildFriendRoomInvitations() =>
-      ref.watch(roomInvitationsProvider).when(
+  Widget _buildFriendRoomInvitations() => ref
+      .watch(roomInvitationsProvider)
+      .when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (_, _) => _loadError(
-          onRetry: () => ref.invalidate(roomInvitationsProvider),
-        ),
+        error: (_, _) =>
+            _loadError(onRetry: () => ref.invalidate(roomInvitationsProvider)),
         data: (invitations) {
           if (invitations.isEmpty) {
-            return const Center(
-              child: Text('好友房仅接受好友邀请，不公开展示房间列表。'),
-            );
+            return const Center(child: Text('好友房仅接受好友邀请，不公开展示房间列表。'));
           }
           return ListView.separated(
             itemCount: invitations.length,
@@ -699,15 +727,15 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     double availableWidth,
   ) {
     final normalizedQuery = _roomQuery.trim().toLowerCase();
-    final filteredRooms = rooms.where((room) {
-      return normalizedQuery.isEmpty ||
-          room.name.toLowerCase().contains(normalizedQuery) ||
-          room.id.toLowerCase().contains(normalizedQuery);
-    }).toList(growable: false);
+    final filteredRooms = rooms
+        .where((room) {
+          return normalizedQuery.isEmpty ||
+              room.name.toLowerCase().contains(normalizedQuery) ||
+              room.id.toLowerCase().contains(normalizedQuery);
+        })
+        .toList(growable: false);
     if (filteredRooms.isEmpty) {
-      return Center(
-        child: Text(rooms.isEmpty ? '当前大厅暂无房间' : '没有匹配的房间'),
-      );
+      return Center(child: Text(rooms.isEmpty ? '当前大厅暂无房间' : '没有匹配的房间'));
     }
     final columnCount = switch (size) {
       ResponsiveSize.compact => 1,
@@ -733,7 +761,8 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       itemCount: filteredRooms.length,
       itemBuilder: (context, index) {
         final room = filteredRooms[index];
-        final canJoin = room.status == LobbyRoomStatus.waiting &&
+        final canJoin =
+            room.status == LobbyRoomStatus.waiting &&
             room.occupiedSeats < room.capacity;
         return Card(
           color: DarkTokens.bgCard,

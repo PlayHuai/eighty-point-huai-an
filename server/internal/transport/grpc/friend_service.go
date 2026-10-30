@@ -14,14 +14,31 @@ import (
 
 type friendServer struct {
 	huaiv1.UnimplementedFriendServiceServer
-	service *social.Service
+	service  *social.Service
+	presence friendPresence
 }
 
-func RegisterFriendService(server grpcgo.ServiceRegistrar, service *social.Service) error {
+type friendPresence interface {
+	IsOnline(userID string) bool
+	PublishUserUpdate(userIDs []string, userID string, payload []byte)
+}
+
+func RegisterFriendService(
+	server grpcgo.ServiceRegistrar,
+	service *social.Service,
+	presenceProviders ...friendPresence,
+) error {
 	if server == nil || service == nil {
 		return errors.New("gRPC registrar and friend service are required")
 	}
-	huaiv1.RegisterFriendServiceServer(server, &friendServer{service: service})
+	if len(presenceProviders) > 1 {
+		return errors.New("only one presence publisher is allowed")
+	}
+	handler := &friendServer{service: service}
+	if len(presenceProviders) == 1 {
+		handler.presence = presenceProviders[0]
+	}
+	huaiv1.RegisterFriendServiceServer(server, handler)
 	return nil
 }
 
@@ -52,6 +69,7 @@ func (s *friendServer) SendRequest(ctx context.Context, request *huaiv1.FriendRe
 	if err := s.service.SendFriendRequest(ctx, userID, request.GetTargetUserId()); err != nil {
 		return nil, socialError(err)
 	}
+	s.publishFriendChange(userID, request.GetTargetUserId(), "friend_request")
 	return &huaiv1.Empty{}, nil
 }
 
@@ -63,6 +81,10 @@ func (s *friendServer) RespondRequest(ctx context.Context, request *huaiv1.Respo
 	if err := s.service.RespondFriendRequest(ctx, userID, request.GetRequesterUserId(), request.GetAccept()); err != nil {
 		return nil, socialError(err)
 	}
+	if request.GetAccept() {
+		s.updatePresenceFriendship(userID, request.GetRequesterUserId(), true)
+	}
+	s.publishFriendChange(userID, request.GetRequesterUserId(), "friend_request")
 	return &huaiv1.Empty{}, nil
 }
 
@@ -77,12 +99,14 @@ func (s *friendServer) ListFriends(ctx context.Context, request *huaiv1.PageRequ
 	}
 	response := &huaiv1.ListFriendsResponse{Page: &huaiv1.PageInfo{NextPageToken: page.NextPageToken}}
 	for _, friend := range page.Items {
+		online := s.presence != nil && s.presence.IsOnline(friend.UserID)
 		response.Friends = append(response.Friends, &huaiv1.Friend{
 			Profile: &huaiv1.UserProfile{
 				UserId: friend.UserID, Nickname: friend.Nickname, AvatarUrl: friend.AvatarURL,
 				CreatedAt: timestamppb.New(friend.CreatedAt),
 			},
 			FriendsSince: timestamppb.New(friend.FriendsSince),
+			Online:       online,
 		})
 	}
 	return response, nil
@@ -118,6 +142,8 @@ func (s *friendServer) RemoveFriend(ctx context.Context, request *huaiv1.FriendR
 	if err := s.service.RemoveFriend(ctx, userID, request.GetTargetUserId()); err != nil {
 		return nil, socialError(err)
 	}
+	s.updatePresenceFriendship(userID, request.GetTargetUserId(), false)
+	s.publishFriendChange(userID, request.GetTargetUserId(), "friend_list")
 	return &huaiv1.Empty{}, nil
 }
 
@@ -129,6 +155,7 @@ func (s *friendServer) SendRoomInvite(ctx context.Context, request *huaiv1.SendR
 	if err := s.service.SendRoomInvite(ctx, userID, request.GetRoomId(), request.GetFriendId()); err != nil {
 		return nil, socialError(err)
 	}
+	s.publishFriendChange(userID, request.GetFriendId(), "room_invite")
 	return &huaiv1.Empty{}, nil
 }
 
@@ -160,6 +187,25 @@ func authenticatedUserID(ctx context.Context) (string, error) {
 		return "", status.Error(codes.Unauthenticated, "authentication required")
 	}
 	return userID, nil
+}
+
+func (s *friendServer) publishFriendChange(firstUserID, secondUserID, kind string) {
+	if s.presence == nil {
+		return
+	}
+	s.presence.PublishUserUpdate(
+		[]string{firstUserID, secondUserID},
+		secondUserID,
+		[]byte(`{"kind":"`+kind+`"}`),
+	)
+}
+
+func (s *friendServer) updatePresenceFriendship(firstUserID, secondUserID string, friends bool) {
+	if presence, ok := s.presence.(interface {
+		SetFriendship(string, string, bool)
+	}); ok {
+		presence.SetFriendship(firstUserID, secondUserID, friends)
+	}
 }
 
 func socialError(err error) error {

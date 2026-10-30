@@ -367,6 +367,7 @@ message RespondFriendRequest {
 message Friend {
   UserProfile profile = 1;
   google.protobuf.Timestamp friends_since = 2;
+  bool online = 3;
 }
 
 message ListFriendsResponse {
@@ -434,6 +435,15 @@ message ListPrivateMessagesRequest {
   PageRequest page = 2;
 }
 
+message HidePrivateMessageRequest {
+  string message_id = 1;
+}
+
+message ReportPrivateMessageRequest {
+  string message_id = 1;
+  string reason = 2;
+}
+
 message ChatMessage {
   string message_id = 1;
   string room_id = 2;
@@ -452,6 +462,8 @@ service ChatService {
   rpc ListRoomMessages(ListRoomMessagesRequest) returns (ListMessagesResponse);
   rpc SendPrivateMessage(SendPrivateMessageRequest) returns (ChatMessage);
   rpc ListPrivateMessages(ListPrivateMessagesRequest) returns (ListMessagesResponse);
+  rpc HidePrivateMessage(HidePrivateMessageRequest) returns (Empty);
+  rpc ReportPrivateMessage(ReportPrivateMessageRequest) returns (Empty);
 }
 
 message PublicConfig {

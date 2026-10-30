@@ -83,10 +83,7 @@ void main() {
     expect(find.text('暂无好友申请'), findsOneWidget);
 
     await tester.tap(
-      find.descendant(
-        of: find.byType(TabBar),
-        matching: find.text('好友'),
-      ),
+      find.descendant(of: find.byType(TabBar), matching: find.text('好友')),
     );
     await tester.pumpAndSettle();
     expect(find.text('申请甲'), findsOneWidget);
@@ -218,6 +215,27 @@ class _FakeApiClient implements ApiClient {
     String pageToken = '',
     int pageSize = 50,
   }) async => const ChatMessagesPage(messages: [], nextPageToken: '');
+
+  @override
+  Future<void> hidePrivateMessage({
+    required String accessToken,
+    required String messageId,
+  }) async {}
+
+  @override
+  Future<void> reportPrivateMessage({
+    required String accessToken,
+    required String messageId,
+    String reason = '',
+  }) async {}
+
+  @override
+  Future<ChatMessage> sendRoomMessage({
+    required String accessToken,
+    required String roomId,
+    required String body,
+    required String requestId,
+  }) => throw UnimplementedError();
 
   @override
   Future<void> close() async {}

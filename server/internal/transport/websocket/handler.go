@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/lobby"
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/player"
 	xwebsocket "golang.org/x/net/websocket"
 )
 
@@ -20,6 +22,14 @@ type AccessAuthenticator interface {
 	AuthenticateAccess(ctx context.Context, token string) (string, error)
 }
 
+type FriendResolver interface {
+	ListFriendIDs(ctx context.Context, userID string) ([]string, error)
+}
+
+type LobbyProfileResolver interface {
+	FindProfile(ctx context.Context, userID string) (player.Profile, error)
+}
+
 type requestContextKey struct{}
 
 type connectionContext struct {
@@ -30,12 +40,22 @@ type connectionContext struct {
 type Handler struct {
 	hub            *Hub
 	authenticator  AccessAuthenticator
+	friends        FriendResolver
+	profiles       LobbyProfileResolver
 	allowedOrigins map[string]struct{}
 }
 
-func NewHandler(hub *Hub, authenticator AccessAuthenticator, allowedOrigins []string) (*Handler, error) {
+func NewHandler(
+	hub *Hub,
+	authenticator AccessAuthenticator,
+	allowedOrigins []string,
+	friendResolvers ...FriendResolver,
+) (*Handler, error) {
 	if hub == nil || authenticator == nil {
 		return nil, errors.New("event hub and access authenticator are required")
+	}
+	if len(friendResolvers) > 1 {
+		return nil, errors.New("only one friend resolver is allowed")
 	}
 	origins := make(map[string]struct{}, len(allowedOrigins))
 	for _, origin := range allowedOrigins {
@@ -47,7 +67,29 @@ func NewHandler(hub *Hub, authenticator AccessAuthenticator, allowedOrigins []st
 		}
 		origins[parsed.Scheme+"://"+parsed.Host] = struct{}{}
 	}
-	return &Handler{hub: hub, authenticator: authenticator, allowedOrigins: origins}, nil
+	handler := &Handler{hub: hub, authenticator: authenticator, allowedOrigins: origins}
+	if len(friendResolvers) == 1 {
+		handler.friends = friendResolvers[0]
+	}
+	return handler, nil
+}
+
+func NewHandlerWithLobbyProfiles(
+	hub *Hub,
+	authenticator AccessAuthenticator,
+	allowedOrigins []string,
+	friends FriendResolver,
+	profiles LobbyProfileResolver,
+) (*Handler, error) {
+	if profiles == nil {
+		return nil, errors.New("lobby profile resolver is required")
+	}
+	handler, err := NewHandler(hub, authenticator, allowedOrigins, friends)
+	if err != nil {
+		return nil, err
+	}
+	handler.profiles = profiles
+	return handler, nil
 }
 
 func (h *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -86,7 +128,26 @@ func (h *Handler) handshake(config *xwebsocket.Config, request *http.Request) er
 	if err != nil || userID == "" {
 		return errors.New("invalid or expired access token")
 	}
-	subscription, err := h.hub.Subscribe(userID)
+	var friendIDs []string
+	if h.friends != nil {
+		friendIDs, err = h.friends.ListFriendIDs(ctx, userID)
+		if err != nil {
+			return errors.New("could not load friend connections")
+		}
+	}
+	var hallIDs []string
+	if h.profiles != nil {
+		profile, err := h.profiles.FindProfile(ctx, userID)
+		if err != nil {
+			return errors.New("could not load player profile")
+		}
+		for _, hall := range lobby.Halls() {
+			if lobby.CanEnter(profile.Points, hall.ID) {
+				hallIDs = append(hallIDs, hall.ID)
+			}
+		}
+	}
+	subscription, err := h.hub.SubscribeWithFriendsAndHalls(userID, friendIDs, hallIDs)
 	if err != nil {
 		return err
 	}

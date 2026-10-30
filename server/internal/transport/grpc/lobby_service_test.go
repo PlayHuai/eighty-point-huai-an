@@ -178,6 +178,96 @@ func TestListRoomsRejectsPrivateHallAndInvalidPages(t *testing.T) {
 	}
 }
 
+func TestRoomManagementRPCsCreateJoinLeaveAndJoinByCode(t *testing.T) {
+	server := &lobbyServer{
+		rooms: room.NewManager(),
+		profiles: lobbyProfiles{
+			profile: player.Profile{Points: 500},
+		},
+	}
+	ownerCtx := ctxWithUserID(context.Background(), "owner")
+	created, err := server.CreateRoom(ownerCtx, &huaiv1.CreateRoomRequest{
+		HallId:    lobby.HallOrdinary,
+		Name:      "room",
+		RequestId: "create-room",
+	})
+	if err != nil || created.GetVersion() != 1 || created.GetOwner().GetUserId() != "owner" {
+		t.Fatalf("CreateRoom() = %+v, %v", created, err)
+	}
+
+	joined, err := server.JoinRoom(ownerCtx, &huaiv1.RoomRequest{
+		RoomId: created.GetRoomId(), ExpectedVersion: created.GetVersion(),
+	})
+	if err != nil || joined.GetOccupiedSeats() != 1 || joined.GetVersion() != 2 {
+		t.Fatalf("JoinRoom() = %+v, %v", joined, err)
+	}
+	if _, err := server.JoinRoom(ctxWithUserID(context.Background(), "stale"), &huaiv1.RoomRequest{
+		RoomId: created.GetRoomId(), ExpectedVersion: created.GetVersion(),
+	}); status.Code(err) != codes.Aborted {
+		t.Fatalf("stale JoinRoom() error = %v, want Aborted", err)
+	}
+
+	joinedByCode, err := server.JoinByCode(
+		ctxWithUserID(context.Background(), "guest"),
+		&huaiv1.JoinByCodeRequest{RoomCode: created.GetRoomId()},
+	)
+	if err != nil || joinedByCode.GetOccupiedSeats() != 2 || joinedByCode.GetVersion() != 3 {
+		t.Fatalf("JoinByCode() = %+v, %v", joinedByCode, err)
+	}
+	if _, err := server.LeaveRoom(ownerCtx, &huaiv1.RoomRequest{
+		RoomId: created.GetRoomId(), RequestId: "leave-room",
+		ExpectedVersion: joinedByCode.GetVersion(),
+	}); err != nil {
+		t.Fatalf("LeaveRoom() error = %v", err)
+	}
+	if _, err := server.LeaveRoom(ownerCtx, &huaiv1.RoomRequest{
+		RoomId: created.GetRoomId(), RequestId: "leave-room",
+		ExpectedVersion: joinedByCode.GetVersion(),
+	}); err != nil {
+		t.Fatalf("retry LeaveRoom() error = %v", err)
+	}
+	if _, err := server.LeaveRoom(ownerCtx, &huaiv1.RoomRequest{
+		RoomId: "other-room", RequestId: "leave-room",
+		ExpectedVersion: joinedByCode.GetVersion(),
+	}); status.Code(err) != codes.AlreadyExists {
+		t.Fatalf("conflicting LeaveRoom() error = %v", err)
+	}
+}
+
+func TestCreateRoomIsIdempotentByUserAndRequestID(t *testing.T) {
+	server := &lobbyServer{
+		rooms:    room.NewManager(),
+		profiles: lobbyProfiles{profile: player.Profile{Points: 500}},
+	}
+	ctx := ctxWithUserID(context.Background(), "owner")
+	request := &huaiv1.CreateRoomRequest{
+		HallId: lobby.HallOrdinary, Name: "room", Password: "secret", RequestId: "create-once",
+	}
+	first, err := server.CreateRoom(ctx, request)
+	if err != nil {
+		t.Fatalf("CreateRoom() error = %v", err)
+	}
+	retry, err := server.CreateRoom(ctx, request)
+	if err != nil || retry.GetRoomId() != first.GetRoomId() {
+		t.Fatalf("identical CreateRoom retry = %+v, %v; want room %q", retry, err, first.GetRoomId())
+	}
+	conflictingPassword := *request
+	conflictingPassword.Password = "different"
+	if _, err := server.CreateRoom(ctx, &conflictingPassword); status.Code(err) != codes.AlreadyExists {
+		t.Fatalf("conflicting CreateRoom password error = %v", err)
+	}
+	conflicting := *request
+	conflicting.Name = "different room"
+	if _, err := server.CreateRoom(ctx, &conflicting); status.Code(err) != codes.AlreadyExists {
+		t.Fatalf("conflicting CreateRoom retry error = %v", err)
+	}
+	if _, err := server.CreateRoom(ctx, &huaiv1.CreateRoomRequest{
+		HallId: lobby.HallOrdinary, Name: "missing request ID",
+	}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("missing request ID error = %v", err)
+	}
+}
+
 func TestRegisterLobbyServiceRequiresDependencies(t *testing.T) {
 	if err := RegisterLobbyService(nil, room.NewManager(), lobbyProfiles{}); err == nil {
 		t.Fatal("RegisterLobbyService accepted a nil registrar")

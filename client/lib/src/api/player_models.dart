@@ -57,11 +57,13 @@ class PlayerFriend {
     required this.userId,
     required this.nickname,
     required this.avatarUrl,
+    this.isOnline = false,
   });
 
   final String userId;
   final String nickname;
   final String avatarUrl;
+  final bool isOnline;
 }
 
 class ChatMessage {

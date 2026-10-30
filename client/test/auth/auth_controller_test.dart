@@ -9,40 +9,47 @@ import 'package:grpc/grpc.dart';
 
 void main() {
   group('AuthController.restoreSession', () {
-    test('preserves saved credentials after a transient refresh failure', () async {
-      final store = _FakeSessionStore(_session);
-      final api = _FakeApiClient(
-        onRefresh: (_) async => throw GrpcError.unavailable('offline'),
-      );
-      final controller = AuthController(api: api, store: store);
+    test(
+      'preserves saved credentials after a transient refresh failure',
+      () async {
+        final store = _FakeSessionStore(_session);
+        final api = _FakeApiClient(
+          onRefresh: (_) async => throw GrpcError.unavailable('offline'),
+        );
+        final controller = AuthController(api: api, store: store);
 
-      await controller.restoreSession();
+        await controller.restoreSession();
 
-      expect(store.clearCount, 0);
-      expect(store.session, _session);
-      expect(controller.session, isNull);
-      expect(controller.canRetryRestore, isTrue);
-      expect(controller.error, contains('offline'));
+        expect(store.clearCount, 0);
+        expect(store.session, _session);
+        expect(controller.session, isNull);
+        expect(controller.canRetryRestore, isTrue);
+        expect(controller.error, contains('offline'));
 
-      controller.dispose();
-    });
+        controller.dispose();
+      },
+    );
 
-    test('clears saved credentials when the refresh token is rejected', () async {
-      final store = _FakeSessionStore(_session);
-      final api = _FakeApiClient(
-        onRefresh: (_) async => throw GrpcError.unauthenticated('invalid token'),
-      );
-      final controller = AuthController(api: api, store: store);
+    test(
+      'clears saved credentials when the refresh token is rejected',
+      () async {
+        final store = _FakeSessionStore(_session);
+        final api = _FakeApiClient(
+          onRefresh: (_) async =>
+              throw GrpcError.unauthenticated('invalid token'),
+        );
+        final controller = AuthController(api: api, store: store);
 
-      await controller.restoreSession();
+        await controller.restoreSession();
 
-      expect(store.clearCount, 1);
-      expect(store.session, isNull);
-      expect(controller.canRetryRestore, isFalse);
-      expect(controller.error, isNull);
+        expect(store.clearCount, 1);
+        expect(store.session, isNull);
+        expect(controller.canRetryRestore, isFalse);
+        expect(controller.error, isNull);
 
-      controller.dispose();
-    });
+        controller.dispose();
+      },
+    );
   });
 }
 
@@ -108,6 +115,21 @@ class _FakeApiClient implements ApiClient {
 
   @override
   Future<LobbyRoom> joinRoom({
+    required String accessToken,
+    required String roomId,
+    int expectedVersion = 0,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<void> leaveRoom({
+    required String accessToken,
+    required String roomId,
+    required int expectedVersion,
+    required String requestId,
+  }) async {}
+
+  @override
+  Future<LobbyRoom> getRoom({
     required String accessToken,
     required String roomId,
   }) => throw UnimplementedError();
@@ -218,6 +240,27 @@ class _FakeApiClient implements ApiClient {
   Future<LobbyRoom> joinInvitedRoom({
     required String accessToken,
     required String roomId,
+    required String requestId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<void> hidePrivateMessage({
+    required String accessToken,
+    required String messageId,
+  }) async {}
+
+  @override
+  Future<void> reportPrivateMessage({
+    required String accessToken,
+    required String messageId,
+    String reason = '',
+  }) async {}
+
+  @override
+  Future<ChatMessage> sendRoomMessage({
+    required String accessToken,
+    required String roomId,
+    required String body,
     required String requestId,
   }) => throw UnimplementedError();
 

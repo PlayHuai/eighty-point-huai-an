@@ -11,11 +11,20 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/auth"
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/chat"
 	mysqlstore "github.com/Derek0120/eighty-point-huai-an/server/internal/persistence/mysql"
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/player"
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/room"
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/social"
+	grpctransport "github.com/Derek0120/eighty-point-huai-an/server/internal/transport/grpc"
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/transport/websocket"
 	mysqlDriver "github.com/go-sql-driver/mysql"
+	grpcgo "google.golang.org/grpc"
 )
 
 func main() {
@@ -44,19 +53,58 @@ func runServer(ctx context.Context, address string) error {
 	if address == "" {
 		address = ":8080"
 	}
+	config, err := databaseConfig()
+	if err != nil {
+		return err
+	}
+	db, err := sql.Open("mysql", config.FormatDSN())
+	if err != nil {
+		return fmt.Errorf("open MySQL connection: %w", err)
+	}
+	defer db.Close()
+	pingCtx, cancelPing := context.WithTimeout(ctx, 10*time.Second)
+	if err := db.PingContext(pingCtx); err != nil {
+		cancelPing()
+		return fmt.Errorf("connect to MySQL: %w", err)
+	}
+	cancelPing()
+
+	app, err := newApplication(db, allowedWebSocketOrigins())
+	if err != nil {
+		return err
+	}
+	grpcAddress := os.Getenv("GRPC_ADDR")
+	if grpcAddress == "" {
+		grpcAddress = ":8081"
+	}
+	grpcListener, err := net.Listen("tcp", grpcAddress)
+	if err != nil {
+		return fmt.Errorf("listen for gRPC: %w", err)
+	}
 	server := &http.Server{
 		Addr:              address,
-		Handler:           healthHandler(),
+		Handler:           app.httpHandler,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
-	serveErr := make(chan error, 1)
+	serveErr := make(chan error, 2)
 	go func() {
 		serveErr <- server.ListenAndServe()
+	}()
+	go func() {
+		serveErr <- app.grpcServer.Serve(grpcListener)
 	}()
 
 	select {
 	case err := <-serveErr:
-		if errors.Is(err, http.ErrServerClosed) {
+		_ = grpcListener.Close()
+		app.grpcServer.Stop()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if shutdownErr := server.Shutdown(shutdownCtx); shutdownErr != nil {
+			_ = server.Close()
+			return shutdownErr
+		}
+		if errors.Is(err, http.ErrServerClosed) || errors.Is(err, grpcgo.ErrServerStopped) {
 			return nil
 		}
 		return err
@@ -65,14 +113,96 @@ func runServer(ctx context.Context, address string) error {
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			_ = server.Close()
+			app.grpcServer.Stop()
+			_ = grpcListener.Close()
 			return err
 		}
-		err := <-serveErr
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
-		}
-		return err
+		app.grpcServer.Stop()
+		_ = grpcListener.Close()
+		return nil
 	}
+}
+
+type application struct {
+	grpcServer    *grpcgo.Server
+	httpHandler   http.Handler
+	messagePurger expiredChatMessagePurger
+}
+
+type expiredChatMessagePurger interface {
+	PurgeExpiredChatMessages(context.Context, uint32) (int64, error)
+}
+
+func newApplication(db *sql.DB, allowedOrigins []string) (*application, error) {
+	rooms := room.NewManager()
+	store, err := mysqlstore.NewWithRoomManager(db, rooms)
+	if err != nil {
+		return nil, err
+	}
+	authService, err := auth.NewService(store)
+	if err != nil {
+		return nil, fmt.Errorf("create auth service: %w", err)
+	}
+	socialService, err := social.NewService(store)
+	if err != nil {
+		return nil, err
+	}
+	playerService, err := player.NewPublicProfileService(store)
+	if err != nil {
+		return nil, err
+	}
+	hub := websocket.NewHub()
+	hub.ObserveRooms(rooms)
+	chatService, err := chat.NewServiceWithRoomAccess(store, hub, rooms)
+	if err != nil {
+		return nil, err
+	}
+	grpcServer := grpcgo.NewServer(grpcgo.UnaryInterceptor(
+		grpctransport.AuthUnaryServerInterceptor(authService),
+	))
+	registrations := []func() error{
+		func() error { return grpctransport.RegisterAuthService(grpcServer, authService) },
+		func() error { return grpctransport.RegisterPlayerService(grpcServer, playerService) },
+		func() error { return grpctransport.RegisterFriendService(grpcServer, socialService, hub) },
+		func() error { return grpctransport.RegisterLobbyService(grpcServer, rooms, store) },
+		func() error { return grpctransport.RegisterRoomService(grpcServer, rooms) },
+		func() error { return grpctransport.RegisterChatService(grpcServer, chatService) },
+	}
+	for _, register := range registrations {
+		if err := register(); err != nil {
+			return nil, fmt.Errorf("register gRPC service: %w", err)
+		}
+	}
+	eventHandler, err := websocket.NewHandlerWithLobbyProfiles(
+		hub, authService, allowedOrigins, store, store,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create WebSocket handler: %w", err)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.Handle("/events", eventHandler)
+	return &application{
+		grpcServer: grpcServer, httpHandler: mux, messagePurger: store,
+	}, nil
+}
+
+func allowedWebSocketOrigins() []string {
+	values := os.Getenv("WEBSOCKET_ALLOWED_ORIGINS")
+	if values == "" {
+		values = "http://localhost:3000,http://localhost:8080,https://localhost:8443"
+	}
+	origins := strings.Split(values, ",")
+	for index := range origins {
+		origins[index] = strings.TrimSpace(origins[index])
+	}
+	return origins
 }
 
 func healthHandler() http.Handler {
@@ -127,6 +257,28 @@ func runMigrations(ctx context.Context) error {
 		return fmt.Errorf("apply MySQL migrations: %w", err)
 	}
 	return nil
+}
+
+func (app *application) purgeExpiredMessages(ctx context.Context) {
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for {
+		for ctx.Err() == nil {
+			deleted, err := app.messagePurger.PurgeExpiredChatMessages(ctx, 1000)
+			if err != nil {
+				log.Printf("purge expired chat messages: %v", err)
+				break
+			}
+			if deleted < 1000 {
+				break
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 func databaseConfig() (*mysqlDriver.Config, error) {
