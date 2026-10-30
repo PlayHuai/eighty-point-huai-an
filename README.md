@@ -7,6 +7,7 @@
 - [技术架构设计](docs/architecture.md)
 - [业务规则](docs/淮安80分业务规则.md)
 - [项目任务清单](docs/tasks.md)
+- [微信小程序](README-miniprogram.md)
 
 ## Flutter SDK
 

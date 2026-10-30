@@ -1,0 +1,15 @@
+{
+  "pages": [
+    "pages/lobby/lobby",
+    "pages/gametable/gametable"
+  ],
+  "window": {
+    "navigationBarBackgroundColor": "#0a0e14",
+    "navigationBarTextStyle": "white",
+    "navigationBarTitleText": "淮安80分",
+    "backgroundColor": "#0a0e14",
+    "backgroundTextStyle": "light"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

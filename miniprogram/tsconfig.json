@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "strict": true,
+    "noEmit": true,
+    "types": ["miniprogram-api-typings"],
+    "lib": ["ES2020"]
+  },
+  "include": ["app.ts", "config/**/*.ts", "pages/**/*.ts", "services/**/*.ts", "types/**/*.ts", "utils/**/*.ts"]
+}

@@ -1,0 +1,29 @@
+<view class="page-shell lobby">
+  <view class="brand">
+    <text class="brand-mark">80</text>
+    <view>
+      <text class="brand-title">淮安80分</text>
+      <text class="muted brand-subtitle">四人两两配合 · 暗黑牌桌</text>
+    </view>
+  </view>
+
+  <view class="profile panel">
+    <view class="avatar">{{profileInitial}}</view>
+    <view class="profile-copy">
+      <text class="nickname">{{profile.nickname || '微信玩家'}}</text>
+      <text class="muted">微信静默登录</text>
+    </view>
+    <button class="settings" bindtap="openSettings">设置</button>
+  </view>
+
+  <view class="room-card">
+    <text class="eyebrow">快速开始</text>
+    <text class="room-title">默认房间</text>
+    <text class="muted room-description">{{roomStatus}}</text>
+    <button class="primary-button" loading="{{joining}}" disabled="{{joining}}" bindtap="enterDefaultRoom">
+      {{joining ? '正在进入…' : '进入默认房'}}
+    </button>
+  </view>
+
+  <view class="footer muted">不设段位与场次 · 好友可通过分享链接加入</view>
+</view>

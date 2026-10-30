@@ -1,0 +1,90 @@
+.table-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-s4);
+}
+
+.table-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.table-title {
+  display: block;
+  font-size: var(--font-size-l3);
+  font-weight: 700;
+}
+
+.room-number {
+  display: block;
+  margin-top: var(--spacing-s1);
+  color: var(--color-gold-primary);
+}
+
+.share-button,
+.leave-button {
+  padding: var(--spacing-s2) var(--spacing-s3);
+  background: var(--color-bg-card);
+  color: var(--color-gold-bright);
+  font-size: var(--font-size-l6);
+}
+
+.table-surface {
+  display: flex;
+  min-height: 54vh;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: var(--spacing-s4);
+  border: 2rpx solid var(--color-gold-dark);
+  border-radius: var(--radius-panel);
+  background: var(--color-bg-card);
+}
+
+.seat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-s1);
+}
+
+.seat-name {
+  color: var(--color-text-primary);
+}
+
+.seat-top,
+.seat-bottom {
+  align-self: center;
+  padding: var(--spacing-s2) var(--spacing-s3);
+  border-radius: var(--radius-badge);
+  background: var(--color-bg-panel);
+}
+
+.side-seats {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.center-status {
+  display: flex;
+  max-width: 40%;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-s2);
+  text-align: center;
+}
+
+.notice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-s2);
+}
+
+.notice-title {
+  color: var(--color-gold-bright);
+}
+
+.leave-button {
+  color: var(--color-text-secondary);
+}

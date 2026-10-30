@@ -1,0 +1,14 @@
+{
+  "appid": "YOUR_WECHAT_APP_ID",
+  "compileType": "miniprogram",
+  "libVersion": "3.6.5",
+  "miniprogramRoot": "miniprogram/",
+  "projectname": "eighty-point-huai-an",
+  "setting": {
+    "es6": true,
+    "minified": true,
+    "urlCheck": true,
+    "compileWorklet": false,
+    "packNpmManually": false
+  }
+}
