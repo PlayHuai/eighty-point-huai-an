@@ -17,6 +17,7 @@ abstract final class DarkTokens {
   static const suitRed = Color(0xFFC0392B);
   static const suitBlack = Color(0xFF1C1C1C);
   static const infoBlue = Color(0xFF4A7BA6);
+  static const scoreGreen = Color(0xFF5FA879);
 
   static const fontSizeL1 = 40.0;
   static const fontSizeL2 = 32.0;

@@ -116,6 +116,13 @@
                 ],
                 "$type": "color",
                 "$value": "#4a7ba6"
+              },
+              "scoreGreen": {
+                "$scopes": [
+                  "ALL_SCOPES"
+                ],
+                "$type": "color",
+                "$value": "#5fa879"
               }
             },
             "font": {
