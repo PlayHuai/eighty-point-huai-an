@@ -1,7 +1,26 @@
 import 'package:eighty_point_huai_an/src/api/realtime_event.dart';
+import 'package:eighty_point_huai_an/src/api/realtime_event_client.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('derives secure WebSocket endpoint from API endpoint', () {
+    expect(
+      RealtimeEventClient.websocketUriForEndpoint(
+        Uri.parse('https://api.example.com:8443'),
+      ),
+      Uri.parse('wss://api.example.com:8443/events'),
+    );
+  });
+
+  test('preserves explicit WebSocket endpoint and path', () {
+    expect(
+      RealtimeEventClient.websocketUriForEndpoint(
+        Uri.parse('wss://events.example.com:9443/custom-events'),
+      ),
+      Uri.parse('wss://events.example.com:9443/custom-events'),
+    );
+  });
+
   test('decodes authenticated private chat events', () {
     final event = RealtimeEvent.fromJson(
       '{"type":"PRIVATE_MESSAGE_CREATED","seq":7,'
