@@ -19,11 +19,13 @@ export interface RoomSummary {
   occupiedSeats: number;
   capacity: number;
   version: number;
+  members?: RoomMember[];
+  seat?: number;
+  baseScore?: number;
 }
 
 export interface RoomMember {
   userId: string;
-  nickname: string;
   seat: number;
 }
 
@@ -31,6 +33,7 @@ export interface RoomEntry {
   roomId: string;
   name: string;
   seat: number;
+  version: number;
   baseScore: number;
   members: RoomMember[];
   status?: 'WAITING' | 'PLAYING' | 'CLOSED';

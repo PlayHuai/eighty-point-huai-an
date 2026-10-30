@@ -61,6 +61,8 @@ services:
       DB_USER: ${DB_USER:?Set DB_USER in deploy/.env}
       DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in deploy/.env}
       WEBSOCKET_ALLOWED_ORIGINS: ${WEBSOCKET_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:8080,https://localhost:8443}
+      WECHAT_APP_ID: ${WECHAT_APP_ID:-}
+      WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:-}
       HEALTHCHECK_URL: http://127.0.0.1:8080/healthz
     ports:
       - "127.0.0.1:${HTTP_PORT:-8080}:8080"

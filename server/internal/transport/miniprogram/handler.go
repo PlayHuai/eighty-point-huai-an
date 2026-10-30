@@ -159,13 +159,13 @@ func (h *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 			methodNotAllowed(writer)
 			return
 		}
-		userID, ok := h.authorizedWeChatUser(writer, request)
-		if !ok {
+		if _, ok := h.authorizedWeChatUser(writer, request); !ok {
 			return
 		}
 		writeJSON(writer, http.StatusOK, map[string]any{
-			"halls":  []lobby.Hall{hallDefinition()},
-			"userId": userID,
+			"halls": []map[string]string{{
+				"hallId": lobby.HallEntertainment, "name": hallDefinition().Name,
+			}},
 		})
 	case "/api/lobby/rooms":
 		if request.Method != http.MethodGet {
@@ -211,7 +211,10 @@ func (h *Handler) weChatLogin(writer http.ResponseWriter, request *http.Request)
 		Code       string `json:"code"`
 		ClientType string `json:"clientType"`
 	}
-	if !decodeJSON(writer, request, &input) || input.ClientType != "miniprogram" {
+	if !decodeJSON(writer, request, &input) {
+		return
+	}
+	if input.ClientType != "miniprogram" {
 		writeError(writer, http.StatusBadRequest, "invalid WeChat login request")
 		return
 	}
@@ -310,7 +313,10 @@ func (h *Handler) joinRoom(writer http.ResponseWriter, request *http.Request, us
 		RoomID          string `json:"roomId"`
 		ExpectedVersion uint64 `json:"expectedVersion"`
 	}
-	if !decodeJSON(writer, request, &input) || input.RoomID == "" {
+	if !decodeJSON(writer, request, &input) {
+		return
+	}
+	if input.RoomID == "" {
 		writeError(writer, http.StatusBadRequest, "room ID is required")
 		return
 	}
@@ -318,6 +324,9 @@ func (h *Handler) joinRoom(writer http.ResponseWriter, request *http.Request, us
 	if err != nil || summary.HallID != lobby.HallEntertainment {
 		writeError(writer, http.StatusNotFound, "entertainment room not found")
 		return
+	}
+	if input.ExpectedVersion == 0 {
+		input.ExpectedVersion = summary.Version
 	}
 	if details, err := h.rooms.GetRoom(input.RoomID, userID); err == nil {
 		writeJSON(writer, http.StatusOK, entryFromDetails(details, userID))
@@ -345,7 +354,10 @@ func (h *Handler) createRoom(writer http.ResponseWriter, request *http.Request, 
 	var input struct {
 		RequestID string `json:"requestId"`
 	}
-	if !decodeJSON(writer, request, &input) || !validRequestID(input.RequestID) {
+	if !decodeJSON(writer, request, &input) {
+		return
+	}
+	if !validRequestID(input.RequestID) {
 		writeError(writer, http.StatusBadRequest, "valid request ID is required")
 		return
 	}

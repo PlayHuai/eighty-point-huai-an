@@ -91,7 +91,7 @@ Page({
 
   navigateToRoom(room: RoomEntry) {
     wx.navigateTo({
-      url: `/pages/gametable/gametable?roomId=${encodeURIComponent(room.roomId)}&seat=${room.seat}`
+      url: `/pages/gametable/gametable?roomId=${encodeURIComponent(room.roomId)}&seat=${room.seat}&version=${room.version}`
     });
   },
 

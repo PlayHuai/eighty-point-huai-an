@@ -6,13 +6,14 @@ Page({
   data: {
     roomId: '',
     seat: undefined as number | undefined,
+    version: 0,
     roomMembers: ['等待玩家', '等待玩家', '等待玩家', '等待玩家'],
     status: '正在验证进入权限…'
   },
 
   async onLoad(options: Record<string, string | undefined>) {
     try {
-      await ensureLogin();
+      const profile = await ensureLogin();
       if (!options.roomId) {
         wx.reLaunch({ url: '/pages/lobby/lobby' });
         return;
@@ -21,8 +22,13 @@ Page({
       this.setData({
         roomId: room.roomId,
         seat: room.seat,
+        version: room.version,
         roomMembers: [1, 2, 3, 4].map((seat) =>
-          room.members.find((member) => member.seat === seat)?.nickname || '等待玩家'),
+          room.members?.some((member) => member.seat === seat)
+            ? room.members.find((member) => member.seat === seat)?.userId === profile.userId
+              ? '你'
+              : `玩家 ${seat}`
+            : '等待玩家'),
         status: room.status === 'PLAYING' ? '牌局进行中' : '等待其他玩家加入'
       });
     } catch {
@@ -35,7 +41,7 @@ Page({
     const roomId = this.data.roomId;
     return {
       title: `淮安80分 · 房号 ${roomId}`,
-      path: `/pages/gametable/gametable?roomId=${encodeURIComponent(roomId)}`
+      path: `/pages/gametable/gametable?roomId=${encodeURIComponent(roomId)}&version=${this.data.version}`
     };
   },
 
