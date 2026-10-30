@@ -1,0 +1,37 @@
+page {
+  --color-bg-base: #0a0e14;
+  --color-bg-panel: #131a24;
+  --color-bg-card: #1c2530;
+  --color-gold-primary: #c9a24b;
+  --color-gold-bright: #e6c56a;
+  --color-gold-dark: #8a6a2f;
+  --color-red-accent: #8b1a2b;
+  --color-red-bright: #b3273d;
+  --color-card-face: #f5efe0;
+  --color-card-back: #22303e;
+  --color-text-primary: #ede8dc;
+  --color-text-secondary: #9a927f;
+  --color-text-disabled: #5a5748;
+  --color-suit-red: #c0392b;
+  --color-suit-black: #1c1c1c;
+  --color-info-blue: #4a7ba6;
+
+  --font-size-l1: 80rpx;
+  --font-size-l2: 64rpx;
+  --font-size-l3: 48rpx;
+  --font-size-l4: 36rpx;
+  --font-size-l5: 28rpx;
+  --font-size-l6: 24rpx;
+
+  --radius-card: 16rpx;
+  --radius-button: 16rpx;
+  --radius-panel: 24rpx;
+  --radius-badge: 1998rpx;
+
+  --spacing-s1: 8rpx;
+  --spacing-s2: 16rpx;
+  --spacing-s3: 24rpx;
+  --spacing-s4: 32rpx;
+  --spacing-s5: 48rpx;
+  --spacing-s6: 64rpx;
+}

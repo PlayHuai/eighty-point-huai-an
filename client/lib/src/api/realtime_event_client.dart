@@ -5,7 +5,7 @@ import 'realtime_event.dart';
 
 class RealtimeEventClient {
   RealtimeEventClient({required Uri endpoint, required String accessToken})
-    : _uri = _webSocketUri(endpoint),
+    : _uri = websocketUriForEndpoint(endpoint),
       _accessToken = accessToken {
     unawaited(_run());
   }
@@ -62,20 +62,26 @@ class RealtimeEventClient {
     }
   }
 
-  static Uri _webSocketUri(Uri endpoint) {
+  static Uri websocketUriForEndpoint(Uri endpoint) {
+    final isWebSocket = endpoint.scheme == 'ws' || endpoint.scheme == 'wss';
     final scheme = switch (endpoint.scheme) {
       'https' => 'wss',
       'http' => 'ws',
+      'wss' => 'wss',
+      'ws' => 'ws',
       _ => throw ArgumentError.value(
         endpoint,
         'endpoint',
-        'HTTP(S) URL required',
+        'HTTP(S) or WebSocket URL required',
       ),
     };
+    final path = isWebSocket && endpoint.path.isNotEmpty && endpoint.path != '/'
+        ? endpoint.path
+        : '/events';
     return endpoint.replace(
       scheme: scheme,
-      path: '/events',
-      query: null,
+      path: path,
+      query: isWebSocket ? endpoint.query : null,
       fragment: null,
     );
   }

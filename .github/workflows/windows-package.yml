@@ -16,6 +16,9 @@ permissions:
 jobs:
   build:
     runs-on: [self-hosted, windows, x64]
+    env:
+      API_ENDPOINT: ${{ vars.API_ENDPOINT || 'https://localhost:8443' }}
+      WEBSOCKET_ENDPOINT: ${{ vars.WEBSOCKET_ENDPOINT }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4.2.2
@@ -65,11 +68,17 @@ jobs:
 
       - name: Build Web client
         working-directory: client
-        run: flutter build web --no-web-resources-cdn
+        run: |
+          flutter build web --no-web-resources-cdn `
+            "--dart-define=API_ENDPOINT=$env:API_ENDPOINT" `
+            "--dart-define=WEBSOCKET_ENDPOINT=$env:WEBSOCKET_ENDPOINT"
 
       - name: Build Windows client
         working-directory: client
-        run: flutter build windows --release
+        run: |
+          flutter build windows --release `
+            "--dart-define=API_ENDPOINT=$env:API_ENDPOINT" `
+            "--dart-define=WEBSOCKET_ENDPOINT=$env:WEBSOCKET_ENDPOINT"
 
       - name: Package Windows client as MSIX
         if: ${{ vars.MSIX_PACKAGING_ENABLED == 'true' }}

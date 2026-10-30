@@ -1,0 +1,2 @@
+ALTER TABLE users
+    ADD COLUMN wechat_openid VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL UNIQUE AFTER username;

@@ -24,6 +24,14 @@ type lobbyProfiles struct {
 	findCalls  *int
 }
 
+type testWeChatIdentity struct {
+	userIDs map[string]bool
+}
+
+func (i testWeChatIdentity) IsWeChatUser(_ context.Context, userID string) (bool, error) {
+	return i.userIDs[userID], nil
+}
+
 func (p lobbyProfiles) FindProfile(context.Context, string) (player.Profile, error) {
 	if p.findCalls != nil {
 		*p.findCalls = *p.findCalls + 1
@@ -67,11 +75,57 @@ func TestListHallsRequiresAuthenticationAndReturnsConfiguredHalls(t *testing.T) 
 		t.Fatalf("unauthenticated ListHalls error = %v", err)
 	}
 	response, err := server.ListHalls(ctxWithUserID(context.Background(), "player"), &huaiv1.Empty{})
-	if err != nil || len(response.GetHalls()) != len(lobby.Halls()) {
+	if err != nil || len(response.GetHalls()) != len(lobby.Halls())-1 {
 		t.Fatalf("ListHalls() = %+v, %v", response, err)
 	}
 	if response.GetHalls()[0].GetHallId() != lobby.HallOrdinary {
 		t.Fatalf("first hall = %+v", response.GetHalls()[0])
+	}
+	for _, hall := range response.GetHalls() {
+		if hall.GetHallId() == lobby.HallEntertainment {
+			t.Fatal("regular account can see the entertainment hall")
+		}
+	}
+	server.identity = testWeChatIdentity{userIDs: map[string]bool{"wx-player": true}}
+	wechatResponse, err := server.ListHalls(ctxWithUserID(context.Background(), "wx-player"), &huaiv1.Empty{})
+	if err != nil || len(wechatResponse.GetHalls()) != 1 ||
+		wechatResponse.GetHalls()[0].GetHallId() != lobby.HallEntertainment {
+		t.Fatalf("WeChat ListHalls() = %+v, %v; want only entertainment", wechatResponse, err)
+	}
+}
+
+func TestListRoomsIsolatedByAccountType(t *testing.T) {
+	manager := room.NewManager()
+	if _, err := manager.CreateRoom(lobby.HallEntertainment, "wechat-owner", 0, room.Settings{Name: "entertainment"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.CreateRoom(lobby.HallOrdinary, "regular-owner", 0, room.Settings{Name: "ordinary"}); err != nil {
+		t.Fatal(err)
+	}
+	server := &lobbyServer{
+		rooms: manager,
+		profiles: lobbyProfiles{
+			profile: player.Profile{UserID: "wechat-player", Points: 0},
+		},
+		identity: testWeChatIdentity{userIDs: map[string]bool{"wechat-player": true}},
+	}
+	wechatCtx := ctxWithUserID(context.Background(), "wechat-player")
+	rooms, err := server.ListRooms(wechatCtx, &huaiv1.ListRoomsRequest{
+		HallId: lobby.HallEntertainment, Page: &huaiv1.PageRequest{PageSize: 10},
+	})
+	if err != nil || len(rooms.GetRooms()) != 1 || rooms.GetRooms()[0].GetHallId() != lobby.HallEntertainment {
+		t.Fatalf("WeChat ListRooms() = %+v, %v", rooms, err)
+	}
+	if _, err := server.ListRooms(wechatCtx, &huaiv1.ListRoomsRequest{
+		HallId: lobby.HallOrdinary,
+	}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("WeChat ordinary hall ListRooms() error = %v, want PermissionDenied", err)
+	}
+	regularCtx := ctxWithUserID(context.Background(), "regular-player")
+	if _, err := server.ListRooms(regularCtx, &huaiv1.ListRoomsRequest{
+		HallId: lobby.HallEntertainment,
+	}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("regular entertainment hall ListRooms() error = %v, want PermissionDenied", err)
 	}
 }
 

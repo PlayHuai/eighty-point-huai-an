@@ -20,9 +20,14 @@ type lobbyServer struct {
 	huaiv1.UnimplementedLobbyServiceServer
 	rooms        *room.Manager
 	profiles     lobbyProfileRepository
+	identity     weChatIdentityResolver
 	requestMu    sync.Mutex
 	createdRooms map[roomRequestKey]createRoomResult
 	leftRooms    map[roomRequestKey]leaveRoomRequest
+}
+
+type weChatIdentityResolver interface {
+	IsWeChatUser(context.Context, string) (bool, error)
 }
 
 type roomRequestKey struct {
@@ -56,20 +61,36 @@ func RegisterLobbyService(
 	server grpcgo.ServiceRegistrar,
 	rooms *room.Manager,
 	profiles lobbyProfileRepository,
+	identities ...weChatIdentityResolver,
 ) error {
 	if server == nil || rooms == nil || profiles == nil {
 		return errors.New("gRPC registrar, room manager, and player profiles are required")
 	}
-	huaiv1.RegisterLobbyServiceServer(server, &lobbyServer{rooms: rooms, profiles: profiles})
+	service := &lobbyServer{rooms: rooms, profiles: profiles}
+	if len(identities) > 1 {
+		return errors.New("only one WeChat identity resolver is allowed")
+	}
+	if len(identities) == 1 {
+		service.identity = identities[0]
+	}
+	huaiv1.RegisterLobbyServiceServer(server, service)
 	return nil
 }
 
 func (s *lobbyServer) ListHalls(ctx context.Context, _ *huaiv1.Empty) (*huaiv1.ListHallsResponse, error) {
-	if _, err := authenticatedUserID(ctx); err != nil {
+	userID, err := authenticatedUserID(ctx)
+	if err != nil {
 		return nil, err
+	}
+	wechatUser, err := s.isWeChatUser(ctx, userID)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "could not determine account type")
 	}
 	response := &huaiv1.ListHallsResponse{}
 	for _, hall := range lobby.Halls() {
+		if (hall.ID == lobby.HallEntertainment) != wechatUser {
+			continue
+		}
 		response.Halls = append(response.Halls, &huaiv1.Hall{
 			HallId: hall.ID, Name: hall.Name, MinimumPoints: hall.MinimumPoints,
 			MaximumPoints: hall.MaximumPoints, MultiplierBasisPoints: hall.MultiplierBasisPoints,
@@ -84,6 +105,9 @@ func (s *lobbyServer) ListRooms(
 ) (*huaiv1.ListRoomsResponse, error) {
 	userID, err := authenticatedUserID(ctx)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.authorizeHall(ctx, userID, request.GetHallId()); err != nil {
 		return nil, err
 	}
 	afterRoomID, pageSize, err := roomPageWindow(
@@ -151,6 +175,9 @@ func (s *lobbyServer) CreateRoom(
 	if err != nil {
 		return nil, err
 	}
+	if err := s.authorizeHall(ctx, userID, request.GetHallId()); err != nil {
+		return nil, err
+	}
 	requestID := request.GetRequestId()
 	if !validLobbyRequestID(requestID) {
 		return nil, status.Error(codes.InvalidArgument, "valid request ID is required")
@@ -193,6 +220,13 @@ func (s *lobbyServer) JoinRoom(
 ) (*huaiv1.RoomSummary, error) {
 	userID, err := authenticatedUserID(ctx)
 	if err != nil {
+		return nil, err
+	}
+	summary, err := s.rooms.GetSummary(request.GetRoomId())
+	if err != nil {
+		return nil, roomOperationError(err)
+	}
+	if err := s.authorizeHall(ctx, userID, summary.HallID); err != nil {
 		return nil, err
 	}
 	profile, err := s.profiles.FindProfile(ctx, userID)
@@ -258,6 +292,9 @@ func (s *lobbyServer) JoinByCode(
 	if err != nil {
 		return nil, roomOperationError(err)
 	}
+	if err := s.authorizeHall(ctx, userID, summary.HallID); err != nil {
+		return nil, err
+	}
 	details, err := s.rooms.JoinRoom(
 		summary.ID, userID, profile.Points, request.GetPassword(), summary.Version,
 	)
@@ -265,6 +302,27 @@ func (s *lobbyServer) JoinByCode(
 		return nil, roomOperationError(err)
 	}
 	return roomSummaryMessage(details.Room, &huaiv1.UserProfile{UserId: details.Room.OwnerID}), nil
+}
+
+func (s *lobbyServer) isWeChatUser(ctx context.Context, userID string) (bool, error) {
+	if s.identity == nil {
+		return false, nil
+	}
+	return s.identity.IsWeChatUser(ctx, userID)
+}
+
+func (s *lobbyServer) authorizeHall(ctx context.Context, userID, hallID string) error {
+	if _, err := lobby.FindHall(hallID); err != nil {
+		return status.Error(codes.InvalidArgument, "unknown hall")
+	}
+	wechatUser, err := s.isWeChatUser(ctx, userID)
+	if err != nil {
+		return status.Error(codes.Internal, "could not determine account type")
+	}
+	if (hallID == lobby.HallEntertainment) != wechatUser {
+		return status.Error(codes.PermissionDenied, "hall is unavailable for this account")
+	}
+	return nil
 }
 
 func roomOperationError(err error) error {

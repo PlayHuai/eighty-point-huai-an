@@ -1,0 +1,36 @@
+@import "./styles/tokens.wxss";
+
+page {
+  min-height: 100%;
+  background: var(--color-bg-base);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-l5);
+}
+
+button {
+  box-sizing: border-box;
+  border: 0;
+  border-radius: var(--radius-button);
+  font-size: var(--font-size-l4);
+}
+
+button::after {
+  border: 0;
+}
+
+.page-shell {
+  box-sizing: border-box;
+  min-height: 100vh;
+  padding: var(--spacing-s5);
+}
+
+.panel {
+  padding: var(--spacing-s4);
+  border-radius: var(--radius-panel);
+  background: var(--color-bg-panel);
+}
+
+.muted {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-l6);
+}

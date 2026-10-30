@@ -18,6 +18,13 @@ The application disables Riverpod 3's automatic provider retries to preserve
 the explicit error/retry UI, and `ClientApp` remains the sole owner of its
 shared authentication controller's disposal.
 
+Hall and room admission remains server-authoritative. A denied hall listing
+shows the selected hall's minimum points instead of a network error. Returning
+from a room refreshes its hall's room list (and invitations for friend rooms).
+The server closes a waiting room when its owner leaves; the client does not
+keep that room as a joinable cached entry. A rejected stale join refreshes the
+list and distinguishes missing rooms and version conflicts from network errors.
+
 ## Platform runners
 
 The checked-in `windows/`, `web/`, and `ios/` projects are generated with
@@ -69,8 +76,25 @@ Source: [google/fonts](https://github.com/google/fonts), revision
 `6157dfaa640ca5738b4d1a7070fe389c3036d7fc`, directories `ofl/inter` and
 `ofl/notosanssc`.
 
-The API endpoint defaults to `https://localhost:8443`. Override it at build or
-run time with `--dart-define=API_ENDPOINT=https://your-api.example`.
+The API endpoint defaults to `https://localhost:8443`. Set `API_ENDPOINT` to
+the TLS-protected gRPC endpoint when building or running against a deployment.
+If the WebSocket `/events` endpoint is not served from the same host and port,
+set `WEBSOCKET_ENDPOINT` to its full secure URL, including `/events`.
+
+For example, build the Windows and Web clients against your deployment with:
+
+```sh
+flutter build windows --release --dart-define=API_ENDPOINT=https://api.example.com --dart-define=WEBSOCKET_ENDPOINT=wss://events.example.com/events
+flutter build web --no-web-resources-cdn --dart-define=API_ENDPOINT=https://api.example.com --dart-define=WEBSOCKET_ENDPOINT=wss://events.example.com/events
+```
+
+For a single TLS gateway that serves both protocols, omit
+`WEBSOCKET_ENDPOINT`; the client uses the API host and `/events` path. Native
+gRPC clients need a TLS gRPC endpoint, while the Web client requires a
+gRPC-Web-compatible API endpoint. Do not configure production endpoints with
+plain HTTP or WebSockets. The Windows package workflow also accepts the
+repository Actions variables `API_ENDPOINT` and `WEBSOCKET_ENDPOINT`; when
+unset, it uses the secure localhost API default.
 
 The shared UI theme is defined in `lib/src/ui/theme/app_theme.dart` from
 `ui-design/DarkTokens.json`. Reusable 32px state icons and the AppIcon are
