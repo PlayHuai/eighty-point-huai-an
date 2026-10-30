@@ -35,9 +35,13 @@ class _ClientAppState extends State<ClientApp> {
 
   @override
   Widget build(BuildContext context) => ProviderScope(
+    retry: (retryCount, error) => null,
     overrides: [
       apiClientProvider.overrideWithValue(widget.auth.api),
-      authControllerProvider.overrideWithValue(widget.auth),
+      authControllerProvider.overrideWith(
+        (ref) => widget.auth,
+        disposeNotifier: false,
+      ),
     ],
     child: MaterialApp(
       title: '淮安80分',

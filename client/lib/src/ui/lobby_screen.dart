@@ -237,9 +237,9 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   Future<void> _showJoinByCodeDialog({String initialCode = ''}) async {
     final codeController = TextEditingController(text: initialCode);
     final passwordController = TextEditingController();
-    await showDialog<void>(
+    final dialogRoute = DialogRoute<void>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('通过房间号加入'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -259,7 +259,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () => Navigator.of(dialogContext).pop(),
             child: const Text('取消'),
           ),
           FilledButton(
@@ -275,6 +275,8 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         ],
       ),
     );
+    await Navigator.of(context, rootNavigator: true).push(dialogRoute);
+    await dialogRoute.completed;
     codeController.dispose();
     passwordController.dispose();
   }
@@ -284,7 +286,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     final passwordController = TextEditingController();
     final minimumPointsController = TextEditingController(text: '0');
     var allowSpectators = false;
-    await showDialog<void>(
+    final dialogRoute = DialogRoute<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
@@ -368,6 +370,8 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         ),
       ),
     );
+    await Navigator.of(context, rootNavigator: true).push(dialogRoute);
+    await dialogRoute.completed;
     nameController.dispose();
     passwordController.dispose();
     minimumPointsController.dispose();

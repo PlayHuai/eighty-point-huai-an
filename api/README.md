@@ -32,13 +32,15 @@ the pinned Dart generator and generate the Flutter bindings from the same
 schema:
 
 ```sh
-dart pub global activate protoc_plugin 21.1.2
+dart pub global activate protoc_plugin 25.1.0
 cd api
-PATH="$HOME/.pub-cache/bin:$PATH" buf generate --template buf.gen.dart.yaml
+PATH="$HOME/.pub-cache/bin:$PATH" buf generate --template buf.gen.dart.yaml --include-imports
 ```
 
 This writes Dart messages and gRPC clients under
-`client/lib/src/generated/huai/v1`. Generate these bindings before running
+`client/lib/src/generated/huai/v1`, using the protobuf 6 runtime declared by
+the Flutter client. Imported standard types are included in generation.
+Generate these bindings before running
 `flutter pub get`, analysis, tests, or builds for the Flutter client.
 
 To check that a change remains wire-compatible with the previous schema:

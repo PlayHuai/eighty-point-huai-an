@@ -13,8 +13,24 @@ void main() {
     expect(theme.scaffoldBackgroundColor, DarkTokens.bgBase);
     expect(theme.colorScheme.primary, DarkTokens.goldPrimary);
     expect(theme.textTheme.headlineMedium?.fontSize, DarkTokens.fontSizeL2);
+    expect(theme.textTheme.bodyMedium?.fontFamily, 'Inter');
+    expect(theme.textTheme.bodyMedium?.fontFamilyFallback, ['NotoSansSC']);
     expect(DarkTokens.spacingS6, 32);
   });
+
+  test(
+    'design fonts and licenses are bundled for offline Web rendering',
+    () async {
+      for (final path in [
+        'assets/fonts/Inter/Inter.ttf',
+        'assets/fonts/Inter/OFL.txt',
+        'assets/fonts/NotoSansSC/NotoSansSC.ttf',
+        'assets/fonts/NotoSansSC/OFL.txt',
+      ]) {
+        expect((await rootBundle.load(path)).lengthInBytes, greaterThan(0));
+      }
+    },
+  );
 
   test('responsive breakpoints keep the specified boundary behavior', () {
     expect(

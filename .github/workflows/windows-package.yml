@@ -6,6 +6,8 @@ on:
       - master
     paths:
       - "client/**"
+      - "api/**"
+      - ".github/workflows/windows-package.yml"
   workflow_dispatch:
 
 permissions:
@@ -36,19 +38,34 @@ jobs:
         shell: pwsh
         run: |
           go install github.com/bufbuild/buf/cmd/buf@v1.50.0
-          dart pub global activate protoc_plugin 21.1.2
+          if ($LASTEXITCODE -ne 0) { throw "Failed to install buf" }
+          dart pub global activate protoc_plugin 25.1.0
+          if ($LASTEXITCODE -ne 0) { throw "Failed to activate protoc_plugin" }
           $env:PATH = "$env:USERPROFILE\go\bin;$env:LOCALAPPDATA\Pub\Cache\bin;$env:PATH"
           Push-Location api
-          buf generate --template buf.gen.dart.yaml
+          buf generate --template buf.gen.dart.yaml --include-imports
+          if ($LASTEXITCODE -ne 0) { throw "Failed to generate Dart API bindings" }
           Pop-Location
 
       - name: Install dependencies
         working-directory: client
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
       - name: Generate Riverpod providers
         working-directory: client
-        run: dart run build_runner build --delete-conflicting-outputs
+        run: dart run build_runner build
+
+      - name: Analyze Flutter client
+        working-directory: client
+        run: flutter analyze
+
+      - name: Test Flutter client
+        working-directory: client
+        run: flutter test
+
+      - name: Build Web client
+        working-directory: client
+        run: flutter build web --no-web-resources-cdn
 
       - name: Build Windows client
         working-directory: client

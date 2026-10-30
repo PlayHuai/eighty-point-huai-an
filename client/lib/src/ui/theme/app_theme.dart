@@ -43,6 +43,8 @@ abstract final class DarkTokens {
 abstract final class AppTheme {
   static ThemeData get dark => ThemeData(
     useMaterial3: true,
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansSC'],
     scaffoldBackgroundColor: DarkTokens.bgBase,
     colorScheme: const ColorScheme.dark(
       primary: DarkTokens.goldPrimary,

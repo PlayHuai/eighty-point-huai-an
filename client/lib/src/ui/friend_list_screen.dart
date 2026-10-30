@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grpc/grpc.dart';
 
 import '../api/player_models.dart';
+import '../api/request_id.dart';
 import '../auth/auth_controller.dart';
 import 'client_providers.dart';
 import 'chat_screen.dart';
