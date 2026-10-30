@@ -51,6 +51,16 @@ actual authentication state rather than the screenshot's mock state.
 The lockout hint does not claim a fixed failure threshold, which is a
 server-controlled parameter.
 
+The create-room dialog follows `../ui-design/CreateRoomDialog/CreateRoomDialog.png`:
+a responsive 520px maximum-width panel, separated header/footer, external field
+labels, private-room and spectator switches, a conditional password field, and
+equal-width action buttons. Field groups use 24px token spacing; compact screens
+use 16px outer/inner padding and the form scrolls above the actions when space
+is limited. Point-limit hints use the selected server hall and player statistics,
+not the screenshot's sample values; final admission remains server-authoritative.
+Friend rooms retain their invitation-only creation flow without public-room
+password, spectator, or points controls.
+
 Inter (the design's Latin typeface) and Noto Sans SC (Chinese fallback) are
 bundled under `assets/fonts/` so that Web text does not depend on access to
 Google Fonts at runtime. Both use the SIL Open Font License; the original

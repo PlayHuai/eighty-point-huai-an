@@ -240,6 +240,7 @@ void main() {
             .first,
         '周末好友局',
       );
+      await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(FilledButton, '创建'));
       await tester.pumpAndSettle();
 
@@ -278,12 +279,15 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('创建房间'));
     await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('create-room-private')));
+    await tester.pumpAndSettle();
     final fields = find.descendant(
       of: find.byType(AlertDialog),
       matching: find.byType(TextField),
     );
     await tester.enterText(fields.at(0), '密码房');
     await tester.enterText(fields.at(1), 'secret');
+    await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, '创建'));
     await tester.pumpAndSettle();
 
@@ -339,6 +343,63 @@ void main() {
     await tester.pumpAndSettle();
     expect(api.joinedRoomId, 'room-1');
     expect(find.textContaining('已加入 周末牌局'), findsOneWidget);
+  });
+
+  testWidgets('create-room retry preserves settings and the request ID', (
+    tester,
+  ) async {
+    final api = _FakeApiClient()
+      ..halls = const [
+        LobbyHall(
+          id: 'normal',
+          name: '普通大厅',
+          minimumPoints: 0,
+          maximumPoints: 9999,
+          multiplier: 1,
+        ),
+      ]
+      ..failNextRoomCreation = true;
+    final auth = AuthController(api: api, store: _FakeSessionStore());
+    final login = auth.login('account', 'password');
+    api.loginCompleter.complete(_session);
+    await login;
+
+    await tester.pumpWidget(ClientApp(auth: auth));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('创建房间'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('create-room-name')),
+      '测试牌局',
+    );
+    final points = find.byKey(const ValueKey('create-room-minimum-points'));
+    await tester.ensureVisible(points);
+    await tester.enterText(points, '100');
+    final spectators = find.byKey(const ValueKey('create-room-spectators'));
+    await tester.ensureVisible(spectators);
+    await tester.tap(spectators);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '创建'));
+    await tester.pumpAndSettle();
+    expect(api.createdRoomRequests, hasLength(1));
+    expect(find.byType(AlertDialog), findsOneWidget);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '创建'));
+    await tester.pumpAndSettle();
+
+    expect(api.createdRoomRequests, hasLength(2));
+    expect(api.createdRoomRequests.first, api.createdRoomRequests.last);
+    final (name, password, allowSpectators, minimumPoints, requestId) =
+        api.createdRoomRequests.first;
+    expect(name, '测试牌局');
+    expect(password, '');
+    expect(allowSpectators, isTrue);
+    expect(minimumPoints, 100);
+    expect(requestId, matches(RegExp(r'^[0-9a-f-]{36}$')));
+    expect(api.joinedExpectedVersion, 1);
+    expect(find.text('测试牌局 · 房间聊天'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   for (final width in [599.0, 600.0, 601.0]) {
@@ -487,20 +548,18 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, '创建房间'));
     await tester.pumpAndSettle();
-    final roomNameField = find.byWidgetPredicate(
-      (widget) => widget is TextField && widget.decoration?.labelText == '房间名称',
-    );
-    final minimumPointsField = find.byWidgetPredicate(
-      (widget) =>
-          widget is TextField && widget.decoration?.labelText == '最低准入积分',
+    final roomNameField = find.byKey(const ValueKey('create-room-name'));
+    final minimumPointsField = find.byKey(
+      const ValueKey('create-room-minimum-points'),
     );
     await tester.enterText(roomNameField, '测试牌局');
     await tester.enterText(minimumPointsField, '101');
-    await tester.tap(
-      find.descendant(
-        of: find.byType(AlertDialog),
-        matching: find.widgetWithText(FilledButton, '创建'),
-      ),
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<FilledButton>(find.widgetWithText(FilledButton, '创建'))
+          .onPressed,
+      isNull,
     );
     await tester.pumpAndSettle();
 
@@ -839,6 +898,9 @@ class _FakeApiClient implements ApiClient {
   final chatRequestIds = <String>[];
   final sentMessages = <ChatMessage>[];
   final createdRoomMinimumPoints = <int>[];
+  final createdRoomRequests = <(String, String, bool, int, String)>[];
+  bool failNextRoomCreation = false;
+  int? joinedExpectedVersion;
   final leftRoomIds = <String>[];
   bool failNextChatSend = false;
 
@@ -900,6 +962,17 @@ class _FakeApiClient implements ApiClient {
     String requestId = '',
   }) async {
     createdRoomMinimumPoints.add(minimumPoints);
+    createdRoomRequests.add((
+      name,
+      password,
+      allowSpectators,
+      minimumPoints,
+      requestId,
+    ));
+    if (failNextRoomCreation) {
+      failNextRoomCreation = false;
+      throw GrpcError.unavailable('offline');
+    }
     final room = LobbyRoom(
       id: 'created-friend-room',
       hallId: hallId,
@@ -924,6 +997,7 @@ class _FakeApiClient implements ApiClient {
     int expectedVersion = 0,
   }) async {
     joinedRoomId = roomId;
+    joinedExpectedVersion = expectedVersion;
     return roomsByHall.values
         .expand((rooms) => rooms)
         .firstWhere((room) => room.id == roomId);
