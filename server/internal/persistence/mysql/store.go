@@ -768,7 +768,8 @@ func (s *Store) SendPrivateMessage(
 	}
 
 	result, err := tx.ExecContext(ctx, `INSERT INTO chat_messages
-			(room_id, sender_id, recipient_id, request_id, body) VALUES (NULL, ?, ?, ?, ?)`,
+			(room_id, sender_id, recipient_id, request_id, body, expires_at)
+			VALUES (NULL, ?, ?, ?, ?, DATE_ADD(UTC_TIMESTAMP(6), INTERVAL 30 DAY))`,
 		senderID, recipientID, requestID, body)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
@@ -840,8 +841,13 @@ func (s *Store) ListPrivateMessages(
 	rows, err := s.db.QueryContext(ctx, `SELECT CAST(id AS CHAR), sender_id, recipient_id, body, created_at
 			FROM chat_messages
 			WHERE room_id IS NULL AND
+				expires_at > UTC_TIMESTAMP(6) AND
 				((sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?))
-			ORDER BY id LIMIT ? OFFSET ?`, userID, peerID, peerID, userID, limit, offset)
+				AND NOT EXISTS (
+					SELECT 1 FROM chat_message_hides hidden
+					WHERE hidden.message_id = chat_messages.id AND hidden.user_id = ?
+				)
+			ORDER BY id LIMIT ? OFFSET ?`, userID, peerID, peerID, userID, userID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list private messages: %w", err)
 	}
@@ -858,6 +864,79 @@ func (s *Store) ListPrivateMessages(
 		return nil, fmt.Errorf("read private messages: %w", err)
 	}
 	return messages, nil
+}
+
+func (s *Store) HidePrivateMessage(ctx context.Context, userID, messageID string) error {
+	result, err := s.db.ExecContext(ctx, `INSERT IGNORE INTO chat_message_hides (message_id, user_id)
+		SELECT id, ? FROM chat_messages
+		WHERE id = ? AND room_id IS NULL AND (sender_id = ? OR recipient_id = ?)`,
+		userID, messageID, userID, userID)
+	if err != nil {
+		return fmt.Errorf("hide private message: %w", err)
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return fmt.Errorf("check private message visibility: %w", err)
+	} else if affected == 0 {
+		var exists bool
+		if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(
+			SELECT 1 FROM chat_messages WHERE id = ? AND room_id IS NULL
+			AND (sender_id = ? OR recipient_id = ?))`, messageID, userID, userID).Scan(&exists); err != nil {
+			return fmt.Errorf("authorize private message hiding: %w", err)
+		} else if !exists {
+			return chat.ErrMessageNotFound
+		}
+	}
+	return nil
+}
+
+func (s *Store) ReportPrivateMessage(ctx context.Context, userID, messageID, reason string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin private message report: %w", err)
+	}
+	defer tx.Rollback()
+
+	var authorizedMessageID string
+	if err := tx.QueryRowContext(ctx, `SELECT CAST(id AS CHAR) FROM chat_messages
+		WHERE id = ? AND room_id IS NULL AND recipient_id = ? FOR UPDATE`,
+		messageID, userID).Scan(&authorizedMessageID); errors.Is(err, sql.ErrNoRows) {
+		return chat.ErrMessageNotFound
+	} else if err != nil {
+		return fmt.Errorf("authorize private message report: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE chat_messages
+		SET reported_at = COALESCE(reported_at, UTC_TIMESTAMP(6)) WHERE id = ?`, messageID); err != nil {
+		return fmt.Errorf("retain reported private message: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO chat_message_reports (message_id, reporter_id, reason)
+		VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE reason = VALUES(reason)`,
+		messageID, userID, reason); err != nil {
+		return fmt.Errorf("store private message report: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit private message report: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) PurgeExpiredChatMessages(ctx context.Context, limit uint32) (int64, error) {
+	if limit == 0 || limit > 10000 {
+		return 0, chat.ErrInvalidInput
+	}
+	result, err := s.db.ExecContext(ctx, `DELETE FROM chat_messages
+		WHERE room_id IS NULL AND expires_at <= UTC_TIMESTAMP(6) AND reported_at IS NULL
+		AND NOT EXISTS (
+			SELECT 1 FROM chat_message_reports reports WHERE reports.message_id = chat_messages.id
+		)
+		ORDER BY expires_at LIMIT ?`, limit)
+	if err != nil {
+		return 0, fmt.Errorf("purge expired private messages: %w", err)
+	}
+	deleted, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("count purged private messages: %w", err)
+	}
+	return deleted, nil
 }
 
 func (s *Store) CreateRoomInvite(ctx context.Context, userID, roomID, friendID string) error {

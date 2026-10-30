@@ -18,7 +18,7 @@ func TestVersionedServiceContract(t *testing.T) {
 		"RoomService":   {"GetRoom", "JoinInvitedRoom", "SitDown", "ChangeSeat", "StandUp", "InviteFriend", "SetSpectatorView", "SetHandVisibility", "StartGame"},
 		"GameService":   {"SubmitAction", "GetGameSnapshot", "ListEventsAfter", "RequestReconnect"},
 		"FriendService": {"SearchPlayers", "SendRequest", "RespondRequest", "ListFriends", "RemoveFriend", "SendRoomInvite", "ListFriendRequests", "ListRoomInvitations"},
-		"ChatService":   {"SendRoomMessage", "ListRoomMessages", "SendPrivateMessage", "ListPrivateMessages"},
+		"ChatService":   {"SendRoomMessage", "ListRoomMessages", "SendPrivateMessage", "ListPrivateMessages", "HidePrivateMessage", "ReportPrivateMessage"},
 		"ConfigService": {"GetPublicConfig"},
 	}
 	if got := services.Len(); got != len(want) {

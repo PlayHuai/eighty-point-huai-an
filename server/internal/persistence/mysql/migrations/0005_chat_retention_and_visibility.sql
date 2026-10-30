@@ -6,7 +6,7 @@ UPDATE chat_messages
 SET expires_at = DATE_ADD(created_at, INTERVAL 30 DAY)
 WHERE room_id IS NULL AND expires_at IS NULL;
 
-CREATE TABLE chat_message_hides (
+CREATE TABLE IF NOT EXISTS chat_message_hides (
     message_id BIGINT UNSIGNED NOT NULL,
     user_id VARCHAR(64) NOT NULL,
     hidden_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
@@ -17,7 +17,7 @@ CREATE TABLE chat_message_hides (
         REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
-CREATE TABLE chat_message_reports (
+CREATE TABLE IF NOT EXISTS chat_message_reports (
     message_id BIGINT UNSIGNED NOT NULL,
     reporter_id VARCHAR(64) NOT NULL,
     reason VARCHAR(1000) NOT NULL DEFAULT '',

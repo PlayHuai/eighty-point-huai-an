@@ -45,14 +45,35 @@ func (r *testRepository) ListPrivateMessages(
 	return append([]Message(nil), r.messages[offset:end]...), nil
 }
 
+func (r *testRepository) HidePrivateMessage(context.Context, string, string) error { return nil }
+
+func (r *testRepository) ReportPrivateMessage(context.Context, string, string, string) error {
+	return nil
+}
+
 type testPublisher struct {
-	users    []string
-	messages []Message
+	users     []string
+	messages  []Message
+	roomUsers []string
 }
 
 func (p *testPublisher) PublishPrivateMessage(userID string, message Message) {
 	p.users = append(p.users, userID)
 	p.messages = append(p.messages, message)
+}
+
+func (p *testPublisher) PublishRoomMessage(userIDs []string, message Message) {
+	p.roomUsers = append(p.roomUsers, userIDs...)
+	p.messages = append(p.messages, message)
+}
+
+type testRoomAccess struct {
+	members []string
+	err     error
+}
+
+func (r testRoomAccess) RoomMemberIDs(context.Context, string, string) ([]string, error) {
+	return r.members, r.err
 }
 
 func TestSendPrivateMessageValidatesAndPublishesForBothParticipants(t *testing.T) {
@@ -149,5 +170,39 @@ func TestListPrivateMessagesPaginates(t *testing.T) {
 	}
 	if _, err := service.ListPrivateMessages(context.Background(), "user", "peer", "not-a-number", 2); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("invalid page token error = %v", err)
+	}
+}
+
+func TestRoomMessagesOnlyPublishToCurrentRoomMembers(t *testing.T) {
+	publisher := &testPublisher{}
+	service, err := NewServiceWithRoomAccess(&testRepository{}, publisher, testRoomAccess{
+		members: []string{"sender", "member"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, err := service.SendRoomMessage(context.Background(), "sender", "room", "request", " hello ")
+	if err != nil {
+		t.Fatalf("SendRoomMessage() error = %v", err)
+	}
+	if message.Body != "hello" || message.RoomID != "room" ||
+		!reflect.DeepEqual(publisher.roomUsers, []string{"sender", "member"}) {
+		t.Fatalf("message = %+v, recipients = %v", message, publisher.roomUsers)
+	}
+}
+
+func TestRoomMessageRequiresCurrentMembership(t *testing.T) {
+	publisher := &testPublisher{}
+	service, err := NewServiceWithRoomAccess(&testRepository{}, publisher, testRoomAccess{
+		err: ErrNotRoomMember,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.SendRoomMessage(context.Background(), "sender", "room", "request", "hello"); !errors.Is(err, ErrNotRoomMember) {
+		t.Fatalf("SendRoomMessage() error = %v, want ErrNotRoomMember", err)
+	}
+	if len(publisher.messages) != 0 {
+		t.Fatalf("unauthorized message was published: %+v", publisher.messages)
 	}
 }

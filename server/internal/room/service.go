@@ -1,6 +1,7 @@
 package room
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
@@ -720,6 +721,18 @@ func (m *Manager) GetRoom(roomID, userID string) (Details, error) {
 		return Details{}, ErrNotMember
 	}
 	return snapshotLocked(state), nil
+}
+
+func (m *Manager) RoomMemberIDs(_ context.Context, roomID, userID string) ([]string, error) {
+	details, err := m.GetRoom(roomID, userID)
+	if err != nil {
+		return nil, err
+	}
+	memberIDs := make([]string, 0, len(details.Members))
+	for _, member := range details.Members {
+		memberIDs = append(memberIDs, member.UserID)
+	}
+	return memberIDs, nil
 }
 
 func (m *Manager) CanInvite(roomID, userID string) bool {

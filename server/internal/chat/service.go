@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -13,6 +14,7 @@ var (
 	ErrNotFriends      = errors.New("private chat requires an accepted friendship")
 	ErrRequestConflict = errors.New("request ID was reused with a different message")
 	ErrMessageNotFound = errors.New("chat message not found")
+	ErrNotRoomMember   = errors.New("user is not a room member")
 )
 
 const (
@@ -30,6 +32,7 @@ type Page struct {
 type Service struct {
 	repository Repository
 	publisher  Publisher
+	rooms      RoomAccess
 }
 
 func NewService(repository Repository, publisher Publisher) (*Service, error) {
@@ -37,6 +40,13 @@ func NewService(repository Repository, publisher Publisher) (*Service, error) {
 		return nil, errors.New("chat repository is required")
 	}
 	return &Service{repository: repository, publisher: publisher}, nil
+}
+
+func NewServiceWithRoomAccess(repository Repository, publisher Publisher, rooms RoomAccess) (*Service, error) {
+	if repository == nil || rooms == nil {
+		return nil, errors.New("chat repository and room access are required")
+	}
+	return &Service{repository: repository, publisher: publisher, rooms: rooms}, nil
 }
 
 func (s *Service) SendPrivateMessage(
@@ -84,6 +94,54 @@ func (s *Service) ListPrivateMessages(
 	return Page{Messages: messages, NextPageToken: next}, nil
 }
 
+func (s *Service) HidePrivateMessage(ctx context.Context, userID, messageID string) error {
+	if !validID(userID) || !validMessageID(messageID) {
+		return ErrInvalidInput
+	}
+	return s.repository.HidePrivateMessage(ctx, userID, messageID)
+}
+
+func (s *Service) ReportPrivateMessage(ctx context.Context, userID, messageID, reason string) error {
+	reason = strings.TrimSpace(reason)
+	if !validID(userID) || !validMessageID(messageID) || !utf8.ValidString(reason) ||
+		utf8.RuneCountInString(reason) > 1000 {
+		return ErrInvalidInput
+	}
+	return s.repository.ReportPrivateMessage(ctx, userID, messageID, reason)
+}
+
+func (s *Service) SendRoomMessage(
+	ctx context.Context,
+	userID, roomID, requestID, body string,
+) (Message, error) {
+	if s.rooms == nil || s.publisher == nil {
+		return Message{}, ErrInvalidInput
+	}
+	body = strings.TrimSpace(body)
+	if !validID(userID) || !validID(roomID) || !validRequestID(requestID) ||
+		body == "" || !utf8.ValidString(body) || utf8.RuneCountInString(body) > maxMessageRunes {
+		return Message{}, ErrInvalidInput
+	}
+	members, err := s.rooms.RoomMemberIDs(ctx, roomID, userID)
+	if err != nil {
+		return Message{}, err
+	}
+	message := Message{
+		ID: requestID, RoomID: roomID, SenderID: userID, Body: body,
+		CreatedAt: time.Now().UTC(),
+	}
+	s.publisher.PublishRoomMessage(members, message)
+	return message, nil
+}
+
+func (s *Service) ListRoomMessages(ctx context.Context, userID, roomID string) error {
+	if s.rooms == nil || !validID(userID) || !validID(roomID) {
+		return ErrInvalidInput
+	}
+	_, err := s.rooms.RoomMemberIDs(ctx, roomID, userID)
+	return err
+}
+
 func pageWindow(token string, requestedSize uint32) (uint32, uint32, error) {
 	var offset uint64
 	if token != "" {
@@ -101,6 +159,14 @@ func pageWindow(token string, requestedSize uint32) (uint32, uint32, error) {
 		return 0, 0, ErrInvalidInput
 	}
 	return uint32(offset), limit, nil
+}
+
+func validMessageID(value string) bool {
+	if value == "" || len(value) > 20 {
+		return false
+	}
+	parsed, err := strconv.ParseUint(value, 10, 64)
+	return err == nil && parsed != 0 && strconv.FormatUint(parsed, 10) == value
 }
 
 func validID(value string) bool {

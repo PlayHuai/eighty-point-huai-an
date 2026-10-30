@@ -41,9 +41,9 @@ func TestHubPublishesPrivateNotificationOnlyToParticipants(t *testing.T) {
 	} {
 		select {
 		case event := <-test.subscription.Events():
-			if event.Type != "PRIVATE_MESSAGE_CREATED" || event.Sequence != 42 ||
+			if event.Type != "PRIVATE_MESSAGE_CREATED" || event.Sequence == 0 ||
 				event.MessageID != message.ID || event.PeerUserID != test.peerID ||
-				event.SenderUserID != message.SenderID {
+				event.SenderUserID != message.SenderID || event.Body != message.Body {
 				t.Fatalf("unexpected private event: %+v", event)
 			}
 		case <-time.After(time.Second):
@@ -54,6 +54,57 @@ func TestHubPublishesPrivateNotificationOnlyToParticipants(t *testing.T) {
 	case event := <-unrelated.Events():
 		t.Fatalf("unrelated user received private event: %+v", event)
 	default:
+	}
+}
+
+func TestHubPublishesRoomMessagesOnlyToProvidedMembers(t *testing.T) {
+	hub := NewHub()
+	member, _ := hub.Subscribe("member")
+	defer member.Close()
+	spectator, _ := hub.Subscribe("spectator")
+	defer spectator.Close()
+	outside, _ := hub.Subscribe("outside")
+	defer outside.Close()
+
+	hub.PublishRoomMessage([]string{"member", "spectator", "member"}, chat.Message{
+		ID: "request-1", RoomID: "room-1", SenderID: "member",
+		Body: "hello room", CreatedAt: time.Unix(1, 0).UTC(),
+	})
+	for _, subscription := range []*Subscription{member, spectator} {
+		select {
+		case event := <-subscription.Events():
+			if event.Type != "ROOM_MESSAGE_CREATED" || event.RoomID != "room-1" ||
+				event.MessageID != "request-1" || event.Body != "hello room" {
+				t.Fatalf("unexpected room event: %+v", event)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("room member did not receive message")
+		}
+	}
+	select {
+	case event := <-outside.Events():
+		t.Fatalf("non-member received room event: %+v", event)
+	default:
+	}
+}
+
+func TestHubBroadcastsLobbyUpdatesToConnectedUsers(t *testing.T) {
+	hub := NewHub()
+	first, _ := hub.Subscribe("first")
+	defer first.Close()
+	second, _ := hub.Subscribe("second")
+	defer second.Close()
+	hub.PublishLobbyUpdate("room-1", 3, []byte(`{"status":"WAITING"}`))
+	for _, subscription := range []*Subscription{first, second} {
+		select {
+		case event := <-subscription.Events():
+			if event.Type != "LOBBY_STATE_CHANGED" || event.EntityID != "room-1" ||
+				event.Version != 3 || string(event.Payload) != `{"status":"WAITING"}` {
+				t.Fatalf("unexpected lobby event: %+v", event)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("connected user did not receive lobby update")
+		}
 	}
 }
 

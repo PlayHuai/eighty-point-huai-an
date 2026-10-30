@@ -1,9 +1,11 @@
 package websocket
 
 import (
+	"encoding/json"
 	"errors"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/chat"
@@ -12,12 +14,17 @@ import (
 const subscriberBufferSize = 32
 
 type Event struct {
-	Type         string    `json:"type"`
-	Sequence     uint64    `json:"seq"`
-	MessageID    string    `json:"message_id"`
-	SenderUserID string    `json:"sender_user_id"`
-	PeerUserID   string    `json:"peer_user_id"`
-	CreatedAt    time.Time `json:"created_at"`
+	Type         string          `json:"type"`
+	Sequence     uint64          `json:"seq"`
+	MessageID    string          `json:"message_id"`
+	SenderUserID string          `json:"sender_user_id"`
+	PeerUserID   string          `json:"peer_user_id"`
+	RoomID       string          `json:"room_id,omitempty"`
+	Body         string          `json:"body,omitempty"`
+	CreatedAt    time.Time       `json:"created_at"`
+	EntityID     string          `json:"entity_id,omitempty"`
+	Version      uint64          `json:"version,omitempty"`
+	Payload      json.RawMessage `json:"payload,omitempty"`
 }
 
 type Subscription struct {
@@ -30,6 +37,7 @@ type Subscription struct {
 type Hub struct {
 	mu          sync.Mutex
 	subscribers map[string]map[*Subscription]struct{}
+	sequence    atomic.Uint64
 }
 
 func NewHub() *Hub {
@@ -78,17 +86,65 @@ func (h *Hub) PublishPrivateMessage(userID string, message chat.Message) {
 	default:
 		return
 	}
-	sequence, _ := strconv.ParseUint(message.ID, 10, 64)
 	event := Event{
-		Type: "PRIVATE_MESSAGE_CREATED", Sequence: sequence, MessageID: message.ID,
-		SenderUserID: message.SenderID, PeerUserID: peerID, CreatedAt: message.CreatedAt,
+		Type: "PRIVATE_MESSAGE_CREATED", MessageID: message.ID,
+		SenderUserID: message.SenderID, PeerUserID: peerID, Body: message.Body,
+		CreatedAt: message.CreatedAt,
+	}
+	h.publishUsers([]string{userID}, event)
+}
+
+func (h *Hub) PublishRoomMessage(userIDs []string, message chat.Message) {
+	event := Event{
+		Type: "ROOM_MESSAGE_CREATED", MessageID: message.ID, SenderUserID: message.SenderID,
+		RoomID: message.RoomID, Body: message.Body,
+		CreatedAt: message.CreatedAt,
+	}
+	h.publishUsers(userIDs, event)
+}
+
+func (h *Hub) PublishLobbyUpdate(entityID string, version uint64, payload json.RawMessage) {
+	h.mu.Lock()
+	userIDs := make([]string, 0, len(h.subscribers))
+	for userID := range h.subscribers {
+		userIDs = append(userIDs, userID)
+	}
+	h.mu.Unlock()
+	h.publishUsers(userIDs, Event{
+		Type: "LOBBY_STATE_CHANGED", EntityID: entityID, Version: version, Payload: payload,
+	})
+}
+
+func (h *Hub) PublishRoomUpdate(userIDs []string, roomID string, version uint64, payload json.RawMessage) {
+	h.publishUsers(userIDs, Event{
+		Type: "ROOM_STATE_CHANGED", RoomID: roomID, Version: version, Payload: payload,
+	})
+}
+
+func (h *Hub) PublishUserUpdate(userIDs []string, userID string, payload json.RawMessage) {
+	h.publishUsers(userIDs, Event{
+		Type: "FRIEND_STATE_CHANGED", EntityID: userID, Payload: payload,
+	})
+}
+
+func (h *Hub) publishUsers(userIDs []string, event Event) {
+	event.Sequence = h.sequence.Add(1)
+	if event.Type == "ROOM_MESSAGE_CREATED" && event.MessageID == "" {
+		event.MessageID = strconv.FormatUint(event.Sequence, 10)
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	for subscription := range h.subscribers[userID] {
-		select {
-		case subscription.events <- event:
-		default:
+	seen := make(map[string]struct{}, len(userIDs))
+	for _, userID := range userIDs {
+		if _, ok := seen[userID]; ok {
+			continue
+		}
+		seen[userID] = struct{}{}
+		for subscription := range h.subscribers[userID] {
+			select {
+			case subscription.events <- event:
+			default:
+			}
 		}
 	}
 }

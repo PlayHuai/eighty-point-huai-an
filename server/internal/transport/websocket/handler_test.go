@@ -54,8 +54,8 @@ func TestHandlerAuthenticatesAndStreamsPrivateNotifications(t *testing.T) {
 	if err := xwebsocket.JSON.Receive(connection, &event); err != nil {
 		t.Fatalf("read event: %v", err)
 	}
-	if event.Type != "PRIVATE_MESSAGE_CREATED" || event.Sequence != 17 ||
-		event.SenderUserID != "sender" || event.PeerUserID != "sender" {
+	if event.Type != "PRIVATE_MESSAGE_CREATED" || event.Sequence == 0 ||
+		event.SenderUserID != "sender" || event.PeerUserID != "sender" || event.Body != "private body" {
 		t.Fatalf("unexpected event: %+v", event)
 	}
 }
