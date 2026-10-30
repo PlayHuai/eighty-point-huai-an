@@ -97,7 +97,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
             expectedVersion: room.version,
           );
       if (!mounted) return;
-      _openRoom(joined);
+      await _openRoom(joined);
     } catch (error) {
       _showError(error);
     } finally {
@@ -131,7 +131,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
           ModalRoute.of(dialogContext)?.isCurrent == true) {
         Navigator.of(dialogContext).pop();
       }
-      _openRoom(room);
+      await _openRoom(room);
     } catch (error) {
       _showError(error);
     } finally {
@@ -157,7 +157,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
           );
       _invitationRequestIds.remove(invitation.roomId);
       if (!mounted) return;
-      _openRoom(room);
+      await _openRoom(room);
     } catch (error) {
       _showError(error);
     } finally {
@@ -165,12 +165,17 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     }
   }
 
-  void _openRoom(LobbyRoom room) {
-    Navigator.of(context).push(
+  Future<void> _openRoom(LobbyRoom room) async {
+    await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => RoomChatScreen(auth: widget.auth, room: room),
       ),
     );
+    if (!mounted) return;
+    ref.invalidate(lobbyRoomsProvider(room.hallId));
+    if (room.hallId == friendRoomHallId) {
+      ref.invalidate(roomInvitationsProvider);
+    }
   }
 
   Future<void> _createRoom(
@@ -233,7 +238,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       if (hallId == friendRoomHallId) {
         await _showFriendInviteDialog(room.id);
       }
-      if (mounted) _openRoom(joinedRoom);
+      if (mounted) await _openRoom(joinedRoom);
     } catch (error) {
       _showError(error);
     } finally {
@@ -243,15 +248,28 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
 
   void _showError(Object error) {
     if (!mounted) return;
-    final message = switch (error) {
-      GrpcError(code: StatusCode.failedPrecondition) => '当前阶段暂不可执行此操作。',
-      GrpcError(code: StatusCode.unauthenticated) => '登录状态已失效，请重新登录。',
-      GrpcError(code: StatusCode.permissionDenied) => '没有执行此操作的权限。',
-      _ => '操作失败，请检查网络后重试。',
-    };
+    if (error is GrpcError &&
+        (error.code == StatusCode.aborted ||
+            error.code == StatusCode.notFound ||
+            error.code == StatusCode.failedPrecondition)) {
+      ref.invalidate(lobbyRoomsProvider);
+    }
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+        .showSnackBar(SnackBar(content: Text(_errorMessage(error))));
   }
+
+  String _errorMessage(Object error, {LobbyHall? hall}) => switch (error) {
+    GrpcError(code: StatusCode.permissionDenied) when hall != null =>
+      '积分不足，进入${hall.name}至少需要 ${hall.minimumPoints} 分。',
+    GrpcError(code: StatusCode.aborted) => '房间状态已变化，请根据刷新后的列表重新加入。',
+    GrpcError(code: StatusCode.notFound) => '房间不存在或已解散，请选择其他房间。',
+    GrpcError(code: StatusCode.failedPrecondition) => '当前阶段暂不可执行此操作。',
+    GrpcError(code: StatusCode.unauthenticated) => '登录状态已失效，请重新登录。',
+    GrpcError(code: StatusCode.permissionDenied) => '没有执行此操作的权限。',
+    GrpcError(code: StatusCode.unavailable) ||
+    GrpcError(code: StatusCode.deadlineExceeded) => '连接服务失败，请检查网络后重试。',
+    _ => '操作失败，请稍后重试。',
+  };
 
   Future<void> _showJoinByCodeDialog({String initialCode = ''}) async {
     final codeController = TextEditingController(text: initialCode);
@@ -586,7 +604,8 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
               .watch(lobbyHallsProvider)
               .when(
                 loading: () => const Center(child: CircularProgressIndicator()),
-                error: (_, _) => _loadError(
+                error: (error, _) => _loadError(
+                  error: error,
                   onRetry: () => ref.invalidate(lobbyHallsProvider),
                 ),
                 data: (halls) {
@@ -665,7 +684,9 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                                     loading: () => const Center(
                                       child: CircularProgressIndicator(),
                                     ),
-                                    error: (_, _) => _loadError(
+                                    error: (error, _) => _loadError(
+                                      error: error,
+                                      hall: selectedHall,
                                       onRetry: () => ref.invalidate(
                                         lobbyRoomsProvider(selectedHall.id),
                                       ),
@@ -690,8 +711,10 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       .watch(roomInvitationsProvider)
       .when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (_, _) =>
-            _loadError(onRetry: () => ref.invalidate(roomInvitationsProvider)),
+        error: (error, _) => _loadError(
+          error: error,
+          onRetry: () => ref.invalidate(roomInvitationsProvider),
+        ),
         data: (invitations) {
           if (invitations.isEmpty) {
             return const Center(child: Text('好友房仅接受好友邀请，不公开展示房间列表。'));
@@ -825,11 +848,15 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     );
   }
 
-  Widget _loadError({required VoidCallback onRetry}) => Center(
+  Widget _loadError({
+    required Object error,
+    required VoidCallback onRetry,
+    LobbyHall? hall,
+  }) => Center(
     child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Text('加载失败，请检查网络后重试。'),
+        Text(_errorMessage(error, hall: hall)),
         const SizedBox(height: DarkTokens.spacingS2),
         TextButton(onPressed: onRetry, child: const Text('重试')),
       ],

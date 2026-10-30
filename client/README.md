@@ -18,6 +18,13 @@ The application disables Riverpod 3's automatic provider retries to preserve
 the explicit error/retry UI, and `ClientApp` remains the sole owner of its
 shared authentication controller's disposal.
 
+Hall and room admission remains server-authoritative. A denied hall listing
+shows the selected hall's minimum points instead of a network error. Returning
+from a room refreshes its hall's room list (and invitations for friend rooms).
+The server closes a waiting room when its owner leaves; the client does not
+keep that room as a joinable cached entry. A rejected stale join refreshes the
+list and distinguishes missing rooms and version conflicts from network errors.
+
 ## Platform runners
 
 The checked-in `windows/`, `web/`, and `ios/` projects are generated with
