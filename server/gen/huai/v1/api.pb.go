@@ -124,6 +124,55 @@ func (RoomMemberRole) EnumDescriptor() ([]byte, []int) {
 	return file_huai_v1_api_proto_rawDescGZIP(), []int{1}
 }
 
+type FeedbackKind int32
+
+const (
+	FeedbackKind_FEEDBACK_KIND_UNSPECIFIED FeedbackKind = 0
+	FeedbackKind_FEEDBACK_KIND_BUG         FeedbackKind = 1
+	FeedbackKind_FEEDBACK_KIND_SUGGESTION  FeedbackKind = 2
+)
+
+// Enum value maps for FeedbackKind.
+var (
+	FeedbackKind_name = map[int32]string{
+		0: "FEEDBACK_KIND_UNSPECIFIED",
+		1: "FEEDBACK_KIND_BUG",
+		2: "FEEDBACK_KIND_SUGGESTION",
+	}
+	FeedbackKind_value = map[string]int32{
+		"FEEDBACK_KIND_UNSPECIFIED": 0,
+		"FEEDBACK_KIND_BUG":         1,
+		"FEEDBACK_KIND_SUGGESTION":  2,
+	}
+)
+
+func (x FeedbackKind) Enum() *FeedbackKind {
+	p := new(FeedbackKind)
+	*p = x
+	return p
+}
+
+func (x FeedbackKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (FeedbackKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_huai_v1_api_proto_enumTypes[2].Descriptor()
+}
+
+func (FeedbackKind) Type() protoreflect.EnumType {
+	return &file_huai_v1_api_proto_enumTypes[2]
+}
+
+func (x FeedbackKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use FeedbackKind.Descriptor instead.
+func (FeedbackKind) EnumDescriptor() ([]byte, []int) {
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{2}
+}
+
 type Empty struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -1658,6 +1707,10 @@ type RoomMember struct {
 	Role          RoomMemberRole         `protobuf:"varint,2,opt,name=role,proto3,enum=huai.v1.RoomMemberRole" json:"role,omitempty"`
 	SeatNo        uint32                 `protobuf:"varint,3,opt,name=seat_no,json=seatNo,proto3" json:"seat_no,omitempty"`
 	Profile       *UserProfile           `protobuf:"bytes,4,opt,name=profile,proto3" json:"profile,omitempty"`
+	ShowHand      bool                   `protobuf:"varint,5,opt,name=show_hand,json=showHand,proto3" json:"show_hand,omitempty"`
+	ViewSeat      uint32                 `protobuf:"varint,6,opt,name=view_seat,json=viewSeat,proto3" json:"view_seat,omitempty"`
+	Team          uint32                 `protobuf:"varint,7,opt,name=team,proto3" json:"team,omitempty"`
+	Rank          string                 `protobuf:"bytes,8,opt,name=rank,proto3" json:"rank,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1720,11 +1773,40 @@ func (x *RoomMember) GetProfile() *UserProfile {
 	return nil
 }
 
+func (x *RoomMember) GetShowHand() bool {
+	if x != nil {
+		return x.ShowHand
+	}
+	return false
+}
+
+func (x *RoomMember) GetViewSeat() uint32 {
+	if x != nil {
+		return x.ViewSeat
+	}
+	return 0
+}
+
+func (x *RoomMember) GetTeam() uint32 {
+	if x != nil {
+		return x.Team
+	}
+	return 0
+}
+
+func (x *RoomMember) GetRank() string {
+	if x != nil {
+		return x.Rank
+	}
+	return ""
+}
+
 type RoomDetails struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Room          *RoomSummary           `protobuf:"bytes,1,opt,name=room,proto3" json:"room,omitempty"`
 	Members       []*RoomMember          `protobuf:"bytes,2,rep,name=members,proto3" json:"members,omitempty"`
 	Version       uint64                 `protobuf:"varint,3,opt,name=version,proto3" json:"version,omitempty"`
+	GameSessionId string                 `protobuf:"bytes,4,opt,name=game_session_id,json=gameSessionId,proto3" json:"game_session_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1778,6 +1860,13 @@ func (x *RoomDetails) GetVersion() uint64 {
 		return x.Version
 	}
 	return 0
+}
+
+func (x *RoomDetails) GetGameSessionId() string {
+	if x != nil {
+		return x.GameSessionId
+	}
+	return ""
 }
 
 type JoinInvitedRoomRequest struct {
@@ -1966,6 +2055,7 @@ type SpectatorViewRequest struct {
 	ShowHand        bool                   `protobuf:"varint,2,opt,name=show_hand,json=showHand,proto3" json:"show_hand,omitempty"`
 	ExpectedVersion uint64                 `protobuf:"varint,3,opt,name=expected_version,json=expectedVersion,proto3" json:"expected_version,omitempty"`
 	RequestId       string                 `protobuf:"bytes,4,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	ViewSeat        uint32                 `protobuf:"varint,5,opt,name=view_seat,json=viewSeat,proto3" json:"view_seat,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -2026,6 +2116,13 @@ func (x *SpectatorViewRequest) GetRequestId() string {
 		return x.RequestId
 	}
 	return ""
+}
+
+func (x *SpectatorViewRequest) GetViewSeat() uint32 {
+	if x != nil {
+		return x.ViewSeat
+	}
+	return 0
 }
 
 type DeclareTrumpAction struct {
@@ -2212,6 +2309,78 @@ func (x *ConfirmAutoplayAction) GetAccept() bool {
 	return false
 }
 
+type PassAction struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PassAction) Reset() {
+	*x = PassAction{}
+	mi := &file_huai_v1_api_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PassAction) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PassAction) ProtoMessage() {}
+
+func (x *PassAction) ProtoReflect() protoreflect.Message {
+	mi := &file_huai_v1_api_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PassAction.ProtoReflect.Descriptor instead.
+func (*PassAction) Descriptor() ([]byte, []int) {
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{36}
+}
+
+type ContinueAction struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ContinueAction) Reset() {
+	*x = ContinueAction{}
+	mi := &file_huai_v1_api_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ContinueAction) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ContinueAction) ProtoMessage() {}
+
+func (x *ContinueAction) ProtoReflect() protoreflect.Message {
+	mi := &file_huai_v1_api_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ContinueAction.ProtoReflect.Descriptor instead.
+func (*ContinueAction) Descriptor() ([]byte, []int) {
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{37}
+}
+
 type GameAction struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Payload:
@@ -2222,6 +2391,8 @@ type GameAction struct {
 	//	*GameAction_BuryCards
 	//	*GameAction_PlayCards
 	//	*GameAction_ConfirmAutoplay
+	//	*GameAction_Pass
+	//	*GameAction_ContinueAction
 	Payload       isGameAction_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2229,7 +2400,7 @@ type GameAction struct {
 
 func (x *GameAction) Reset() {
 	*x = GameAction{}
-	mi := &file_huai_v1_api_proto_msgTypes[36]
+	mi := &file_huai_v1_api_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2241,7 +2412,7 @@ func (x *GameAction) String() string {
 func (*GameAction) ProtoMessage() {}
 
 func (x *GameAction) ProtoReflect() protoreflect.Message {
-	mi := &file_huai_v1_api_proto_msgTypes[36]
+	mi := &file_huai_v1_api_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2254,7 +2425,7 @@ func (x *GameAction) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GameAction.ProtoReflect.Descriptor instead.
 func (*GameAction) Descriptor() ([]byte, []int) {
-	return file_huai_v1_api_proto_rawDescGZIP(), []int{36}
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *GameAction) GetPayload() isGameAction_Payload {
@@ -2318,6 +2489,24 @@ func (x *GameAction) GetConfirmAutoplay() *ConfirmAutoplayAction {
 	return nil
 }
 
+func (x *GameAction) GetPass() *PassAction {
+	if x != nil {
+		if x, ok := x.Payload.(*GameAction_Pass); ok {
+			return x.Pass
+		}
+	}
+	return nil
+}
+
+func (x *GameAction) GetContinueAction() *ContinueAction {
+	if x != nil {
+		if x, ok := x.Payload.(*GameAction_ContinueAction); ok {
+			return x.ContinueAction
+		}
+	}
+	return nil
+}
+
 type isGameAction_Payload interface {
 	isGameAction_Payload()
 }
@@ -2346,6 +2535,14 @@ type GameAction_ConfirmAutoplay struct {
 	ConfirmAutoplay *ConfirmAutoplayAction `protobuf:"bytes,6,opt,name=confirm_autoplay,json=confirmAutoplay,proto3,oneof"`
 }
 
+type GameAction_Pass struct {
+	Pass *PassAction `protobuf:"bytes,7,opt,name=pass,proto3,oneof"`
+}
+
+type GameAction_ContinueAction struct {
+	ContinueAction *ContinueAction `protobuf:"bytes,8,opt,name=continue_action,json=continueAction,proto3,oneof"`
+}
+
 func (*GameAction_DeclareTrump) isGameAction_Payload() {}
 
 func (*GameAction_CounterTrump) isGameAction_Payload() {}
@@ -2357,6 +2554,10 @@ func (*GameAction_BuryCards) isGameAction_Payload() {}
 func (*GameAction_PlayCards) isGameAction_Payload() {}
 
 func (*GameAction_ConfirmAutoplay) isGameAction_Payload() {}
+
+func (*GameAction_Pass) isGameAction_Payload() {}
+
+func (*GameAction_ContinueAction) isGameAction_Payload() {}
 
 type SubmitActionRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
@@ -2371,7 +2572,7 @@ type SubmitActionRequest struct {
 
 func (x *SubmitActionRequest) Reset() {
 	*x = SubmitActionRequest{}
-	mi := &file_huai_v1_api_proto_msgTypes[37]
+	mi := &file_huai_v1_api_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2383,7 +2584,7 @@ func (x *SubmitActionRequest) String() string {
 func (*SubmitActionRequest) ProtoMessage() {}
 
 func (x *SubmitActionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_huai_v1_api_proto_msgTypes[37]
+	mi := &file_huai_v1_api_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2396,7 +2597,7 @@ func (x *SubmitActionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitActionRequest.ProtoReflect.Descriptor instead.
 func (*SubmitActionRequest) Descriptor() ([]byte, []int) {
-	return file_huai_v1_api_proto_rawDescGZIP(), []int{37}
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *SubmitActionRequest) GetGameSessionId() string {
@@ -2445,7 +2646,7 @@ type SubmitActionResponse struct {
 
 func (x *SubmitActionResponse) Reset() {
 	*x = SubmitActionResponse{}
-	mi := &file_huai_v1_api_proto_msgTypes[38]
+	mi := &file_huai_v1_api_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2457,7 +2658,7 @@ func (x *SubmitActionResponse) String() string {
 func (*SubmitActionResponse) ProtoMessage() {}
 
 func (x *SubmitActionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_huai_v1_api_proto_msgTypes[38]
+	mi := &file_huai_v1_api_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2470,7 +2671,7 @@ func (x *SubmitActionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitActionResponse.ProtoReflect.Descriptor instead.
 func (*SubmitActionResponse) Descriptor() ([]byte, []int) {
-	return file_huai_v1_api_proto_rawDescGZIP(), []int{38}
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *SubmitActionResponse) GetAccepted() bool {
@@ -2494,6 +2695,58 @@ func (x *SubmitActionResponse) GetStateVersion() uint64 {
 	return 0
 }
 
+type PublicPlay struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SeatNo        uint32                 `protobuf:"varint,1,opt,name=seat_no,json=seatNo,proto3" json:"seat_no,omitempty"`
+	Cards         []string               `protobuf:"bytes,2,rep,name=cards,proto3" json:"cards,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PublicPlay) Reset() {
+	*x = PublicPlay{}
+	mi := &file_huai_v1_api_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PublicPlay) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PublicPlay) ProtoMessage() {}
+
+func (x *PublicPlay) ProtoReflect() protoreflect.Message {
+	mi := &file_huai_v1_api_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PublicPlay.ProtoReflect.Descriptor instead.
+func (*PublicPlay) Descriptor() ([]byte, []int) {
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *PublicPlay) GetSeatNo() uint32 {
+	if x != nil {
+		return x.SeatNo
+	}
+	return 0
+}
+
+func (x *PublicPlay) GetCards() []string {
+	if x != nil {
+		return x.Cards
+	}
+	return nil
+}
+
 type GameSnapshotRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	GameSessionId string                 `protobuf:"bytes,1,opt,name=game_session_id,json=gameSessionId,proto3" json:"game_session_id,omitempty"`
@@ -2503,7 +2756,7 @@ type GameSnapshotRequest struct {
 
 func (x *GameSnapshotRequest) Reset() {
 	*x = GameSnapshotRequest{}
-	mi := &file_huai_v1_api_proto_msgTypes[39]
+	mi := &file_huai_v1_api_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2515,7 +2768,7 @@ func (x *GameSnapshotRequest) String() string {
 func (*GameSnapshotRequest) ProtoMessage() {}
 
 func (x *GameSnapshotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_huai_v1_api_proto_msgTypes[39]
+	mi := &file_huai_v1_api_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2528,7 +2781,7 @@ func (x *GameSnapshotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GameSnapshotRequest.ProtoReflect.Descriptor instead.
 func (*GameSnapshotRequest) Descriptor() ([]byte, []int) {
-	return file_huai_v1_api_proto_rawDescGZIP(), []int{39}
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *GameSnapshotRequest) GetGameSessionId() string {
@@ -2548,13 +2801,31 @@ type GameSnapshot struct {
 	VisibleHand       []string               `protobuf:"bytes,6,rep,name=visible_hand,json=visibleHand,proto3" json:"visible_hand,omitempty"`
 	PublicCards       []string               `protobuf:"bytes,7,rep,name=public_cards,json=publicCards,proto3" json:"public_cards,omitempty"`
 	CapturedPoints    int64                  `protobuf:"varint,8,opt,name=captured_points,json=capturedPoints,proto3" json:"captured_points,omitempty"`
+	RoundNo           uint32                 `protobuf:"varint,9,opt,name=round_no,json=roundNo,proto3" json:"round_no,omitempty"`
+	TeamOneLevel      string                 `protobuf:"bytes,10,opt,name=team_one_level,json=teamOneLevel,proto3" json:"team_one_level,omitempty"`
+	TeamTwoLevel      string                 `protobuf:"bytes,11,opt,name=team_two_level,json=teamTwoLevel,proto3" json:"team_two_level,omitempty"`
+	ScoringTeam       uint32                 `protobuf:"varint,12,opt,name=scoring_team,json=scoringTeam,proto3" json:"scoring_team,omitempty"`
+	ViewSeat          uint32                 `protobuf:"varint,13,opt,name=view_seat,json=viewSeat,proto3" json:"view_seat,omitempty"`
+	ViewerTeam        uint32                 `protobuf:"varint,14,opt,name=viewer_team,json=viewerTeam,proto3" json:"viewer_team,omitempty"`
+	VisibleHandCount  uint32                 `protobuf:"varint,15,opt,name=visible_hand_count,json=visibleHandCount,proto3" json:"visible_hand_count,omitempty"`
+	BottomCards       []string               `protobuf:"bytes,16,rep,name=bottom_cards,json=bottomCards,proto3" json:"bottom_cards,omitempty"`
+	BottomPublic      bool                   `protobuf:"varint,17,opt,name=bottom_public,json=bottomPublic,proto3" json:"bottom_public,omitempty"`
+	BottomOwnerUserId string                 `protobuf:"bytes,18,opt,name=bottom_owner_user_id,json=bottomOwnerUserId,proto3" json:"bottom_owner_user_id,omitempty"`
+	AvailableActions  []string               `protobuf:"bytes,19,rep,name=available_actions,json=availableActions,proto3" json:"available_actions,omitempty"`
+	PublicPlays       []*PublicPlay          `protobuf:"bytes,20,rep,name=public_plays,json=publicPlays,proto3" json:"public_plays,omitempty"`
+	TrumpSuit         string                 `protobuf:"bytes,21,opt,name=trump_suit,json=trumpSuit,proto3" json:"trump_suit,omitempty"`
+	TrumpLevel        uint32                 `protobuf:"varint,22,opt,name=trump_level,json=trumpLevel,proto3" json:"trump_level,omitempty"`
+	State             string                 `protobuf:"bytes,23,opt,name=state,proto3" json:"state,omitempty"`
+	Seq               uint64                 `protobuf:"varint,24,opt,name=seq,proto3" json:"seq,omitempty"`
+	DealerUserId      string                 `protobuf:"bytes,25,opt,name=dealer_user_id,json=dealerUserId,proto3" json:"dealer_user_id,omitempty"`
+	DealerSeat        uint32                 `protobuf:"varint,26,opt,name=dealer_seat,json=dealerSeat,proto3" json:"dealer_seat,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
 
 func (x *GameSnapshot) Reset() {
 	*x = GameSnapshot{}
-	mi := &file_huai_v1_api_proto_msgTypes[40]
+	mi := &file_huai_v1_api_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2566,7 +2837,7 @@ func (x *GameSnapshot) String() string {
 func (*GameSnapshot) ProtoMessage() {}
 
 func (x *GameSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_huai_v1_api_proto_msgTypes[40]
+	mi := &file_huai_v1_api_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2579,7 +2850,7 @@ func (x *GameSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GameSnapshot.ProtoReflect.Descriptor instead.
 func (*GameSnapshot) Descriptor() ([]byte, []int) {
-	return file_huai_v1_api_proto_rawDescGZIP(), []int{40}
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *GameSnapshot) GetGameSessionId() string {
@@ -2638,6 +2909,132 @@ func (x *GameSnapshot) GetCapturedPoints() int64 {
 	return 0
 }
 
+func (x *GameSnapshot) GetRoundNo() uint32 {
+	if x != nil {
+		return x.RoundNo
+	}
+	return 0
+}
+
+func (x *GameSnapshot) GetTeamOneLevel() string {
+	if x != nil {
+		return x.TeamOneLevel
+	}
+	return ""
+}
+
+func (x *GameSnapshot) GetTeamTwoLevel() string {
+	if x != nil {
+		return x.TeamTwoLevel
+	}
+	return ""
+}
+
+func (x *GameSnapshot) GetScoringTeam() uint32 {
+	if x != nil {
+		return x.ScoringTeam
+	}
+	return 0
+}
+
+func (x *GameSnapshot) GetViewSeat() uint32 {
+	if x != nil {
+		return x.ViewSeat
+	}
+	return 0
+}
+
+func (x *GameSnapshot) GetViewerTeam() uint32 {
+	if x != nil {
+		return x.ViewerTeam
+	}
+	return 0
+}
+
+func (x *GameSnapshot) GetVisibleHandCount() uint32 {
+	if x != nil {
+		return x.VisibleHandCount
+	}
+	return 0
+}
+
+func (x *GameSnapshot) GetBottomCards() []string {
+	if x != nil {
+		return x.BottomCards
+	}
+	return nil
+}
+
+func (x *GameSnapshot) GetBottomPublic() bool {
+	if x != nil {
+		return x.BottomPublic
+	}
+	return false
+}
+
+func (x *GameSnapshot) GetBottomOwnerUserId() string {
+	if x != nil {
+		return x.BottomOwnerUserId
+	}
+	return ""
+}
+
+func (x *GameSnapshot) GetAvailableActions() []string {
+	if x != nil {
+		return x.AvailableActions
+	}
+	return nil
+}
+
+func (x *GameSnapshot) GetPublicPlays() []*PublicPlay {
+	if x != nil {
+		return x.PublicPlays
+	}
+	return nil
+}
+
+func (x *GameSnapshot) GetTrumpSuit() string {
+	if x != nil {
+		return x.TrumpSuit
+	}
+	return ""
+}
+
+func (x *GameSnapshot) GetTrumpLevel() uint32 {
+	if x != nil {
+		return x.TrumpLevel
+	}
+	return 0
+}
+
+func (x *GameSnapshot) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *GameSnapshot) GetSeq() uint64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
+}
+
+func (x *GameSnapshot) GetDealerUserId() string {
+	if x != nil {
+		return x.DealerUserId
+	}
+	return ""
+}
+
+func (x *GameSnapshot) GetDealerSeat() uint32 {
+	if x != nil {
+		return x.DealerSeat
+	}
+	return 0
+}
+
 type ListEventsAfterRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	GameSessionId string                 `protobuf:"bytes,1,opt,name=game_session_id,json=gameSessionId,proto3" json:"game_session_id,omitempty"`
@@ -2649,7 +3046,7 @@ type ListEventsAfterRequest struct {
 
 func (x *ListEventsAfterRequest) Reset() {
 	*x = ListEventsAfterRequest{}
-	mi := &file_huai_v1_api_proto_msgTypes[41]
+	mi := &file_huai_v1_api_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2661,7 +3058,7 @@ func (x *ListEventsAfterRequest) String() string {
 func (*ListEventsAfterRequest) ProtoMessage() {}
 
 func (x *ListEventsAfterRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_huai_v1_api_proto_msgTypes[41]
+	mi := &file_huai_v1_api_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2674,7 +3071,7 @@ func (x *ListEventsAfterRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListEventsAfterRequest.ProtoReflect.Descriptor instead.
 func (*ListEventsAfterRequest) Descriptor() ([]byte, []int) {
-	return file_huai_v1_api_proto_rawDescGZIP(), []int{41}
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *ListEventsAfterRequest) GetGameSessionId() string {
@@ -2714,7 +3111,7 @@ type GameEvent struct {
 
 func (x *GameEvent) Reset() {
 	*x = GameEvent{}
-	mi := &file_huai_v1_api_proto_msgTypes[42]
+	mi := &file_huai_v1_api_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2726,7 +3123,7 @@ func (x *GameEvent) String() string {
 func (*GameEvent) ProtoMessage() {}
 
 func (x *GameEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_huai_v1_api_proto_msgTypes[42]
+	mi := &file_huai_v1_api_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2739,7 +3136,7 @@ func (x *GameEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GameEvent.ProtoReflect.Descriptor instead.
 func (*GameEvent) Descriptor() ([]byte, []int) {
-	return file_huai_v1_api_proto_rawDescGZIP(), []int{42}
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *GameEvent) GetEventId() string {
@@ -2808,7 +3205,7 @@ type ListEventsAfterResponse struct {
 
 func (x *ListEventsAfterResponse) Reset() {
 	*x = ListEventsAfterResponse{}
-	mi := &file_huai_v1_api_proto_msgTypes[43]
+	mi := &file_huai_v1_api_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2820,7 +3217,7 @@ func (x *ListEventsAfterResponse) String() string {
 func (*ListEventsAfterResponse) ProtoMessage() {}
 
 func (x *ListEventsAfterResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_huai_v1_api_proto_msgTypes[43]
+	mi := &file_huai_v1_api_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2833,7 +3230,7 @@ func (x *ListEventsAfterResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListEventsAfterResponse.ProtoReflect.Descriptor instead.
 func (*ListEventsAfterResponse) Descriptor() ([]byte, []int) {
-	return file_huai_v1_api_proto_rawDescGZIP(), []int{43}
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *ListEventsAfterResponse) GetEvents() []*GameEvent {
@@ -2860,7 +3257,7 @@ type RequestReconnectRequest struct {
 
 func (x *RequestReconnectRequest) Reset() {
 	*x = RequestReconnectRequest{}
-	mi := &file_huai_v1_api_proto_msgTypes[44]
+	mi := &file_huai_v1_api_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2872,7 +3269,7 @@ func (x *RequestReconnectRequest) String() string {
 func (*RequestReconnectRequest) ProtoMessage() {}
 
 func (x *RequestReconnectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_huai_v1_api_proto_msgTypes[44]
+	mi := &file_huai_v1_api_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2885,7 +3282,7 @@ func (x *RequestReconnectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestReconnectRequest.ProtoReflect.Descriptor instead.
 func (*RequestReconnectRequest) Descriptor() ([]byte, []int) {
-	return file_huai_v1_api_proto_rawDescGZIP(), []int{44}
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *RequestReconnectRequest) GetGameSessionId() string {
@@ -2912,7 +3309,7 @@ type RequestReconnectResponse struct {
 
 func (x *RequestReconnectResponse) Reset() {
 	*x = RequestReconnectResponse{}
-	mi := &file_huai_v1_api_proto_msgTypes[45]
+	mi := &file_huai_v1_api_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2924,7 +3321,7 @@ func (x *RequestReconnectResponse) String() string {
 func (*RequestReconnectResponse) ProtoMessage() {}
 
 func (x *RequestReconnectResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_huai_v1_api_proto_msgTypes[45]
+	mi := &file_huai_v1_api_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2937,7 +3334,7 @@ func (x *RequestReconnectResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestReconnectResponse.ProtoReflect.Descriptor instead.
 func (*RequestReconnectResponse) Descriptor() ([]byte, []int) {
-	return file_huai_v1_api_proto_rawDescGZIP(), []int{45}
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *RequestReconnectResponse) GetSnapshot() *GameSnapshot {
@@ -2964,7 +3361,7 @@ type SearchPlayersRequest struct {
 
 func (x *SearchPlayersRequest) Reset() {
 	*x = SearchPlayersRequest{}
-	mi := &file_huai_v1_api_proto_msgTypes[46]
+	mi := &file_huai_v1_api_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2976,7 +3373,7 @@ func (x *SearchPlayersRequest) String() string {
 func (*SearchPlayersRequest) ProtoMessage() {}
 
 func (x *SearchPlayersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_huai_v1_api_proto_msgTypes[46]
+	mi := &file_huai_v1_api_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2989,7 +3386,7 @@ func (x *SearchPlayersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchPlayersRequest.ProtoReflect.Descriptor instead.
 func (*SearchPlayersRequest) Descriptor() ([]byte, []int) {
-	return file_huai_v1_api_proto_rawDescGZIP(), []int{46}
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *SearchPlayersRequest) GetQuery() string {
@@ -3016,7 +3413,7 @@ type SearchPlayersResponse struct {
 
 func (x *SearchPlayersResponse) Reset() {
 	*x = SearchPlayersResponse{}
-	mi := &file_huai_v1_api_proto_msgTypes[47]
+	mi := &file_huai_v1_api_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3028,7 +3425,7 @@ func (x *SearchPlayersResponse) String() string {
 func (*SearchPlayersResponse) ProtoMessage() {}
 
 func (x *SearchPlayersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_huai_v1_api_proto_msgTypes[47]
+	mi := &file_huai_v1_api_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3041,7 +3438,7 @@ func (x *SearchPlayersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchPlayersResponse.ProtoReflect.Descriptor instead.
 func (*SearchPlayersResponse) Descriptor() ([]byte, []int) {
-	return file_huai_v1_api_proto_rawDescGZIP(), []int{47}
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *SearchPlayersResponse) GetPlayers() []*UserProfile {
@@ -3068,7 +3465,7 @@ type FriendRequest struct {
 
 func (x *FriendRequest) Reset() {
 	*x = FriendRequest{}
-	mi := &file_huai_v1_api_proto_msgTypes[48]
+	mi := &file_huai_v1_api_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3080,7 +3477,7 @@ func (x *FriendRequest) String() string {
 func (*FriendRequest) ProtoMessage() {}
 
 func (x *FriendRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_huai_v1_api_proto_msgTypes[48]
+	mi := &file_huai_v1_api_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3093,7 +3490,7 @@ func (x *FriendRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FriendRequest.ProtoReflect.Descriptor instead.
 func (*FriendRequest) Descriptor() ([]byte, []int) {
-	return file_huai_v1_api_proto_rawDescGZIP(), []int{48}
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *FriendRequest) GetTargetUserId() string {
@@ -3121,7 +3518,7 @@ type RespondFriendRequest struct {
 
 func (x *RespondFriendRequest) Reset() {
 	*x = RespondFriendRequest{}
-	mi := &file_huai_v1_api_proto_msgTypes[49]
+	mi := &file_huai_v1_api_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3133,7 +3530,7 @@ func (x *RespondFriendRequest) String() string {
 func (*RespondFriendRequest) ProtoMessage() {}
 
 func (x *RespondFriendRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_huai_v1_api_proto_msgTypes[49]
+	mi := &file_huai_v1_api_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3146,7 +3543,7 @@ func (x *RespondFriendRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RespondFriendRequest.ProtoReflect.Descriptor instead.
 func (*RespondFriendRequest) Descriptor() ([]byte, []int) {
-	return file_huai_v1_api_proto_rawDescGZIP(), []int{49}
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *RespondFriendRequest) GetRequesterUserId() string {
@@ -3181,7 +3578,7 @@ type Friend struct {
 
 func (x *Friend) Reset() {
 	*x = Friend{}
-	mi := &file_huai_v1_api_proto_msgTypes[50]
+	mi := &file_huai_v1_api_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3193,7 +3590,7 @@ func (x *Friend) String() string {
 func (*Friend) ProtoMessage() {}
 
 func (x *Friend) ProtoReflect() protoreflect.Message {
-	mi := &file_huai_v1_api_proto_msgTypes[50]
+	mi := &file_huai_v1_api_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3206,7 +3603,7 @@ func (x *Friend) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Friend.ProtoReflect.Descriptor instead.
 func (*Friend) Descriptor() ([]byte, []int) {
-	return file_huai_v1_api_proto_rawDescGZIP(), []int{50}
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *Friend) GetProfile() *UserProfile {
@@ -3240,7 +3637,7 @@ type ListFriendsResponse struct {
 
 func (x *ListFriendsResponse) Reset() {
 	*x = ListFriendsResponse{}
-	mi := &file_huai_v1_api_proto_msgTypes[51]
+	mi := &file_huai_v1_api_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3252,7 +3649,7 @@ func (x *ListFriendsResponse) String() string {
 func (*ListFriendsResponse) ProtoMessage() {}
 
 func (x *ListFriendsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_huai_v1_api_proto_msgTypes[51]
+	mi := &file_huai_v1_api_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3265,7 +3662,7 @@ func (x *ListFriendsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFriendsResponse.ProtoReflect.Descriptor instead.
 func (*ListFriendsResponse) Descriptor() ([]byte, []int) {
-	return file_huai_v1_api_proto_rawDescGZIP(), []int{51}
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *ListFriendsResponse) GetFriends() []*Friend {
@@ -3292,7 +3689,7 @@ type PendingFriendRequest struct {
 
 func (x *PendingFriendRequest) Reset() {
 	*x = PendingFriendRequest{}
-	mi := &file_huai_v1_api_proto_msgTypes[52]
+	mi := &file_huai_v1_api_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3304,7 +3701,7 @@ func (x *PendingFriendRequest) String() string {
 func (*PendingFriendRequest) ProtoMessage() {}
 
 func (x *PendingFriendRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_huai_v1_api_proto_msgTypes[52]
+	mi := &file_huai_v1_api_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3317,7 +3714,7 @@ func (x *PendingFriendRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PendingFriendRequest.ProtoReflect.Descriptor instead.
 func (*PendingFriendRequest) Descriptor() ([]byte, []int) {
-	return file_huai_v1_api_proto_rawDescGZIP(), []int{52}
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *PendingFriendRequest) GetRequester() *UserProfile {
@@ -3344,7 +3741,7 @@ type ListFriendRequestsResponse struct {
 
 func (x *ListFriendRequestsResponse) Reset() {
 	*x = ListFriendRequestsResponse{}
-	mi := &file_huai_v1_api_proto_msgTypes[53]
+	mi := &file_huai_v1_api_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3356,7 +3753,7 @@ func (x *ListFriendRequestsResponse) String() string {
 func (*ListFriendRequestsResponse) ProtoMessage() {}
 
 func (x *ListFriendRequestsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_huai_v1_api_proto_msgTypes[53]
+	mi := &file_huai_v1_api_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3369,7 +3766,7 @@ func (x *ListFriendRequestsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFriendRequestsResponse.ProtoReflect.Descriptor instead.
 func (*ListFriendRequestsResponse) Descriptor() ([]byte, []int) {
-	return file_huai_v1_api_proto_rawDescGZIP(), []int{53}
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *ListFriendRequestsResponse) GetRequests() []*PendingFriendRequest {
@@ -3397,7 +3794,7 @@ type SendRoomInviteRequest struct {
 
 func (x *SendRoomInviteRequest) Reset() {
 	*x = SendRoomInviteRequest{}
-	mi := &file_huai_v1_api_proto_msgTypes[54]
+	mi := &file_huai_v1_api_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3409,7 +3806,7 @@ func (x *SendRoomInviteRequest) String() string {
 func (*SendRoomInviteRequest) ProtoMessage() {}
 
 func (x *SendRoomInviteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_huai_v1_api_proto_msgTypes[54]
+	mi := &file_huai_v1_api_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3422,7 +3819,7 @@ func (x *SendRoomInviteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendRoomInviteRequest.ProtoReflect.Descriptor instead.
 func (*SendRoomInviteRequest) Descriptor() ([]byte, []int) {
-	return file_huai_v1_api_proto_rawDescGZIP(), []int{54}
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *SendRoomInviteRequest) GetRoomId() string {
@@ -3457,7 +3854,7 @@ type RoomInvitation struct {
 
 func (x *RoomInvitation) Reset() {
 	*x = RoomInvitation{}
-	mi := &file_huai_v1_api_proto_msgTypes[55]
+	mi := &file_huai_v1_api_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3469,7 +3866,7 @@ func (x *RoomInvitation) String() string {
 func (*RoomInvitation) ProtoMessage() {}
 
 func (x *RoomInvitation) ProtoReflect() protoreflect.Message {
-	mi := &file_huai_v1_api_proto_msgTypes[55]
+	mi := &file_huai_v1_api_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3482,7 +3879,7 @@ func (x *RoomInvitation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RoomInvitation.ProtoReflect.Descriptor instead.
 func (*RoomInvitation) Descriptor() ([]byte, []int) {
-	return file_huai_v1_api_proto_rawDescGZIP(), []int{55}
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *RoomInvitation) GetInviter() *UserProfile {
@@ -3516,7 +3913,7 @@ type ListRoomInvitationsResponse struct {
 
 func (x *ListRoomInvitationsResponse) Reset() {
 	*x = ListRoomInvitationsResponse{}
-	mi := &file_huai_v1_api_proto_msgTypes[56]
+	mi := &file_huai_v1_api_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3528,7 +3925,7 @@ func (x *ListRoomInvitationsResponse) String() string {
 func (*ListRoomInvitationsResponse) ProtoMessage() {}
 
 func (x *ListRoomInvitationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_huai_v1_api_proto_msgTypes[56]
+	mi := &file_huai_v1_api_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3541,7 +3938,7 @@ func (x *ListRoomInvitationsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRoomInvitationsResponse.ProtoReflect.Descriptor instead.
 func (*ListRoomInvitationsResponse) Descriptor() ([]byte, []int) {
-	return file_huai_v1_api_proto_rawDescGZIP(), []int{56}
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *ListRoomInvitationsResponse) GetInvitations() []*RoomInvitation {
@@ -3569,7 +3966,7 @@ type SendRoomMessageRequest struct {
 
 func (x *SendRoomMessageRequest) Reset() {
 	*x = SendRoomMessageRequest{}
-	mi := &file_huai_v1_api_proto_msgTypes[57]
+	mi := &file_huai_v1_api_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3581,7 +3978,7 @@ func (x *SendRoomMessageRequest) String() string {
 func (*SendRoomMessageRequest) ProtoMessage() {}
 
 func (x *SendRoomMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_huai_v1_api_proto_msgTypes[57]
+	mi := &file_huai_v1_api_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3594,7 +3991,7 @@ func (x *SendRoomMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendRoomMessageRequest.ProtoReflect.Descriptor instead.
 func (*SendRoomMessageRequest) Descriptor() ([]byte, []int) {
-	return file_huai_v1_api_proto_rawDescGZIP(), []int{57}
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *SendRoomMessageRequest) GetRoomId() string {
@@ -3628,7 +4025,7 @@ type ListRoomMessagesRequest struct {
 
 func (x *ListRoomMessagesRequest) Reset() {
 	*x = ListRoomMessagesRequest{}
-	mi := &file_huai_v1_api_proto_msgTypes[58]
+	mi := &file_huai_v1_api_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3640,7 +4037,7 @@ func (x *ListRoomMessagesRequest) String() string {
 func (*ListRoomMessagesRequest) ProtoMessage() {}
 
 func (x *ListRoomMessagesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_huai_v1_api_proto_msgTypes[58]
+	mi := &file_huai_v1_api_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3653,7 +4050,7 @@ func (x *ListRoomMessagesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRoomMessagesRequest.ProtoReflect.Descriptor instead.
 func (*ListRoomMessagesRequest) Descriptor() ([]byte, []int) {
-	return file_huai_v1_api_proto_rawDescGZIP(), []int{58}
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *ListRoomMessagesRequest) GetRoomId() string {
@@ -3681,7 +4078,7 @@ type SendPrivateMessageRequest struct {
 
 func (x *SendPrivateMessageRequest) Reset() {
 	*x = SendPrivateMessageRequest{}
-	mi := &file_huai_v1_api_proto_msgTypes[59]
+	mi := &file_huai_v1_api_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3693,7 +4090,7 @@ func (x *SendPrivateMessageRequest) String() string {
 func (*SendPrivateMessageRequest) ProtoMessage() {}
 
 func (x *SendPrivateMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_huai_v1_api_proto_msgTypes[59]
+	mi := &file_huai_v1_api_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3706,7 +4103,7 @@ func (x *SendPrivateMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendPrivateMessageRequest.ProtoReflect.Descriptor instead.
 func (*SendPrivateMessageRequest) Descriptor() ([]byte, []int) {
-	return file_huai_v1_api_proto_rawDescGZIP(), []int{59}
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *SendPrivateMessageRequest) GetRecipientUserId() string {
@@ -3740,7 +4137,7 @@ type ListPrivateMessagesRequest struct {
 
 func (x *ListPrivateMessagesRequest) Reset() {
 	*x = ListPrivateMessagesRequest{}
-	mi := &file_huai_v1_api_proto_msgTypes[60]
+	mi := &file_huai_v1_api_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3752,7 +4149,7 @@ func (x *ListPrivateMessagesRequest) String() string {
 func (*ListPrivateMessagesRequest) ProtoMessage() {}
 
 func (x *ListPrivateMessagesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_huai_v1_api_proto_msgTypes[60]
+	mi := &file_huai_v1_api_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3765,7 +4162,7 @@ func (x *ListPrivateMessagesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPrivateMessagesRequest.ProtoReflect.Descriptor instead.
 func (*ListPrivateMessagesRequest) Descriptor() ([]byte, []int) {
-	return file_huai_v1_api_proto_rawDescGZIP(), []int{60}
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *ListPrivateMessagesRequest) GetPeerUserId() string {
@@ -3791,7 +4188,7 @@ type HidePrivateMessageRequest struct {
 
 func (x *HidePrivateMessageRequest) Reset() {
 	*x = HidePrivateMessageRequest{}
-	mi := &file_huai_v1_api_proto_msgTypes[61]
+	mi := &file_huai_v1_api_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3803,7 +4200,7 @@ func (x *HidePrivateMessageRequest) String() string {
 func (*HidePrivateMessageRequest) ProtoMessage() {}
 
 func (x *HidePrivateMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_huai_v1_api_proto_msgTypes[61]
+	mi := &file_huai_v1_api_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3816,7 +4213,7 @@ func (x *HidePrivateMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HidePrivateMessageRequest.ProtoReflect.Descriptor instead.
 func (*HidePrivateMessageRequest) Descriptor() ([]byte, []int) {
-	return file_huai_v1_api_proto_rawDescGZIP(), []int{61}
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *HidePrivateMessageRequest) GetMessageId() string {
@@ -3836,7 +4233,7 @@ type ReportPrivateMessageRequest struct {
 
 func (x *ReportPrivateMessageRequest) Reset() {
 	*x = ReportPrivateMessageRequest{}
-	mi := &file_huai_v1_api_proto_msgTypes[62]
+	mi := &file_huai_v1_api_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3848,7 +4245,7 @@ func (x *ReportPrivateMessageRequest) String() string {
 func (*ReportPrivateMessageRequest) ProtoMessage() {}
 
 func (x *ReportPrivateMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_huai_v1_api_proto_msgTypes[62]
+	mi := &file_huai_v1_api_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3861,7 +4258,7 @@ func (x *ReportPrivateMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportPrivateMessageRequest.ProtoReflect.Descriptor instead.
 func (*ReportPrivateMessageRequest) Descriptor() ([]byte, []int) {
-	return file_huai_v1_api_proto_rawDescGZIP(), []int{62}
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *ReportPrivateMessageRequest) GetMessageId() string {
@@ -3891,7 +4288,7 @@ type ChatMessage struct {
 
 func (x *ChatMessage) Reset() {
 	*x = ChatMessage{}
-	mi := &file_huai_v1_api_proto_msgTypes[63]
+	mi := &file_huai_v1_api_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3903,7 +4300,7 @@ func (x *ChatMessage) String() string {
 func (*ChatMessage) ProtoMessage() {}
 
 func (x *ChatMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_huai_v1_api_proto_msgTypes[63]
+	mi := &file_huai_v1_api_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3916,7 +4313,7 @@ func (x *ChatMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChatMessage.ProtoReflect.Descriptor instead.
 func (*ChatMessage) Descriptor() ([]byte, []int) {
-	return file_huai_v1_api_proto_rawDescGZIP(), []int{63}
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *ChatMessage) GetMessageId() string {
@@ -3964,7 +4361,7 @@ type ListMessagesResponse struct {
 
 func (x *ListMessagesResponse) Reset() {
 	*x = ListMessagesResponse{}
-	mi := &file_huai_v1_api_proto_msgTypes[64]
+	mi := &file_huai_v1_api_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3976,7 +4373,7 @@ func (x *ListMessagesResponse) String() string {
 func (*ListMessagesResponse) ProtoMessage() {}
 
 func (x *ListMessagesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_huai_v1_api_proto_msgTypes[64]
+	mi := &file_huai_v1_api_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3989,7 +4386,7 @@ func (x *ListMessagesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMessagesResponse.ProtoReflect.Descriptor instead.
 func (*ListMessagesResponse) Descriptor() ([]byte, []int) {
-	return file_huai_v1_api_proto_rawDescGZIP(), []int{64}
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *ListMessagesResponse) GetMessages() []*ChatMessage {
@@ -4018,7 +4415,7 @@ type PublicConfig struct {
 
 func (x *PublicConfig) Reset() {
 	*x = PublicConfig{}
-	mi := &file_huai_v1_api_proto_msgTypes[65]
+	mi := &file_huai_v1_api_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4030,7 +4427,7 @@ func (x *PublicConfig) String() string {
 func (*PublicConfig) ProtoMessage() {}
 
 func (x *PublicConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_huai_v1_api_proto_msgTypes[65]
+	mi := &file_huai_v1_api_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4043,7 +4440,7 @@ func (x *PublicConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublicConfig.ProtoReflect.Descriptor instead.
 func (*PublicConfig) Descriptor() ([]byte, []int) {
-	return file_huai_v1_api_proto_rawDescGZIP(), []int{65}
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *PublicConfig) GetVersion() string {
@@ -4072,6 +4469,126 @@ func (x *PublicConfig) GetReconnectGraceSeconds() uint32 {
 		return x.ReconnectGraceSeconds
 	}
 	return 0
+}
+
+type SubmitFeedbackRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kind          FeedbackKind           `protobuf:"varint,1,opt,name=kind,proto3,enum=huai.v1.FeedbackKind" json:"kind,omitempty"`
+	Body          string                 `protobuf:"bytes,2,opt,name=body,proto3" json:"body,omitempty"`
+	RequestId     string                 `protobuf:"bytes,3,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubmitFeedbackRequest) Reset() {
+	*x = SubmitFeedbackRequest{}
+	mi := &file_huai_v1_api_proto_msgTypes[69]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubmitFeedbackRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubmitFeedbackRequest) ProtoMessage() {}
+
+func (x *SubmitFeedbackRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_huai_v1_api_proto_msgTypes[69]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubmitFeedbackRequest.ProtoReflect.Descriptor instead.
+func (*SubmitFeedbackRequest) Descriptor() ([]byte, []int) {
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{69}
+}
+
+func (x *SubmitFeedbackRequest) GetKind() FeedbackKind {
+	if x != nil {
+		return x.Kind
+	}
+	return FeedbackKind_FEEDBACK_KIND_UNSPECIFIED
+}
+
+func (x *SubmitFeedbackRequest) GetBody() string {
+	if x != nil {
+		return x.Body
+	}
+	return ""
+}
+
+func (x *SubmitFeedbackRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+type ServerInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CommitId      string                 `protobuf:"bytes,1,opt,name=commit_id,json=commitId,proto3" json:"commit_id,omitempty"`
+	Version       string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	Changelist    string                 `protobuf:"bytes,3,opt,name=changelist,proto3" json:"changelist,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ServerInfo) Reset() {
+	*x = ServerInfo{}
+	mi := &file_huai_v1_api_proto_msgTypes[70]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ServerInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ServerInfo) ProtoMessage() {}
+
+func (x *ServerInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_huai_v1_api_proto_msgTypes[70]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ServerInfo.ProtoReflect.Descriptor instead.
+func (*ServerInfo) Descriptor() ([]byte, []int) {
+	return file_huai_v1_api_proto_rawDescGZIP(), []int{70}
+}
+
+func (x *ServerInfo) GetCommitId() string {
+	if x != nil {
+		return x.CommitId
+	}
+	return ""
+}
+
+func (x *ServerInfo) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *ServerInfo) GetChangelist() string {
+	if x != nil {
+		return x.Changelist
+	}
+	return ""
 }
 
 var File_huai_v1_api_proto protoreflect.FileDescriptor
@@ -4191,17 +4708,22 @@ const file_huai_v1_api_proto_rawDesc = "" +
 	"\troom_code\x18\x01 \x01(\tR\broomCode\x12\x1a\n" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\x03 \x01(\tR\trequestId\"\x9b\x01\n" +
+	"request_id\x18\x03 \x01(\tR\trequestId\"\xfd\x01\n" +
 	"\n" +
 	"RoomMember\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12+\n" +
 	"\x04role\x18\x02 \x01(\x0e2\x17.huai.v1.RoomMemberRoleR\x04role\x12\x17\n" +
 	"\aseat_no\x18\x03 \x01(\rR\x06seatNo\x12.\n" +
-	"\aprofile\x18\x04 \x01(\v2\x14.huai.v1.UserProfileR\aprofile\"\x80\x01\n" +
+	"\aprofile\x18\x04 \x01(\v2\x14.huai.v1.UserProfileR\aprofile\x12\x1b\n" +
+	"\tshow_hand\x18\x05 \x01(\bR\bshowHand\x12\x1b\n" +
+	"\tview_seat\x18\x06 \x01(\rR\bviewSeat\x12\x12\n" +
+	"\x04team\x18\a \x01(\rR\x04team\x12\x12\n" +
+	"\x04rank\x18\b \x01(\tR\x04rank\"\xa8\x01\n" +
 	"\vRoomDetails\x12(\n" +
 	"\x04room\x18\x01 \x01(\v2\x14.huai.v1.RoomSummaryR\x04room\x12-\n" +
 	"\amembers\x18\x02 \x03(\v2\x13.huai.v1.RoomMemberR\amembers\x12\x18\n" +
-	"\aversion\x18\x03 \x01(\x04R\aversion\"P\n" +
+	"\aversion\x18\x03 \x01(\x04R\aversion\x12&\n" +
+	"\x0fgame_session_id\x18\x04 \x01(\tR\rgameSessionId\"P\n" +
 	"\x16JoinInvitedRoomRequest\x12\x17\n" +
 	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x12\x1d\n" +
 	"\n" +
@@ -4216,13 +4738,14 @@ const file_huai_v1_api_proto_rawDesc = "" +
 	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x12\x1b\n" +
 	"\tfriend_id\x18\x02 \x01(\tR\bfriendId\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\x03 \x01(\tR\trequestId\"\x96\x01\n" +
+	"request_id\x18\x03 \x01(\tR\trequestId\"\xb3\x01\n" +
 	"\x14SpectatorViewRequest\x12\x17\n" +
 	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x12\x1b\n" +
 	"\tshow_hand\x18\x02 \x01(\bR\bshowHand\x12)\n" +
 	"\x10expected_version\x18\x03 \x01(\x04R\x0fexpectedVersion\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\x04 \x01(\tR\trequestId\">\n" +
+	"request_id\x18\x04 \x01(\tR\trequestId\x12\x1b\n" +
+	"\tview_seat\x18\x05 \x01(\rR\bviewSeat\">\n" +
 	"\x12DeclareTrumpAction\x12\x12\n" +
 	"\x04suit\x18\x01 \x01(\tR\x04suit\x12\x14\n" +
 	"\x05cards\x18\x02 \x03(\tR\x05cards\"'\n" +
@@ -4231,7 +4754,10 @@ const file_huai_v1_api_proto_rawDesc = "" +
 	"\x0fPlayCardsAction\x12\x14\n" +
 	"\x05cards\x18\x01 \x03(\tR\x05cards\"/\n" +
 	"\x15ConfirmAutoplayAction\x12\x16\n" +
-	"\x06accept\x18\x01 \x01(\bR\x06accept\"\xaa\x03\n" +
+	"\x06accept\x18\x01 \x01(\bR\x06accept\"\f\n" +
+	"\n" +
+	"PassAction\"\x10\n" +
+	"\x0eContinueAction\"\x99\x04\n" +
 	"\n" +
 	"GameAction\x12B\n" +
 	"\rdeclare_trump\x18\x01 \x01(\v2\x1b.huai.v1.DeclareTrumpActionH\x00R\fdeclareTrump\x12B\n" +
@@ -4241,7 +4767,9 @@ const file_huai_v1_api_proto_rawDesc = "" +
 	"bury_cards\x18\x04 \x01(\v2\x18.huai.v1.BuryCardsActionH\x00R\tburyCards\x129\n" +
 	"\n" +
 	"play_cards\x18\x05 \x01(\v2\x18.huai.v1.PlayCardsActionH\x00R\tplayCards\x12K\n" +
-	"\x10confirm_autoplay\x18\x06 \x01(\v2\x1e.huai.v1.ConfirmAutoplayActionH\x00R\x0fconfirmAutoplayB\t\n" +
+	"\x10confirm_autoplay\x18\x06 \x01(\v2\x1e.huai.v1.ConfirmAutoplayActionH\x00R\x0fconfirmAutoplay\x12)\n" +
+	"\x04pass\x18\a \x01(\v2\x13.huai.v1.PassActionH\x00R\x04pass\x12B\n" +
+	"\x0fcontinue_action\x18\b \x01(\v2\x17.huai.v1.ContinueActionH\x00R\x0econtinueActionB\t\n" +
 	"\apayload\"\xcd\x01\n" +
 	"\x13SubmitActionRequest\x12&\n" +
 	"\x0fgame_session_id\x18\x01 \x01(\tR\rgameSessionId\x12\x17\n" +
@@ -4254,9 +4782,13 @@ const file_huai_v1_api_proto_rawDesc = "" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12\x1d\n" +
 	"\n" +
 	"error_code\x18\x02 \x01(\tR\terrorCode\x12#\n" +
-	"\rstate_version\x18\x03 \x01(\x04R\fstateVersion\"=\n" +
+	"\rstate_version\x18\x03 \x01(\x04R\fstateVersion\";\n" +
+	"\n" +
+	"PublicPlay\x12\x17\n" +
+	"\aseat_no\x18\x01 \x01(\rR\x06seatNo\x12\x14\n" +
+	"\x05cards\x18\x02 \x03(\tR\x05cards\"=\n" +
 	"\x13GameSnapshotRequest\x12&\n" +
-	"\x0fgame_session_id\x18\x01 \x01(\tR\rgameSessionId\"\xaa\x02\n" +
+	"\x0fgame_session_id\x18\x01 \x01(\tR\rgameSessionId\"\xad\a\n" +
 	"\fGameSnapshot\x12&\n" +
 	"\x0fgame_session_id\x18\x01 \x01(\tR\rgameSessionId\x12\x17\n" +
 	"\ahand_id\x18\x02 \x01(\tR\x06handId\x12#\n" +
@@ -4265,7 +4797,30 @@ const file_huai_v1_api_proto_rawDesc = "" +
 	"\x14current_turn_user_id\x18\x05 \x01(\tR\x11currentTurnUserId\x12!\n" +
 	"\fvisible_hand\x18\x06 \x03(\tR\vvisibleHand\x12!\n" +
 	"\fpublic_cards\x18\a \x03(\tR\vpublicCards\x12'\n" +
-	"\x0fcaptured_points\x18\b \x01(\x03R\x0ecapturedPoints\"\x81\x01\n" +
+	"\x0fcaptured_points\x18\b \x01(\x03R\x0ecapturedPoints\x12\x19\n" +
+	"\bround_no\x18\t \x01(\rR\aroundNo\x12$\n" +
+	"\x0eteam_one_level\x18\n" +
+	" \x01(\tR\fteamOneLevel\x12$\n" +
+	"\x0eteam_two_level\x18\v \x01(\tR\fteamTwoLevel\x12!\n" +
+	"\fscoring_team\x18\f \x01(\rR\vscoringTeam\x12\x1b\n" +
+	"\tview_seat\x18\r \x01(\rR\bviewSeat\x12\x1f\n" +
+	"\vviewer_team\x18\x0e \x01(\rR\n" +
+	"viewerTeam\x12,\n" +
+	"\x12visible_hand_count\x18\x0f \x01(\rR\x10visibleHandCount\x12!\n" +
+	"\fbottom_cards\x18\x10 \x03(\tR\vbottomCards\x12#\n" +
+	"\rbottom_public\x18\x11 \x01(\bR\fbottomPublic\x12/\n" +
+	"\x14bottom_owner_user_id\x18\x12 \x01(\tR\x11bottomOwnerUserId\x12+\n" +
+	"\x11available_actions\x18\x13 \x03(\tR\x10availableActions\x126\n" +
+	"\fpublic_plays\x18\x14 \x03(\v2\x13.huai.v1.PublicPlayR\vpublicPlays\x12\x1d\n" +
+	"\n" +
+	"trump_suit\x18\x15 \x01(\tR\ttrumpSuit\x12\x1f\n" +
+	"\vtrump_level\x18\x16 \x01(\rR\n" +
+	"trumpLevel\x12\x14\n" +
+	"\x05state\x18\x17 \x01(\tR\x05state\x12\x10\n" +
+	"\x03seq\x18\x18 \x01(\x04R\x03seq\x12$\n" +
+	"\x0edealer_user_id\x18\x19 \x01(\tR\fdealerUserId\x12\x1f\n" +
+	"\vdealer_seat\x18\x1a \x01(\rR\n" +
+	"dealerSeat\"\x81\x01\n" +
 	"\x16ListEventsAfterRequest\x12&\n" +
 	"\x0fgame_session_id\x18\x01 \x01(\tR\rgameSessionId\x12\"\n" +
 	"\rlast_seen_seq\x18\x02 \x01(\x04R\vlastSeenSeq\x12\x1b\n" +
@@ -4370,7 +4925,19 @@ const file_huai_v1_api_proto_rawDesc = "" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x124\n" +
 	"\x16minimum_client_version\x18\x02 \x01(\x03R\x14minimumClientVersion\x124\n" +
 	"\x16maximum_client_version\x18\x03 \x01(\x03R\x14maximumClientVersion\x126\n" +
-	"\x17reconnect_grace_seconds\x18\x04 \x01(\rR\x15reconnectGraceSeconds*s\n" +
+	"\x17reconnect_grace_seconds\x18\x04 \x01(\rR\x15reconnectGraceSeconds\"u\n" +
+	"\x15SubmitFeedbackRequest\x12)\n" +
+	"\x04kind\x18\x01 \x01(\x0e2\x15.huai.v1.FeedbackKindR\x04kind\x12\x12\n" +
+	"\x04body\x18\x02 \x01(\tR\x04body\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x03 \x01(\tR\trequestId\"c\n" +
+	"\n" +
+	"ServerInfo\x12\x1b\n" +
+	"\tcommit_id\x18\x01 \x01(\tR\bcommitId\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\x12\x1e\n" +
+	"\n" +
+	"changelist\x18\x03 \x01(\tR\n" +
+	"changelist*s\n" +
 	"\n" +
 	"RoomStatus\x12\x1b\n" +
 	"\x17ROOM_STATUS_UNSPECIFIED\x10\x00\x12\x17\n" +
@@ -4380,7 +4947,11 @@ const file_huai_v1_api_proto_rawDesc = "" +
 	"\x0eRoomMemberRole\x12 \n" +
 	"\x1cROOM_MEMBER_ROLE_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17ROOM_MEMBER_ROLE_PLAYER\x10\x01\x12\x1e\n" +
-	"\x1aROOM_MEMBER_ROLE_SPECTATOR\x10\x022\xbe\x02\n" +
+	"\x1aROOM_MEMBER_ROLE_SPECTATOR\x10\x02*b\n" +
+	"\fFeedbackKind\x12\x1d\n" +
+	"\x19FEEDBACK_KIND_UNSPECIFIED\x10\x00\x12\x15\n" +
+	"\x11FEEDBACK_KIND_BUG\x10\x01\x12\x1c\n" +
+	"\x18FEEDBACK_KIND_SUGGESTION\x10\x022\xbe\x02\n" +
 	"\vAuthService\x12;\n" +
 	"\bRegister\x12\x18.huai.v1.RegisterRequest\x1a\x15.huai.v1.AuthResponse\x125\n" +
 	"\x05Login\x12\x15.huai.v1.LoginRequest\x1a\x15.huai.v1.AuthResponse\x12G\n" +
@@ -4437,7 +5008,10 @@ const file_huai_v1_api_proto_rawDesc = "" +
 	"\x12HidePrivateMessage\x12\".huai.v1.HidePrivateMessageRequest\x1a\x0e.huai.v1.Empty\x12L\n" +
 	"\x14ReportPrivateMessage\x12$.huai.v1.ReportPrivateMessageRequest\x1a\x0e.huai.v1.Empty2I\n" +
 	"\rConfigService\x128\n" +
-	"\x0fGetPublicConfig\x12\x0e.huai.v1.Empty\x1a\x15.huai.v1.PublicConfigBEZCgithub.com/Derek0120/eighty-point-huai-an/server/gen/huai/v1;huaiv1b\x06proto3"
+	"\x0fGetPublicConfig\x12\x0e.huai.v1.Empty\x1a\x15.huai.v1.PublicConfig2\x88\x01\n" +
+	"\x0eSupportService\x12@\n" +
+	"\x0eSubmitFeedback\x12\x1e.huai.v1.SubmitFeedbackRequest\x1a\x0e.huai.v1.Empty\x124\n" +
+	"\rGetServerInfo\x12\x0e.huai.v1.Empty\x1a\x13.huai.v1.ServerInfoBEZCgithub.com/Derek0120/eighty-point-huai-an/server/gen/huai/v1;huaiv1b\x06proto3"
 
 var (
 	file_huai_v1_api_proto_rawDescOnce sync.Once
@@ -4451,226 +5025,240 @@ func file_huai_v1_api_proto_rawDescGZIP() []byte {
 	return file_huai_v1_api_proto_rawDescData
 }
 
-var file_huai_v1_api_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_huai_v1_api_proto_msgTypes = make([]protoimpl.MessageInfo, 66)
+var file_huai_v1_api_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_huai_v1_api_proto_msgTypes = make([]protoimpl.MessageInfo, 71)
 var file_huai_v1_api_proto_goTypes = []any{
 	(RoomStatus)(0),                        // 0: huai.v1.RoomStatus
 	(RoomMemberRole)(0),                    // 1: huai.v1.RoomMemberRole
-	(*Empty)(nil),                          // 2: huai.v1.Empty
-	(*PageRequest)(nil),                    // 3: huai.v1.PageRequest
-	(*PageInfo)(nil),                       // 4: huai.v1.PageInfo
-	(*UserProfile)(nil),                    // 5: huai.v1.UserProfile
-	(*AuthTokens)(nil),                     // 6: huai.v1.AuthTokens
-	(*RegisterRequest)(nil),                // 7: huai.v1.RegisterRequest
-	(*LoginRequest)(nil),                   // 8: huai.v1.LoginRequest
-	(*AuthResponse)(nil),                   // 9: huai.v1.AuthResponse
-	(*RefreshSessionRequest)(nil),          // 10: huai.v1.RefreshSessionRequest
-	(*LogoutRequest)(nil),                  // 11: huai.v1.LogoutRequest
-	(*ChangePasswordRequest)(nil),          // 12: huai.v1.ChangePasswordRequest
-	(*GetProfileRequest)(nil),              // 13: huai.v1.GetProfileRequest
-	(*UpdateProfileRequest)(nil),           // 14: huai.v1.UpdateProfileRequest
-	(*PlayerStatistics)(nil),               // 15: huai.v1.PlayerStatistics
-	(*GameResult)(nil),                     // 16: huai.v1.GameResult
-	(*ListRecentResultsResponse)(nil),      // 17: huai.v1.ListRecentResultsResponse
-	(*GetFriendStatisticsRequest)(nil),     // 18: huai.v1.GetFriendStatisticsRequest
-	(*ListFriendRecentResultsRequest)(nil), // 19: huai.v1.ListFriendRecentResultsRequest
-	(*Hall)(nil),                           // 20: huai.v1.Hall
-	(*ListHallsResponse)(nil),              // 21: huai.v1.ListHallsResponse
-	(*RoomSummary)(nil),                    // 22: huai.v1.RoomSummary
-	(*ListRoomsRequest)(nil),               // 23: huai.v1.ListRoomsRequest
-	(*ListRoomsResponse)(nil),              // 24: huai.v1.ListRoomsResponse
-	(*CreateRoomRequest)(nil),              // 25: huai.v1.CreateRoomRequest
-	(*RoomRequest)(nil),                    // 26: huai.v1.RoomRequest
-	(*JoinByCodeRequest)(nil),              // 27: huai.v1.JoinByCodeRequest
-	(*RoomMember)(nil),                     // 28: huai.v1.RoomMember
-	(*RoomDetails)(nil),                    // 29: huai.v1.RoomDetails
-	(*JoinInvitedRoomRequest)(nil),         // 30: huai.v1.JoinInvitedRoomRequest
-	(*SeatRequest)(nil),                    // 31: huai.v1.SeatRequest
-	(*InviteFriendRequest)(nil),            // 32: huai.v1.InviteFriendRequest
-	(*SpectatorViewRequest)(nil),           // 33: huai.v1.SpectatorViewRequest
-	(*DeclareTrumpAction)(nil),             // 34: huai.v1.DeclareTrumpAction
-	(*BuryCardsAction)(nil),                // 35: huai.v1.BuryCardsAction
-	(*PlayCardsAction)(nil),                // 36: huai.v1.PlayCardsAction
-	(*ConfirmAutoplayAction)(nil),          // 37: huai.v1.ConfirmAutoplayAction
-	(*GameAction)(nil),                     // 38: huai.v1.GameAction
-	(*SubmitActionRequest)(nil),            // 39: huai.v1.SubmitActionRequest
-	(*SubmitActionResponse)(nil),           // 40: huai.v1.SubmitActionResponse
-	(*GameSnapshotRequest)(nil),            // 41: huai.v1.GameSnapshotRequest
-	(*GameSnapshot)(nil),                   // 42: huai.v1.GameSnapshot
-	(*ListEventsAfterRequest)(nil),         // 43: huai.v1.ListEventsAfterRequest
-	(*GameEvent)(nil),                      // 44: huai.v1.GameEvent
-	(*ListEventsAfterResponse)(nil),        // 45: huai.v1.ListEventsAfterResponse
-	(*RequestReconnectRequest)(nil),        // 46: huai.v1.RequestReconnectRequest
-	(*RequestReconnectResponse)(nil),       // 47: huai.v1.RequestReconnectResponse
-	(*SearchPlayersRequest)(nil),           // 48: huai.v1.SearchPlayersRequest
-	(*SearchPlayersResponse)(nil),          // 49: huai.v1.SearchPlayersResponse
-	(*FriendRequest)(nil),                  // 50: huai.v1.FriendRequest
-	(*RespondFriendRequest)(nil),           // 51: huai.v1.RespondFriendRequest
-	(*Friend)(nil),                         // 52: huai.v1.Friend
-	(*ListFriendsResponse)(nil),            // 53: huai.v1.ListFriendsResponse
-	(*PendingFriendRequest)(nil),           // 54: huai.v1.PendingFriendRequest
-	(*ListFriendRequestsResponse)(nil),     // 55: huai.v1.ListFriendRequestsResponse
-	(*SendRoomInviteRequest)(nil),          // 56: huai.v1.SendRoomInviteRequest
-	(*RoomInvitation)(nil),                 // 57: huai.v1.RoomInvitation
-	(*ListRoomInvitationsResponse)(nil),    // 58: huai.v1.ListRoomInvitationsResponse
-	(*SendRoomMessageRequest)(nil),         // 59: huai.v1.SendRoomMessageRequest
-	(*ListRoomMessagesRequest)(nil),        // 60: huai.v1.ListRoomMessagesRequest
-	(*SendPrivateMessageRequest)(nil),      // 61: huai.v1.SendPrivateMessageRequest
-	(*ListPrivateMessagesRequest)(nil),     // 62: huai.v1.ListPrivateMessagesRequest
-	(*HidePrivateMessageRequest)(nil),      // 63: huai.v1.HidePrivateMessageRequest
-	(*ReportPrivateMessageRequest)(nil),    // 64: huai.v1.ReportPrivateMessageRequest
-	(*ChatMessage)(nil),                    // 65: huai.v1.ChatMessage
-	(*ListMessagesResponse)(nil),           // 66: huai.v1.ListMessagesResponse
-	(*PublicConfig)(nil),                   // 67: huai.v1.PublicConfig
-	(*timestamppb.Timestamp)(nil),          // 68: google.protobuf.Timestamp
-	(*anypb.Any)(nil),                      // 69: google.protobuf.Any
+	(FeedbackKind)(0),                      // 2: huai.v1.FeedbackKind
+	(*Empty)(nil),                          // 3: huai.v1.Empty
+	(*PageRequest)(nil),                    // 4: huai.v1.PageRequest
+	(*PageInfo)(nil),                       // 5: huai.v1.PageInfo
+	(*UserProfile)(nil),                    // 6: huai.v1.UserProfile
+	(*AuthTokens)(nil),                     // 7: huai.v1.AuthTokens
+	(*RegisterRequest)(nil),                // 8: huai.v1.RegisterRequest
+	(*LoginRequest)(nil),                   // 9: huai.v1.LoginRequest
+	(*AuthResponse)(nil),                   // 10: huai.v1.AuthResponse
+	(*RefreshSessionRequest)(nil),          // 11: huai.v1.RefreshSessionRequest
+	(*LogoutRequest)(nil),                  // 12: huai.v1.LogoutRequest
+	(*ChangePasswordRequest)(nil),          // 13: huai.v1.ChangePasswordRequest
+	(*GetProfileRequest)(nil),              // 14: huai.v1.GetProfileRequest
+	(*UpdateProfileRequest)(nil),           // 15: huai.v1.UpdateProfileRequest
+	(*PlayerStatistics)(nil),               // 16: huai.v1.PlayerStatistics
+	(*GameResult)(nil),                     // 17: huai.v1.GameResult
+	(*ListRecentResultsResponse)(nil),      // 18: huai.v1.ListRecentResultsResponse
+	(*GetFriendStatisticsRequest)(nil),     // 19: huai.v1.GetFriendStatisticsRequest
+	(*ListFriendRecentResultsRequest)(nil), // 20: huai.v1.ListFriendRecentResultsRequest
+	(*Hall)(nil),                           // 21: huai.v1.Hall
+	(*ListHallsResponse)(nil),              // 22: huai.v1.ListHallsResponse
+	(*RoomSummary)(nil),                    // 23: huai.v1.RoomSummary
+	(*ListRoomsRequest)(nil),               // 24: huai.v1.ListRoomsRequest
+	(*ListRoomsResponse)(nil),              // 25: huai.v1.ListRoomsResponse
+	(*CreateRoomRequest)(nil),              // 26: huai.v1.CreateRoomRequest
+	(*RoomRequest)(nil),                    // 27: huai.v1.RoomRequest
+	(*JoinByCodeRequest)(nil),              // 28: huai.v1.JoinByCodeRequest
+	(*RoomMember)(nil),                     // 29: huai.v1.RoomMember
+	(*RoomDetails)(nil),                    // 30: huai.v1.RoomDetails
+	(*JoinInvitedRoomRequest)(nil),         // 31: huai.v1.JoinInvitedRoomRequest
+	(*SeatRequest)(nil),                    // 32: huai.v1.SeatRequest
+	(*InviteFriendRequest)(nil),            // 33: huai.v1.InviteFriendRequest
+	(*SpectatorViewRequest)(nil),           // 34: huai.v1.SpectatorViewRequest
+	(*DeclareTrumpAction)(nil),             // 35: huai.v1.DeclareTrumpAction
+	(*BuryCardsAction)(nil),                // 36: huai.v1.BuryCardsAction
+	(*PlayCardsAction)(nil),                // 37: huai.v1.PlayCardsAction
+	(*ConfirmAutoplayAction)(nil),          // 38: huai.v1.ConfirmAutoplayAction
+	(*PassAction)(nil),                     // 39: huai.v1.PassAction
+	(*ContinueAction)(nil),                 // 40: huai.v1.ContinueAction
+	(*GameAction)(nil),                     // 41: huai.v1.GameAction
+	(*SubmitActionRequest)(nil),            // 42: huai.v1.SubmitActionRequest
+	(*SubmitActionResponse)(nil),           // 43: huai.v1.SubmitActionResponse
+	(*PublicPlay)(nil),                     // 44: huai.v1.PublicPlay
+	(*GameSnapshotRequest)(nil),            // 45: huai.v1.GameSnapshotRequest
+	(*GameSnapshot)(nil),                   // 46: huai.v1.GameSnapshot
+	(*ListEventsAfterRequest)(nil),         // 47: huai.v1.ListEventsAfterRequest
+	(*GameEvent)(nil),                      // 48: huai.v1.GameEvent
+	(*ListEventsAfterResponse)(nil),        // 49: huai.v1.ListEventsAfterResponse
+	(*RequestReconnectRequest)(nil),        // 50: huai.v1.RequestReconnectRequest
+	(*RequestReconnectResponse)(nil),       // 51: huai.v1.RequestReconnectResponse
+	(*SearchPlayersRequest)(nil),           // 52: huai.v1.SearchPlayersRequest
+	(*SearchPlayersResponse)(nil),          // 53: huai.v1.SearchPlayersResponse
+	(*FriendRequest)(nil),                  // 54: huai.v1.FriendRequest
+	(*RespondFriendRequest)(nil),           // 55: huai.v1.RespondFriendRequest
+	(*Friend)(nil),                         // 56: huai.v1.Friend
+	(*ListFriendsResponse)(nil),            // 57: huai.v1.ListFriendsResponse
+	(*PendingFriendRequest)(nil),           // 58: huai.v1.PendingFriendRequest
+	(*ListFriendRequestsResponse)(nil),     // 59: huai.v1.ListFriendRequestsResponse
+	(*SendRoomInviteRequest)(nil),          // 60: huai.v1.SendRoomInviteRequest
+	(*RoomInvitation)(nil),                 // 61: huai.v1.RoomInvitation
+	(*ListRoomInvitationsResponse)(nil),    // 62: huai.v1.ListRoomInvitationsResponse
+	(*SendRoomMessageRequest)(nil),         // 63: huai.v1.SendRoomMessageRequest
+	(*ListRoomMessagesRequest)(nil),        // 64: huai.v1.ListRoomMessagesRequest
+	(*SendPrivateMessageRequest)(nil),      // 65: huai.v1.SendPrivateMessageRequest
+	(*ListPrivateMessagesRequest)(nil),     // 66: huai.v1.ListPrivateMessagesRequest
+	(*HidePrivateMessageRequest)(nil),      // 67: huai.v1.HidePrivateMessageRequest
+	(*ReportPrivateMessageRequest)(nil),    // 68: huai.v1.ReportPrivateMessageRequest
+	(*ChatMessage)(nil),                    // 69: huai.v1.ChatMessage
+	(*ListMessagesResponse)(nil),           // 70: huai.v1.ListMessagesResponse
+	(*PublicConfig)(nil),                   // 71: huai.v1.PublicConfig
+	(*SubmitFeedbackRequest)(nil),          // 72: huai.v1.SubmitFeedbackRequest
+	(*ServerInfo)(nil),                     // 73: huai.v1.ServerInfo
+	(*timestamppb.Timestamp)(nil),          // 74: google.protobuf.Timestamp
+	(*anypb.Any)(nil),                      // 75: google.protobuf.Any
 }
 var file_huai_v1_api_proto_depIdxs = []int32{
-	68, // 0: huai.v1.UserProfile.created_at:type_name -> google.protobuf.Timestamp
-	68, // 1: huai.v1.AuthTokens.access_token_expires_at:type_name -> google.protobuf.Timestamp
-	6,  // 2: huai.v1.AuthResponse.tokens:type_name -> huai.v1.AuthTokens
-	5,  // 3: huai.v1.AuthResponse.profile:type_name -> huai.v1.UserProfile
-	68, // 4: huai.v1.GameResult.ended_at:type_name -> google.protobuf.Timestamp
-	16, // 5: huai.v1.ListRecentResultsResponse.results:type_name -> huai.v1.GameResult
-	4,  // 6: huai.v1.ListRecentResultsResponse.page:type_name -> huai.v1.PageInfo
-	3,  // 7: huai.v1.ListFriendRecentResultsRequest.page:type_name -> huai.v1.PageRequest
-	20, // 8: huai.v1.ListHallsResponse.halls:type_name -> huai.v1.Hall
-	0,  // 9: huai.v1.RoomSummary.status:type_name -> huai.v1.RoomStatus
-	5,  // 10: huai.v1.RoomSummary.owner:type_name -> huai.v1.UserProfile
-	3,  // 11: huai.v1.ListRoomsRequest.page:type_name -> huai.v1.PageRequest
-	22, // 12: huai.v1.ListRoomsResponse.rooms:type_name -> huai.v1.RoomSummary
-	4,  // 13: huai.v1.ListRoomsResponse.page:type_name -> huai.v1.PageInfo
-	1,  // 14: huai.v1.RoomMember.role:type_name -> huai.v1.RoomMemberRole
-	5,  // 15: huai.v1.RoomMember.profile:type_name -> huai.v1.UserProfile
-	22, // 16: huai.v1.RoomDetails.room:type_name -> huai.v1.RoomSummary
-	28, // 17: huai.v1.RoomDetails.members:type_name -> huai.v1.RoomMember
-	34, // 18: huai.v1.GameAction.declare_trump:type_name -> huai.v1.DeclareTrumpAction
-	34, // 19: huai.v1.GameAction.counter_trump:type_name -> huai.v1.DeclareTrumpAction
-	34, // 20: huai.v1.GameAction.redeclare_trump:type_name -> huai.v1.DeclareTrumpAction
-	35, // 21: huai.v1.GameAction.bury_cards:type_name -> huai.v1.BuryCardsAction
-	36, // 22: huai.v1.GameAction.play_cards:type_name -> huai.v1.PlayCardsAction
-	37, // 23: huai.v1.GameAction.confirm_autoplay:type_name -> huai.v1.ConfirmAutoplayAction
-	38, // 24: huai.v1.SubmitActionRequest.action:type_name -> huai.v1.GameAction
-	69, // 25: huai.v1.GameEvent.payload:type_name -> google.protobuf.Any
-	68, // 26: huai.v1.GameEvent.created_at:type_name -> google.protobuf.Timestamp
-	44, // 27: huai.v1.ListEventsAfterResponse.events:type_name -> huai.v1.GameEvent
-	42, // 28: huai.v1.RequestReconnectResponse.snapshot:type_name -> huai.v1.GameSnapshot
-	44, // 29: huai.v1.RequestReconnectResponse.events:type_name -> huai.v1.GameEvent
-	3,  // 30: huai.v1.SearchPlayersRequest.page:type_name -> huai.v1.PageRequest
-	5,  // 31: huai.v1.SearchPlayersResponse.players:type_name -> huai.v1.UserProfile
-	4,  // 32: huai.v1.SearchPlayersResponse.page:type_name -> huai.v1.PageInfo
-	5,  // 33: huai.v1.Friend.profile:type_name -> huai.v1.UserProfile
-	68, // 34: huai.v1.Friend.friends_since:type_name -> google.protobuf.Timestamp
-	52, // 35: huai.v1.ListFriendsResponse.friends:type_name -> huai.v1.Friend
-	4,  // 36: huai.v1.ListFriendsResponse.page:type_name -> huai.v1.PageInfo
-	5,  // 37: huai.v1.PendingFriendRequest.requester:type_name -> huai.v1.UserProfile
-	68, // 38: huai.v1.PendingFriendRequest.requested_at:type_name -> google.protobuf.Timestamp
-	54, // 39: huai.v1.ListFriendRequestsResponse.requests:type_name -> huai.v1.PendingFriendRequest
-	4,  // 40: huai.v1.ListFriendRequestsResponse.page:type_name -> huai.v1.PageInfo
-	5,  // 41: huai.v1.RoomInvitation.inviter:type_name -> huai.v1.UserProfile
-	68, // 42: huai.v1.RoomInvitation.invited_at:type_name -> google.protobuf.Timestamp
-	57, // 43: huai.v1.ListRoomInvitationsResponse.invitations:type_name -> huai.v1.RoomInvitation
-	4,  // 44: huai.v1.ListRoomInvitationsResponse.page:type_name -> huai.v1.PageInfo
-	3,  // 45: huai.v1.ListRoomMessagesRequest.page:type_name -> huai.v1.PageRequest
-	3,  // 46: huai.v1.ListPrivateMessagesRequest.page:type_name -> huai.v1.PageRequest
-	68, // 47: huai.v1.ChatMessage.created_at:type_name -> google.protobuf.Timestamp
-	65, // 48: huai.v1.ListMessagesResponse.messages:type_name -> huai.v1.ChatMessage
-	4,  // 49: huai.v1.ListMessagesResponse.page:type_name -> huai.v1.PageInfo
-	7,  // 50: huai.v1.AuthService.Register:input_type -> huai.v1.RegisterRequest
-	8,  // 51: huai.v1.AuthService.Login:input_type -> huai.v1.LoginRequest
-	10, // 52: huai.v1.AuthService.RefreshSession:input_type -> huai.v1.RefreshSessionRequest
-	11, // 53: huai.v1.AuthService.Logout:input_type -> huai.v1.LogoutRequest
-	12, // 54: huai.v1.AuthService.ChangePassword:input_type -> huai.v1.ChangePasswordRequest
-	13, // 55: huai.v1.PlayerService.GetProfile:input_type -> huai.v1.GetProfileRequest
-	14, // 56: huai.v1.PlayerService.UpdateProfile:input_type -> huai.v1.UpdateProfileRequest
-	2,  // 57: huai.v1.PlayerService.GetStatistics:input_type -> huai.v1.Empty
-	3,  // 58: huai.v1.PlayerService.ListRecentResults:input_type -> huai.v1.PageRequest
-	18, // 59: huai.v1.PlayerService.GetFriendStatistics:input_type -> huai.v1.GetFriendStatisticsRequest
-	19, // 60: huai.v1.PlayerService.ListFriendRecentResults:input_type -> huai.v1.ListFriendRecentResultsRequest
-	2,  // 61: huai.v1.LobbyService.ListHalls:input_type -> huai.v1.Empty
-	23, // 62: huai.v1.LobbyService.ListRooms:input_type -> huai.v1.ListRoomsRequest
-	25, // 63: huai.v1.LobbyService.CreateRoom:input_type -> huai.v1.CreateRoomRequest
-	26, // 64: huai.v1.LobbyService.JoinRoom:input_type -> huai.v1.RoomRequest
-	26, // 65: huai.v1.LobbyService.LeaveRoom:input_type -> huai.v1.RoomRequest
-	27, // 66: huai.v1.LobbyService.JoinByCode:input_type -> huai.v1.JoinByCodeRequest
-	26, // 67: huai.v1.RoomService.GetRoom:input_type -> huai.v1.RoomRequest
-	30, // 68: huai.v1.RoomService.JoinInvitedRoom:input_type -> huai.v1.JoinInvitedRoomRequest
-	31, // 69: huai.v1.RoomService.SitDown:input_type -> huai.v1.SeatRequest
-	31, // 70: huai.v1.RoomService.ChangeSeat:input_type -> huai.v1.SeatRequest
-	26, // 71: huai.v1.RoomService.StandUp:input_type -> huai.v1.RoomRequest
-	32, // 72: huai.v1.RoomService.InviteFriend:input_type -> huai.v1.InviteFriendRequest
-	33, // 73: huai.v1.RoomService.SetSpectatorView:input_type -> huai.v1.SpectatorViewRequest
-	33, // 74: huai.v1.RoomService.SetHandVisibility:input_type -> huai.v1.SpectatorViewRequest
-	26, // 75: huai.v1.RoomService.StartGame:input_type -> huai.v1.RoomRequest
-	39, // 76: huai.v1.GameService.SubmitAction:input_type -> huai.v1.SubmitActionRequest
-	41, // 77: huai.v1.GameService.GetGameSnapshot:input_type -> huai.v1.GameSnapshotRequest
-	43, // 78: huai.v1.GameService.ListEventsAfter:input_type -> huai.v1.ListEventsAfterRequest
-	46, // 79: huai.v1.GameService.RequestReconnect:input_type -> huai.v1.RequestReconnectRequest
-	48, // 80: huai.v1.FriendService.SearchPlayers:input_type -> huai.v1.SearchPlayersRequest
-	50, // 81: huai.v1.FriendService.SendRequest:input_type -> huai.v1.FriendRequest
-	51, // 82: huai.v1.FriendService.RespondRequest:input_type -> huai.v1.RespondFriendRequest
-	3,  // 83: huai.v1.FriendService.ListFriends:input_type -> huai.v1.PageRequest
-	50, // 84: huai.v1.FriendService.RemoveFriend:input_type -> huai.v1.FriendRequest
-	56, // 85: huai.v1.FriendService.SendRoomInvite:input_type -> huai.v1.SendRoomInviteRequest
-	3,  // 86: huai.v1.FriendService.ListFriendRequests:input_type -> huai.v1.PageRequest
-	3,  // 87: huai.v1.FriendService.ListRoomInvitations:input_type -> huai.v1.PageRequest
-	59, // 88: huai.v1.ChatService.SendRoomMessage:input_type -> huai.v1.SendRoomMessageRequest
-	60, // 89: huai.v1.ChatService.ListRoomMessages:input_type -> huai.v1.ListRoomMessagesRequest
-	61, // 90: huai.v1.ChatService.SendPrivateMessage:input_type -> huai.v1.SendPrivateMessageRequest
-	62, // 91: huai.v1.ChatService.ListPrivateMessages:input_type -> huai.v1.ListPrivateMessagesRequest
-	63, // 92: huai.v1.ChatService.HidePrivateMessage:input_type -> huai.v1.HidePrivateMessageRequest
-	64, // 93: huai.v1.ChatService.ReportPrivateMessage:input_type -> huai.v1.ReportPrivateMessageRequest
-	2,  // 94: huai.v1.ConfigService.GetPublicConfig:input_type -> huai.v1.Empty
-	9,  // 95: huai.v1.AuthService.Register:output_type -> huai.v1.AuthResponse
-	9,  // 96: huai.v1.AuthService.Login:output_type -> huai.v1.AuthResponse
-	9,  // 97: huai.v1.AuthService.RefreshSession:output_type -> huai.v1.AuthResponse
-	2,  // 98: huai.v1.AuthService.Logout:output_type -> huai.v1.Empty
-	2,  // 99: huai.v1.AuthService.ChangePassword:output_type -> huai.v1.Empty
-	5,  // 100: huai.v1.PlayerService.GetProfile:output_type -> huai.v1.UserProfile
-	5,  // 101: huai.v1.PlayerService.UpdateProfile:output_type -> huai.v1.UserProfile
-	15, // 102: huai.v1.PlayerService.GetStatistics:output_type -> huai.v1.PlayerStatistics
-	17, // 103: huai.v1.PlayerService.ListRecentResults:output_type -> huai.v1.ListRecentResultsResponse
-	15, // 104: huai.v1.PlayerService.GetFriendStatistics:output_type -> huai.v1.PlayerStatistics
-	17, // 105: huai.v1.PlayerService.ListFriendRecentResults:output_type -> huai.v1.ListRecentResultsResponse
-	21, // 106: huai.v1.LobbyService.ListHalls:output_type -> huai.v1.ListHallsResponse
-	24, // 107: huai.v1.LobbyService.ListRooms:output_type -> huai.v1.ListRoomsResponse
-	22, // 108: huai.v1.LobbyService.CreateRoom:output_type -> huai.v1.RoomSummary
-	22, // 109: huai.v1.LobbyService.JoinRoom:output_type -> huai.v1.RoomSummary
-	2,  // 110: huai.v1.LobbyService.LeaveRoom:output_type -> huai.v1.Empty
-	22, // 111: huai.v1.LobbyService.JoinByCode:output_type -> huai.v1.RoomSummary
-	29, // 112: huai.v1.RoomService.GetRoom:output_type -> huai.v1.RoomDetails
-	29, // 113: huai.v1.RoomService.JoinInvitedRoom:output_type -> huai.v1.RoomDetails
-	29, // 114: huai.v1.RoomService.SitDown:output_type -> huai.v1.RoomDetails
-	29, // 115: huai.v1.RoomService.ChangeSeat:output_type -> huai.v1.RoomDetails
-	29, // 116: huai.v1.RoomService.StandUp:output_type -> huai.v1.RoomDetails
-	2,  // 117: huai.v1.RoomService.InviteFriend:output_type -> huai.v1.Empty
-	29, // 118: huai.v1.RoomService.SetSpectatorView:output_type -> huai.v1.RoomDetails
-	29, // 119: huai.v1.RoomService.SetHandVisibility:output_type -> huai.v1.RoomDetails
-	42, // 120: huai.v1.RoomService.StartGame:output_type -> huai.v1.GameSnapshot
-	40, // 121: huai.v1.GameService.SubmitAction:output_type -> huai.v1.SubmitActionResponse
-	42, // 122: huai.v1.GameService.GetGameSnapshot:output_type -> huai.v1.GameSnapshot
-	45, // 123: huai.v1.GameService.ListEventsAfter:output_type -> huai.v1.ListEventsAfterResponse
-	47, // 124: huai.v1.GameService.RequestReconnect:output_type -> huai.v1.RequestReconnectResponse
-	49, // 125: huai.v1.FriendService.SearchPlayers:output_type -> huai.v1.SearchPlayersResponse
-	2,  // 126: huai.v1.FriendService.SendRequest:output_type -> huai.v1.Empty
-	2,  // 127: huai.v1.FriendService.RespondRequest:output_type -> huai.v1.Empty
-	53, // 128: huai.v1.FriendService.ListFriends:output_type -> huai.v1.ListFriendsResponse
-	2,  // 129: huai.v1.FriendService.RemoveFriend:output_type -> huai.v1.Empty
-	2,  // 130: huai.v1.FriendService.SendRoomInvite:output_type -> huai.v1.Empty
-	55, // 131: huai.v1.FriendService.ListFriendRequests:output_type -> huai.v1.ListFriendRequestsResponse
-	58, // 132: huai.v1.FriendService.ListRoomInvitations:output_type -> huai.v1.ListRoomInvitationsResponse
-	65, // 133: huai.v1.ChatService.SendRoomMessage:output_type -> huai.v1.ChatMessage
-	66, // 134: huai.v1.ChatService.ListRoomMessages:output_type -> huai.v1.ListMessagesResponse
-	65, // 135: huai.v1.ChatService.SendPrivateMessage:output_type -> huai.v1.ChatMessage
-	66, // 136: huai.v1.ChatService.ListPrivateMessages:output_type -> huai.v1.ListMessagesResponse
-	2,  // 137: huai.v1.ChatService.HidePrivateMessage:output_type -> huai.v1.Empty
-	2,  // 138: huai.v1.ChatService.ReportPrivateMessage:output_type -> huai.v1.Empty
-	67, // 139: huai.v1.ConfigService.GetPublicConfig:output_type -> huai.v1.PublicConfig
-	95, // [95:140] is the sub-list for method output_type
-	50, // [50:95] is the sub-list for method input_type
-	50, // [50:50] is the sub-list for extension type_name
-	50, // [50:50] is the sub-list for extension extendee
-	0,  // [0:50] is the sub-list for field type_name
+	74,  // 0: huai.v1.UserProfile.created_at:type_name -> google.protobuf.Timestamp
+	74,  // 1: huai.v1.AuthTokens.access_token_expires_at:type_name -> google.protobuf.Timestamp
+	7,   // 2: huai.v1.AuthResponse.tokens:type_name -> huai.v1.AuthTokens
+	6,   // 3: huai.v1.AuthResponse.profile:type_name -> huai.v1.UserProfile
+	74,  // 4: huai.v1.GameResult.ended_at:type_name -> google.protobuf.Timestamp
+	17,  // 5: huai.v1.ListRecentResultsResponse.results:type_name -> huai.v1.GameResult
+	5,   // 6: huai.v1.ListRecentResultsResponse.page:type_name -> huai.v1.PageInfo
+	4,   // 7: huai.v1.ListFriendRecentResultsRequest.page:type_name -> huai.v1.PageRequest
+	21,  // 8: huai.v1.ListHallsResponse.halls:type_name -> huai.v1.Hall
+	0,   // 9: huai.v1.RoomSummary.status:type_name -> huai.v1.RoomStatus
+	6,   // 10: huai.v1.RoomSummary.owner:type_name -> huai.v1.UserProfile
+	4,   // 11: huai.v1.ListRoomsRequest.page:type_name -> huai.v1.PageRequest
+	23,  // 12: huai.v1.ListRoomsResponse.rooms:type_name -> huai.v1.RoomSummary
+	5,   // 13: huai.v1.ListRoomsResponse.page:type_name -> huai.v1.PageInfo
+	1,   // 14: huai.v1.RoomMember.role:type_name -> huai.v1.RoomMemberRole
+	6,   // 15: huai.v1.RoomMember.profile:type_name -> huai.v1.UserProfile
+	23,  // 16: huai.v1.RoomDetails.room:type_name -> huai.v1.RoomSummary
+	29,  // 17: huai.v1.RoomDetails.members:type_name -> huai.v1.RoomMember
+	35,  // 18: huai.v1.GameAction.declare_trump:type_name -> huai.v1.DeclareTrumpAction
+	35,  // 19: huai.v1.GameAction.counter_trump:type_name -> huai.v1.DeclareTrumpAction
+	35,  // 20: huai.v1.GameAction.redeclare_trump:type_name -> huai.v1.DeclareTrumpAction
+	36,  // 21: huai.v1.GameAction.bury_cards:type_name -> huai.v1.BuryCardsAction
+	37,  // 22: huai.v1.GameAction.play_cards:type_name -> huai.v1.PlayCardsAction
+	38,  // 23: huai.v1.GameAction.confirm_autoplay:type_name -> huai.v1.ConfirmAutoplayAction
+	39,  // 24: huai.v1.GameAction.pass:type_name -> huai.v1.PassAction
+	40,  // 25: huai.v1.GameAction.continue_action:type_name -> huai.v1.ContinueAction
+	41,  // 26: huai.v1.SubmitActionRequest.action:type_name -> huai.v1.GameAction
+	44,  // 27: huai.v1.GameSnapshot.public_plays:type_name -> huai.v1.PublicPlay
+	75,  // 28: huai.v1.GameEvent.payload:type_name -> google.protobuf.Any
+	74,  // 29: huai.v1.GameEvent.created_at:type_name -> google.protobuf.Timestamp
+	48,  // 30: huai.v1.ListEventsAfterResponse.events:type_name -> huai.v1.GameEvent
+	46,  // 31: huai.v1.RequestReconnectResponse.snapshot:type_name -> huai.v1.GameSnapshot
+	48,  // 32: huai.v1.RequestReconnectResponse.events:type_name -> huai.v1.GameEvent
+	4,   // 33: huai.v1.SearchPlayersRequest.page:type_name -> huai.v1.PageRequest
+	6,   // 34: huai.v1.SearchPlayersResponse.players:type_name -> huai.v1.UserProfile
+	5,   // 35: huai.v1.SearchPlayersResponse.page:type_name -> huai.v1.PageInfo
+	6,   // 36: huai.v1.Friend.profile:type_name -> huai.v1.UserProfile
+	74,  // 37: huai.v1.Friend.friends_since:type_name -> google.protobuf.Timestamp
+	56,  // 38: huai.v1.ListFriendsResponse.friends:type_name -> huai.v1.Friend
+	5,   // 39: huai.v1.ListFriendsResponse.page:type_name -> huai.v1.PageInfo
+	6,   // 40: huai.v1.PendingFriendRequest.requester:type_name -> huai.v1.UserProfile
+	74,  // 41: huai.v1.PendingFriendRequest.requested_at:type_name -> google.protobuf.Timestamp
+	58,  // 42: huai.v1.ListFriendRequestsResponse.requests:type_name -> huai.v1.PendingFriendRequest
+	5,   // 43: huai.v1.ListFriendRequestsResponse.page:type_name -> huai.v1.PageInfo
+	6,   // 44: huai.v1.RoomInvitation.inviter:type_name -> huai.v1.UserProfile
+	74,  // 45: huai.v1.RoomInvitation.invited_at:type_name -> google.protobuf.Timestamp
+	61,  // 46: huai.v1.ListRoomInvitationsResponse.invitations:type_name -> huai.v1.RoomInvitation
+	5,   // 47: huai.v1.ListRoomInvitationsResponse.page:type_name -> huai.v1.PageInfo
+	4,   // 48: huai.v1.ListRoomMessagesRequest.page:type_name -> huai.v1.PageRequest
+	4,   // 49: huai.v1.ListPrivateMessagesRequest.page:type_name -> huai.v1.PageRequest
+	74,  // 50: huai.v1.ChatMessage.created_at:type_name -> google.protobuf.Timestamp
+	69,  // 51: huai.v1.ListMessagesResponse.messages:type_name -> huai.v1.ChatMessage
+	5,   // 52: huai.v1.ListMessagesResponse.page:type_name -> huai.v1.PageInfo
+	2,   // 53: huai.v1.SubmitFeedbackRequest.kind:type_name -> huai.v1.FeedbackKind
+	8,   // 54: huai.v1.AuthService.Register:input_type -> huai.v1.RegisterRequest
+	9,   // 55: huai.v1.AuthService.Login:input_type -> huai.v1.LoginRequest
+	11,  // 56: huai.v1.AuthService.RefreshSession:input_type -> huai.v1.RefreshSessionRequest
+	12,  // 57: huai.v1.AuthService.Logout:input_type -> huai.v1.LogoutRequest
+	13,  // 58: huai.v1.AuthService.ChangePassword:input_type -> huai.v1.ChangePasswordRequest
+	14,  // 59: huai.v1.PlayerService.GetProfile:input_type -> huai.v1.GetProfileRequest
+	15,  // 60: huai.v1.PlayerService.UpdateProfile:input_type -> huai.v1.UpdateProfileRequest
+	3,   // 61: huai.v1.PlayerService.GetStatistics:input_type -> huai.v1.Empty
+	4,   // 62: huai.v1.PlayerService.ListRecentResults:input_type -> huai.v1.PageRequest
+	19,  // 63: huai.v1.PlayerService.GetFriendStatistics:input_type -> huai.v1.GetFriendStatisticsRequest
+	20,  // 64: huai.v1.PlayerService.ListFriendRecentResults:input_type -> huai.v1.ListFriendRecentResultsRequest
+	3,   // 65: huai.v1.LobbyService.ListHalls:input_type -> huai.v1.Empty
+	24,  // 66: huai.v1.LobbyService.ListRooms:input_type -> huai.v1.ListRoomsRequest
+	26,  // 67: huai.v1.LobbyService.CreateRoom:input_type -> huai.v1.CreateRoomRequest
+	27,  // 68: huai.v1.LobbyService.JoinRoom:input_type -> huai.v1.RoomRequest
+	27,  // 69: huai.v1.LobbyService.LeaveRoom:input_type -> huai.v1.RoomRequest
+	28,  // 70: huai.v1.LobbyService.JoinByCode:input_type -> huai.v1.JoinByCodeRequest
+	27,  // 71: huai.v1.RoomService.GetRoom:input_type -> huai.v1.RoomRequest
+	31,  // 72: huai.v1.RoomService.JoinInvitedRoom:input_type -> huai.v1.JoinInvitedRoomRequest
+	32,  // 73: huai.v1.RoomService.SitDown:input_type -> huai.v1.SeatRequest
+	32,  // 74: huai.v1.RoomService.ChangeSeat:input_type -> huai.v1.SeatRequest
+	27,  // 75: huai.v1.RoomService.StandUp:input_type -> huai.v1.RoomRequest
+	33,  // 76: huai.v1.RoomService.InviteFriend:input_type -> huai.v1.InviteFriendRequest
+	34,  // 77: huai.v1.RoomService.SetSpectatorView:input_type -> huai.v1.SpectatorViewRequest
+	34,  // 78: huai.v1.RoomService.SetHandVisibility:input_type -> huai.v1.SpectatorViewRequest
+	27,  // 79: huai.v1.RoomService.StartGame:input_type -> huai.v1.RoomRequest
+	42,  // 80: huai.v1.GameService.SubmitAction:input_type -> huai.v1.SubmitActionRequest
+	45,  // 81: huai.v1.GameService.GetGameSnapshot:input_type -> huai.v1.GameSnapshotRequest
+	47,  // 82: huai.v1.GameService.ListEventsAfter:input_type -> huai.v1.ListEventsAfterRequest
+	50,  // 83: huai.v1.GameService.RequestReconnect:input_type -> huai.v1.RequestReconnectRequest
+	52,  // 84: huai.v1.FriendService.SearchPlayers:input_type -> huai.v1.SearchPlayersRequest
+	54,  // 85: huai.v1.FriendService.SendRequest:input_type -> huai.v1.FriendRequest
+	55,  // 86: huai.v1.FriendService.RespondRequest:input_type -> huai.v1.RespondFriendRequest
+	4,   // 87: huai.v1.FriendService.ListFriends:input_type -> huai.v1.PageRequest
+	54,  // 88: huai.v1.FriendService.RemoveFriend:input_type -> huai.v1.FriendRequest
+	60,  // 89: huai.v1.FriendService.SendRoomInvite:input_type -> huai.v1.SendRoomInviteRequest
+	4,   // 90: huai.v1.FriendService.ListFriendRequests:input_type -> huai.v1.PageRequest
+	4,   // 91: huai.v1.FriendService.ListRoomInvitations:input_type -> huai.v1.PageRequest
+	63,  // 92: huai.v1.ChatService.SendRoomMessage:input_type -> huai.v1.SendRoomMessageRequest
+	64,  // 93: huai.v1.ChatService.ListRoomMessages:input_type -> huai.v1.ListRoomMessagesRequest
+	65,  // 94: huai.v1.ChatService.SendPrivateMessage:input_type -> huai.v1.SendPrivateMessageRequest
+	66,  // 95: huai.v1.ChatService.ListPrivateMessages:input_type -> huai.v1.ListPrivateMessagesRequest
+	67,  // 96: huai.v1.ChatService.HidePrivateMessage:input_type -> huai.v1.HidePrivateMessageRequest
+	68,  // 97: huai.v1.ChatService.ReportPrivateMessage:input_type -> huai.v1.ReportPrivateMessageRequest
+	3,   // 98: huai.v1.ConfigService.GetPublicConfig:input_type -> huai.v1.Empty
+	72,  // 99: huai.v1.SupportService.SubmitFeedback:input_type -> huai.v1.SubmitFeedbackRequest
+	3,   // 100: huai.v1.SupportService.GetServerInfo:input_type -> huai.v1.Empty
+	10,  // 101: huai.v1.AuthService.Register:output_type -> huai.v1.AuthResponse
+	10,  // 102: huai.v1.AuthService.Login:output_type -> huai.v1.AuthResponse
+	10,  // 103: huai.v1.AuthService.RefreshSession:output_type -> huai.v1.AuthResponse
+	3,   // 104: huai.v1.AuthService.Logout:output_type -> huai.v1.Empty
+	3,   // 105: huai.v1.AuthService.ChangePassword:output_type -> huai.v1.Empty
+	6,   // 106: huai.v1.PlayerService.GetProfile:output_type -> huai.v1.UserProfile
+	6,   // 107: huai.v1.PlayerService.UpdateProfile:output_type -> huai.v1.UserProfile
+	16,  // 108: huai.v1.PlayerService.GetStatistics:output_type -> huai.v1.PlayerStatistics
+	18,  // 109: huai.v1.PlayerService.ListRecentResults:output_type -> huai.v1.ListRecentResultsResponse
+	16,  // 110: huai.v1.PlayerService.GetFriendStatistics:output_type -> huai.v1.PlayerStatistics
+	18,  // 111: huai.v1.PlayerService.ListFriendRecentResults:output_type -> huai.v1.ListRecentResultsResponse
+	22,  // 112: huai.v1.LobbyService.ListHalls:output_type -> huai.v1.ListHallsResponse
+	25,  // 113: huai.v1.LobbyService.ListRooms:output_type -> huai.v1.ListRoomsResponse
+	23,  // 114: huai.v1.LobbyService.CreateRoom:output_type -> huai.v1.RoomSummary
+	23,  // 115: huai.v1.LobbyService.JoinRoom:output_type -> huai.v1.RoomSummary
+	3,   // 116: huai.v1.LobbyService.LeaveRoom:output_type -> huai.v1.Empty
+	23,  // 117: huai.v1.LobbyService.JoinByCode:output_type -> huai.v1.RoomSummary
+	30,  // 118: huai.v1.RoomService.GetRoom:output_type -> huai.v1.RoomDetails
+	30,  // 119: huai.v1.RoomService.JoinInvitedRoom:output_type -> huai.v1.RoomDetails
+	30,  // 120: huai.v1.RoomService.SitDown:output_type -> huai.v1.RoomDetails
+	30,  // 121: huai.v1.RoomService.ChangeSeat:output_type -> huai.v1.RoomDetails
+	30,  // 122: huai.v1.RoomService.StandUp:output_type -> huai.v1.RoomDetails
+	3,   // 123: huai.v1.RoomService.InviteFriend:output_type -> huai.v1.Empty
+	30,  // 124: huai.v1.RoomService.SetSpectatorView:output_type -> huai.v1.RoomDetails
+	30,  // 125: huai.v1.RoomService.SetHandVisibility:output_type -> huai.v1.RoomDetails
+	46,  // 126: huai.v1.RoomService.StartGame:output_type -> huai.v1.GameSnapshot
+	43,  // 127: huai.v1.GameService.SubmitAction:output_type -> huai.v1.SubmitActionResponse
+	46,  // 128: huai.v1.GameService.GetGameSnapshot:output_type -> huai.v1.GameSnapshot
+	49,  // 129: huai.v1.GameService.ListEventsAfter:output_type -> huai.v1.ListEventsAfterResponse
+	51,  // 130: huai.v1.GameService.RequestReconnect:output_type -> huai.v1.RequestReconnectResponse
+	53,  // 131: huai.v1.FriendService.SearchPlayers:output_type -> huai.v1.SearchPlayersResponse
+	3,   // 132: huai.v1.FriendService.SendRequest:output_type -> huai.v1.Empty
+	3,   // 133: huai.v1.FriendService.RespondRequest:output_type -> huai.v1.Empty
+	57,  // 134: huai.v1.FriendService.ListFriends:output_type -> huai.v1.ListFriendsResponse
+	3,   // 135: huai.v1.FriendService.RemoveFriend:output_type -> huai.v1.Empty
+	3,   // 136: huai.v1.FriendService.SendRoomInvite:output_type -> huai.v1.Empty
+	59,  // 137: huai.v1.FriendService.ListFriendRequests:output_type -> huai.v1.ListFriendRequestsResponse
+	62,  // 138: huai.v1.FriendService.ListRoomInvitations:output_type -> huai.v1.ListRoomInvitationsResponse
+	69,  // 139: huai.v1.ChatService.SendRoomMessage:output_type -> huai.v1.ChatMessage
+	70,  // 140: huai.v1.ChatService.ListRoomMessages:output_type -> huai.v1.ListMessagesResponse
+	69,  // 141: huai.v1.ChatService.SendPrivateMessage:output_type -> huai.v1.ChatMessage
+	70,  // 142: huai.v1.ChatService.ListPrivateMessages:output_type -> huai.v1.ListMessagesResponse
+	3,   // 143: huai.v1.ChatService.HidePrivateMessage:output_type -> huai.v1.Empty
+	3,   // 144: huai.v1.ChatService.ReportPrivateMessage:output_type -> huai.v1.Empty
+	71,  // 145: huai.v1.ConfigService.GetPublicConfig:output_type -> huai.v1.PublicConfig
+	3,   // 146: huai.v1.SupportService.SubmitFeedback:output_type -> huai.v1.Empty
+	73,  // 147: huai.v1.SupportService.GetServerInfo:output_type -> huai.v1.ServerInfo
+	101, // [101:148] is the sub-list for method output_type
+	54,  // [54:101] is the sub-list for method input_type
+	54,  // [54:54] is the sub-list for extension type_name
+	54,  // [54:54] is the sub-list for extension extendee
+	0,   // [0:54] is the sub-list for field type_name
 }
 
 func init() { file_huai_v1_api_proto_init() }
@@ -4678,23 +5266,25 @@ func file_huai_v1_api_proto_init() {
 	if File_huai_v1_api_proto != nil {
 		return
 	}
-	file_huai_v1_api_proto_msgTypes[36].OneofWrappers = []any{
+	file_huai_v1_api_proto_msgTypes[38].OneofWrappers = []any{
 		(*GameAction_DeclareTrump)(nil),
 		(*GameAction_CounterTrump)(nil),
 		(*GameAction_RedeclareTrump)(nil),
 		(*GameAction_BuryCards)(nil),
 		(*GameAction_PlayCards)(nil),
 		(*GameAction_ConfirmAutoplay)(nil),
+		(*GameAction_Pass)(nil),
+		(*GameAction_ContinueAction)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_huai_v1_api_proto_rawDesc), len(file_huai_v1_api_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   66,
+			NumEnums:      3,
+			NumMessages:   71,
 			NumExtensions: 0,
-			NumServices:   8,
+			NumServices:   9,
 		},
 		GoTypes:           file_huai_v1_api_proto_goTypes,
 		DependencyIndexes: file_huai_v1_api_proto_depIdxs,

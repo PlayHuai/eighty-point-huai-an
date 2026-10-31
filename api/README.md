@@ -16,6 +16,16 @@ different operation. `RoomMember.show_hand` is a player's opt-in spectator
 visibility flag; `view_seat` is only meaningful for spectators, and `team` is
 derived from the player's seat.
 
+`SupportService` requires authentication for both RPCs. `SubmitFeedback` accepts
+`FEEDBACK_KIND_BUG` or `FEEDBACK_KIND_SUGGESTION`, a trimmed UTF-8 body of 1–2000
+Unicode code points and a UUID `request_id`. Identical retries are idempotent
+per user; reusing the ID with different content returns `ALREADY_EXISTS`.
+Invalid input returns `INVALID_ARGUMENT`; storage failures return `INTERNAL`.
+Feedback creates a new record and does not use a game/room `expected_version`.
+`GetServerInfo` returns the packaged Git commit, manually maintained version
+and UTF-8 changelist, not the current runtime checkout. See the deployment
+guide for the metadata build scripts.
+
 Game snapshots retain the existing string-card fields for wire compatibility.
 Card strings use the stable `suit:rank:copy` identity (`clubs`, `diamonds`,
 `hearts`, `spades`, or `joker`; ranks 2 through 14, small joker 15, big joker

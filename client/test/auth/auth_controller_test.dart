@@ -4,6 +4,8 @@ import 'package:eighty_point_huai_an/src/api/player_models.dart';
 import 'package:eighty_point_huai_an/src/auth/auth_controller.dart';
 import 'package:eighty_point_huai_an/src/auth/auth_session.dart';
 import 'package:eighty_point_huai_an/src/auth/session_store.dart';
+import 'package:eighty_point_huai_an/src/generated/huai/v1/api.pb.dart'
+    as proto;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grpc/grpc.dart';
 
@@ -62,6 +64,18 @@ final _session = AuthSession(
 );
 
 class _FakeApiClient implements ApiClient {
+  @override
+  Future<proto.ServerInfo> getServerInfo({required String accessToken}) =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> submitFeedback({
+    required String accessToken,
+    required proto.FeedbackKind kind,
+    required String body,
+    required String requestId,
+  }) => throw UnimplementedError();
+
   _FakeApiClient({required this.onRefresh});
 
   final Future<AuthSession> Function(String refreshToken) onRefresh;

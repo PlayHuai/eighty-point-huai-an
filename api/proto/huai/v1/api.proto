@@ -511,3 +511,26 @@ message PublicConfig {
 service ConfigService {
   rpc GetPublicConfig(Empty) returns (PublicConfig);
 }
+
+enum FeedbackKind {
+  FEEDBACK_KIND_UNSPECIFIED = 0;
+  FEEDBACK_KIND_BUG = 1;
+  FEEDBACK_KIND_SUGGESTION = 2;
+}
+
+message SubmitFeedbackRequest {
+  FeedbackKind kind = 1;
+  string body = 2;
+  string request_id = 3;
+}
+
+message ServerInfo {
+  string commit_id = 1;
+  string version = 2;
+  string changelist = 3;
+}
+
+service SupportService {
+  rpc SubmitFeedback(SubmitFeedbackRequest) returns (Empty);
+  rpc GetServerInfo(Empty) returns (ServerInfo);
+}

@@ -10,6 +10,15 @@ import 'player_models.dart';
 import 'request_id.dart';
 
 abstract interface class ApiClient {
+  Future<void> submitFeedback({
+    required String accessToken,
+    required api.FeedbackKind kind,
+    required String body,
+    required String requestId,
+  });
+
+  Future<api.ServerInfo> getServerInfo({required String accessToken});
+
   Future<AuthSession> login({
     required String account,
     required String password,
@@ -183,6 +192,35 @@ class GrpcApiClient implements ApiClient {
   );
   late final api.RoomServiceClient _room = api.RoomServiceClient(_channel);
   late final api.ChatServiceClient _chat = api.ChatServiceClient(_channel);
+  late final api.SupportServiceClient _support = api.SupportServiceClient(
+    _channel,
+  );
+
+  @override
+  Future<void> submitFeedback({
+    required String accessToken,
+    required api.FeedbackKind kind,
+    required String body,
+    required String requestId,
+  }) async {
+    await _support.submitFeedback(
+      api.SubmitFeedbackRequest(kind: kind, body: body, requestId: requestId),
+      options: _authenticatedOptions(
+        accessToken,
+        timeout: const Duration(seconds: 15),
+      ),
+    );
+  }
+
+  @override
+  Future<api.ServerInfo> getServerInfo({required String accessToken}) =>
+      _support.getServerInfo(
+        api.Empty(),
+        options: _authenticatedOptions(
+          accessToken,
+          timeout: const Duration(seconds: 15),
+        ),
+      );
 
   @override
   Future<AuthSession> login({
@@ -704,8 +742,11 @@ class GrpcApiClient implements ApiClient {
     return _roomFrom(response.room);
   }
 
-  CallOptions _authenticatedOptions(String accessToken) =>
-      CallOptions(metadata: {'authorization': 'Bearer ' + accessToken});
+  CallOptions _authenticatedOptions(String accessToken, {Duration? timeout}) =>
+      CallOptions(
+        metadata: {'authorization': 'Bearer ' + accessToken},
+        timeout: timeout,
+      );
 
   LobbyRoom _roomFrom(api.RoomSummary room) => LobbyRoom(
     id: room.roomId,

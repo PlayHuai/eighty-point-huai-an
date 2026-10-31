@@ -15,6 +15,7 @@ import 'friend_list_screen.dart';
 import 'responsive_breakpoints.dart';
 import 'game_table_screen.dart';
 import 'theme/app_theme.dart';
+import 'support_dialogs.dart';
 
 final lobbyHallsProvider = FutureProvider<List<LobbyHall>>((ref) {
   final session = ref.watch(
@@ -80,6 +81,35 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   final _roomInviteRequestIds = <String, String>{};
   String? _createRequestKey;
   String? _createRequestId;
+
+  Future<void> _openFeedback() async {
+    final session = widget.auth.session;
+    if (session == null) return;
+    final submitted = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => FeedbackDialog(
+        client: ref.read(apiClientProvider),
+        accessToken: session.accessToken,
+      ),
+    );
+    if (submitted == true && mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('反馈已提交，感谢您的反馈。')));
+    }
+  }
+
+  Future<void> _openServerInfo() async {
+    final session = widget.auth.session;
+    if (session == null) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => ServerInfoDialog(
+        client: ref.read(apiClientProvider),
+        accessToken: session.accessToken,
+      ),
+    );
+  }
 
   Future<void> _joinRoom(LobbyRoom room) async {
     final session = widget.auth.session;
@@ -458,6 +488,8 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         ],
       ),
       actions: [
+        TextButton(onPressed: _openFeedback, child: const Text('反馈')),
+        TextButton(onPressed: _openServerInfo, child: const Text('关于')),
         IconButton(
           tooltip: '好友',
           onPressed: () => Navigator.of(context).push(

@@ -22,12 +22,30 @@
 
 ```sh
 mkdir -p dist
-cd server
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o ../dist/server ./cmd/server
-cd ..
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 bash deploy/scripts/build-server.sh
 cp deploy/scripts/install-systemd.sh deploy/scripts/uninstall-systemd.sh deploy/systemd.env.example dist/
 tar -C dist -czf eighty-point-linux-amd64.tar.gz server install-systemd.sh uninstall-systemd.sh systemd.env.example
 ```
+
+### 版本信息与反馈
+
+发布前手动编辑仓库根目录的 `VERSION`（例如 `1.0.0`）和 `CHANGELOG.md`（UTF-8 更新记录）。
+`build-server.sh` 从本地仓库读取完整的 `git rev-parse HEAD`、版本号和更新记录，通过 Go linker flags
+固化进程序；运行时不需要 Git 或这些文件。直接 `go build` 仅生成 `development` 版本。
+未提交的修改不改变 commit ID；正式发布应从已提交的源码打包。
+
+Docker Compose 的 `init.sh`、`upgrade.sh` 与 GitHub Server package 工作流使用同一个
+`build-info.sh` 固化信息。手动构建镜像时先 `source deploy/scripts/build-info.sh`，再传入
+`--build-arg SERVER_COMMIT --build-arg SERVER_VERSION --build-arg SERVER_CHANGELIST`。
+缺少构建信息时 Docker 构建会失败，避免发布信息不完整的镜像。
+这些脚本需要 Bash、Git 和 `base64`（原生编译另需 Go）。
+
+登录后的 Flutter 大厅通过 `SupportService/GetServerInfo` 获取上述信息。
+`SupportService/SubmitFeedback` 接收 Bug 或建议，内容为 1–2000 字，保存到 MySQL `feedback` 表，
+包含认证用户、类型、内容、提交时间。迁移 `0008_feedback.sql` 随已有迁移流程执行。
+同一用户重试时复用 UUID `request_id`，相同内容不重复写入，不同内容返回 `ALREADY_EXISTS`。
+反馈是新建记录，不修改带版本的游戏或房间状态，因此不使用 `expected_version`。
+本次不提供反馈管理后台，可由运维通过数据库查询处理。
 
 将压缩包传到目标主机并解压。将 `systemd.env.example` 复制为 `server.env`，填写数据库连接信息和唯一强密码，并限制文件访问权限：
 
