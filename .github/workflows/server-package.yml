@@ -6,6 +6,10 @@ on:
       - master
     paths:
       - "server/**"
+      - "VERSION"
+      - "CHANGELOG.md"
+      - "deploy/scripts/build-info.sh"
+      - ".github/workflows/server-package.yml"
   workflow_dispatch:
 
 permissions:
@@ -32,8 +36,12 @@ jobs:
         env:
           IMAGE_TAG: eighty-point-huai-an-server:${{ github.sha }}
         run: |
+          source deploy/scripts/build-info.sh
           docker build --platform linux/amd64 \
             --file server/Dockerfile \
+            --build-arg SERVER_COMMIT \
+            --build-arg SERVER_VERSION \
+            --build-arg SERVER_CHANGELIST \
             --tag "$IMAGE_TAG" \
             server
           mkdir -p server/build

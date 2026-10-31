@@ -17,6 +17,7 @@ import (
 
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/auth"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/chat"
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/feedback"
 	mysqlstore "github.com/Derek0120/eighty-point-huai-an/server/internal/persistence/mysql"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/player"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/room"
@@ -158,6 +159,10 @@ func newApplication(db *sql.DB, allowedOrigins []string) (*application, error) {
 	if err != nil {
 		return nil, err
 	}
+	feedbackService, err := feedback.NewService(store)
+	if err != nil {
+		return nil, err
+	}
 	grpcServer := grpcgo.NewServer(grpcgo.UnaryInterceptor(
 		grpctransport.AuthUnaryServerInterceptor(authService),
 	))
@@ -168,6 +173,7 @@ func newApplication(db *sql.DB, allowedOrigins []string) (*application, error) {
 		func() error { return grpctransport.RegisterLobbyService(grpcServer, rooms, store, authService) },
 		func() error { return grpctransport.RegisterRoomService(grpcServer, rooms, store) },
 		func() error { return grpctransport.RegisterChatService(grpcServer, chatService) },
+		func() error { return grpctransport.RegisterSupportService(grpcServer, feedbackService) },
 	}
 	for _, register := range registrations {
 		if err := register(); err != nil {

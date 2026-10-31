@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/feedback"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/game/coordinator"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/settlement"
 )
@@ -62,6 +63,7 @@ type memoryMigration struct {
 }
 
 type memoryState struct {
+	feedback   map[string][2]string
 	sessions   map[string]memorySession
 	profiles   map[string]memoryProfile
 	results    map[string]memoryResult
@@ -73,6 +75,7 @@ type memoryState struct {
 
 func (s *memoryState) clone() *memoryState {
 	copyState := &memoryState{
+		feedback:   make(map[string][2]string, len(s.feedback)),
 		sessions:   make(map[string]memorySession, len(s.sessions)),
 		profiles:   make(map[string]memoryProfile, len(s.profiles)),
 		results:    make(map[string]memoryResult, len(s.results)),
@@ -80,6 +83,9 @@ func (s *memoryState) clone() *memoryState {
 		events:     make(map[string][]memoryEvent, len(s.events)),
 		migrations: make(map[uint64]memoryMigration, len(s.migrations)),
 		ddlCount:   s.ddlCount,
+	}
+	for key, value := range s.feedback {
+		copyState.feedback[key] = value
 	}
 	for key, value := range s.sessions {
 		value.snapshot = append([]byte(nil), value.snapshot...)
@@ -169,6 +175,11 @@ func (c *memoryConn) ExecContext(_ context.Context, query string, args []driver.
 	query = strings.Join(strings.Fields(query), " ")
 	state := c.current()
 	switch {
+	case strings.HasPrefix(query, "INSERT INTO feedback"):
+		key := args[0].Value.(string) + ":" + args[1].Value.(string)
+		if _, exists := state.feedback[key]; !exists {
+			state.feedback[key] = [2]string{args[2].Value.(string), args[3].Value.(string)}
+		}
 	case strings.HasPrefix(query, "DELETE FROM friendships"):
 		c.db.lastExecQuery = query
 		if !strings.Contains(query, "WHERE status = 'ACCEPTED'") {
@@ -255,6 +266,13 @@ func (c *memoryConn) QueryContext(_ context.Context, query string, args []driver
 	query = strings.Join(strings.Fields(query), " ")
 	state := c.current()
 	switch {
+	case strings.HasPrefix(query, "SELECT kind, body FROM feedback"):
+		value, ok := state.feedback[args[0].Value.(string)+":"+args[1].Value.(string)]
+		rows := &memoryRows{columns: []string{"kind", "body"}}
+		if ok {
+			rows.values = [][]driver.Value{{value[0], value[1]}}
+		}
+		return rows, nil
 	case strings.HasPrefix(query, "SELECT version, name, checksum FROM schema_migrations"):
 		versions := make([]int, 0, len(state.migrations))
 		for version := range state.migrations {
@@ -525,15 +543,44 @@ func testSettlement() settlement.MatchResult {
 	}
 }
 
+func TestSaveFeedbackIsIdempotentAndRejectsChangedContent(t *testing.T) {
+	store, db := newTestStore(t, testMemoryState())
+	ctx := context.Background()
+	const requestID = "00000000-0000-4000-8000-000000000001"
+	for range 2 {
+		if err := store.SaveFeedback(ctx, "p1", requestID, "bug", "反馈内容"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(db.state.feedback) != 1 {
+		t.Fatalf("retry inserted duplicate feedback: %+v", db.state.feedback)
+	}
+	for _, changed := range [][2]string{{"suggestion", "反馈内容"}, {"bug", "不同内容"}} {
+		err := store.SaveFeedback(ctx, "p1", requestID, changed[0], changed[1])
+		if !errors.Is(err, feedback.ErrRequestConflict) {
+			t.Fatalf("expected request conflict, got %v", err)
+		}
+	}
+	if db.state.feedback["p1:"+requestID] != [2]string{"bug", "反馈内容"} {
+		t.Fatal("request conflict changed original feedback")
+	}
+	if err := store.SaveFeedback(ctx, "p2", requestID, "suggestion", "另一位用户"); err != nil {
+		t.Fatal(err)
+	}
+	if len(db.state.feedback) != 2 {
+		t.Fatal("idempotency key must be scoped to the authenticated user")
+	}
+}
+
 func TestLoadMigrations(t *testing.T) {
 	migrations, err := loadMigrations()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 7 || migrations[0].version != 1 || migrations[1].version != 2 ||
+	if len(migrations) != 8 || migrations[0].version != 1 || migrations[1].version != 2 ||
 		migrations[2].version != 3 || migrations[3].version != 4 ||
 		migrations[4].version != 5 || migrations[5].version != 6 ||
-		migrations[6].version != 7 {
+		migrations[6].version != 7 || migrations[7].version != 8 {
 		t.Fatalf("unexpected migrations: %#v", migrations)
 	}
 	for _, required := range []string{
@@ -572,6 +619,11 @@ func TestLoadMigrations(t *testing.T) {
 		"wechat_openid VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL UNIQUE") {
 		t.Fatal("WeChat identity migration is missing the unique OpenID column")
 	}
+	for _, required := range []string{"uq_feedback_user_request", "CURRENT_TIMESTAMP(6)", "FOREIGN KEY (user_id)", "CHECK (kind IN ('bug', 'suggestion'))"} {
+		if !strings.Contains(migrations[7].sql, required) {
+			t.Errorf("feedback migration missing %q", required)
+		}
+	}
 }
 
 func TestApplyMigrationsRecordsVersionsAndIsIdempotent(t *testing.T) {
@@ -590,13 +642,14 @@ func TestApplyMigrationsRecordsVersionsAndIsIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	firstDDLCount := db.state.ddlCount
-	if len(db.state.migrations) != 7 || db.state.migrations[1].name != "0001_initial.sql" ||
+	if len(db.state.migrations) != 8 || db.state.migrations[1].name != "0001_initial.sql" ||
 		db.state.migrations[2].name != "0002_session_access_tokens.sql" ||
 		db.state.migrations[3].name != "0003_player_result_outcomes.sql" ||
 		db.state.migrations[4].name != "0004_private_chat_requests.sql" ||
 		db.state.migrations[5].name != "0005_chat_retention_and_visibility.sql" ||
 		db.state.migrations[6].name != "0006_defer_chat_retention.sql" ||
-		db.state.migrations[7].name != "0007_wechat_openid.sql" {
+		db.state.migrations[7].name != "0007_wechat_openid.sql" ||
+		db.state.migrations[8].name != "0008_feedback.sql" {
 		t.Fatalf("migration version was not recorded: %+v", db.state.migrations)
 	}
 	if err := ApplyMigrations(context.Background(), sqlDB); err != nil {

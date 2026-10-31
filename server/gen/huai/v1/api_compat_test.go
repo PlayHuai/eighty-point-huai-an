@@ -12,14 +12,15 @@ import (
 func TestVersionedServiceContract(t *testing.T) {
 	services := File_huai_v1_api_proto.Services()
 	want := map[string][]string{
-		"AuthService":   {"Register", "Login", "RefreshSession", "Logout", "ChangePassword"},
-		"PlayerService": {"GetProfile", "UpdateProfile", "GetStatistics", "ListRecentResults", "GetFriendStatistics", "ListFriendRecentResults"},
-		"LobbyService":  {"ListHalls", "ListRooms", "CreateRoom", "JoinRoom", "LeaveRoom", "JoinByCode"},
-		"RoomService":   {"GetRoom", "JoinInvitedRoom", "SitDown", "ChangeSeat", "StandUp", "InviteFriend", "SetSpectatorView", "SetHandVisibility", "StartGame"},
-		"GameService":   {"SubmitAction", "GetGameSnapshot", "ListEventsAfter", "RequestReconnect"},
-		"FriendService": {"SearchPlayers", "SendRequest", "RespondRequest", "ListFriends", "RemoveFriend", "SendRoomInvite", "ListFriendRequests", "ListRoomInvitations"},
-		"ChatService":   {"SendRoomMessage", "ListRoomMessages", "SendPrivateMessage", "ListPrivateMessages", "HidePrivateMessage", "ReportPrivateMessage"},
-		"ConfigService": {"GetPublicConfig"},
+		"AuthService":    {"Register", "Login", "RefreshSession", "Logout", "ChangePassword"},
+		"PlayerService":  {"GetProfile", "UpdateProfile", "GetStatistics", "ListRecentResults", "GetFriendStatistics", "ListFriendRecentResults"},
+		"LobbyService":   {"ListHalls", "ListRooms", "CreateRoom", "JoinRoom", "LeaveRoom", "JoinByCode"},
+		"RoomService":    {"GetRoom", "JoinInvitedRoom", "SitDown", "ChangeSeat", "StandUp", "InviteFriend", "SetSpectatorView", "SetHandVisibility", "StartGame"},
+		"GameService":    {"SubmitAction", "GetGameSnapshot", "ListEventsAfter", "RequestReconnect"},
+		"FriendService":  {"SearchPlayers", "SendRequest", "RespondRequest", "ListFriends", "RemoveFriend", "SendRoomInvite", "ListFriendRequests", "ListRoomInvitations"},
+		"ChatService":    {"SendRoomMessage", "ListRoomMessages", "SendPrivateMessage", "ListPrivateMessages", "HidePrivateMessage", "ReportPrivateMessage"},
+		"ConfigService":  {"GetPublicConfig"},
+		"SupportService": {"SubmitFeedback", "GetServerInfo"},
 	}
 	if got := services.Len(); got != len(want) {
 		t.Fatalf("service count = %d, want %d", got, len(want))

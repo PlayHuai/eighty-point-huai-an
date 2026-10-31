@@ -15,6 +15,7 @@ if grep -Eq '^DB_(PASSWORD|ROOT_PASSWORD)=replace-with-' "$env_file"; then
   exit 1
 fi
 
+source "$script_dir/build-info.sh"
 compose=(docker compose --env-file "$env_file" -f "$compose_file")
 "${compose[@]}" config --quiet
 "${compose[@]}" up -d --wait mysql redis

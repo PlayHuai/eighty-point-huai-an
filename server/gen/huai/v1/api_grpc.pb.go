@@ -2239,3 +2239,143 @@ var ConfigService_ServiceDesc = grpc.ServiceDesc{
 	Streams:  []grpc.StreamDesc{},
 	Metadata: "huai/v1/api.proto",
 }
+
+const (
+	SupportService_SubmitFeedback_FullMethodName = "/huai.v1.SupportService/SubmitFeedback"
+	SupportService_GetServerInfo_FullMethodName  = "/huai.v1.SupportService/GetServerInfo"
+)
+
+// SupportServiceClient is the client API for SupportService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type SupportServiceClient interface {
+	SubmitFeedback(ctx context.Context, in *SubmitFeedbackRequest, opts ...grpc.CallOption) (*Empty, error)
+	GetServerInfo(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*ServerInfo, error)
+}
+
+type supportServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewSupportServiceClient(cc grpc.ClientConnInterface) SupportServiceClient {
+	return &supportServiceClient{cc}
+}
+
+func (c *supportServiceClient) SubmitFeedback(ctx context.Context, in *SubmitFeedbackRequest, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, SupportService_SubmitFeedback_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supportServiceClient) GetServerInfo(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*ServerInfo, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ServerInfo)
+	err := c.cc.Invoke(ctx, SupportService_GetServerInfo_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// SupportServiceServer is the server API for SupportService service.
+// All implementations must embed UnimplementedSupportServiceServer
+// for forward compatibility.
+type SupportServiceServer interface {
+	SubmitFeedback(context.Context, *SubmitFeedbackRequest) (*Empty, error)
+	GetServerInfo(context.Context, *Empty) (*ServerInfo, error)
+	mustEmbedUnimplementedSupportServiceServer()
+}
+
+// UnimplementedSupportServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedSupportServiceServer struct{}
+
+func (UnimplementedSupportServiceServer) SubmitFeedback(context.Context, *SubmitFeedbackRequest) (*Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SubmitFeedback not implemented")
+}
+func (UnimplementedSupportServiceServer) GetServerInfo(context.Context, *Empty) (*ServerInfo, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetServerInfo not implemented")
+}
+func (UnimplementedSupportServiceServer) mustEmbedUnimplementedSupportServiceServer() {}
+func (UnimplementedSupportServiceServer) testEmbeddedByValue()                        {}
+
+// UnsafeSupportServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to SupportServiceServer will
+// result in compilation errors.
+type UnsafeSupportServiceServer interface {
+	mustEmbedUnimplementedSupportServiceServer()
+}
+
+func RegisterSupportServiceServer(s grpc.ServiceRegistrar, srv SupportServiceServer) {
+	// If the following call pancis, it indicates UnimplementedSupportServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&SupportService_ServiceDesc, srv)
+}
+
+func _SupportService_SubmitFeedback_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SubmitFeedbackRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupportServiceServer).SubmitFeedback(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupportService_SubmitFeedback_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupportServiceServer).SubmitFeedback(ctx, req.(*SubmitFeedbackRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupportService_GetServerInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupportServiceServer).GetServerInfo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupportService_GetServerInfo_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupportServiceServer).GetServerInfo(ctx, req.(*Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// SupportService_ServiceDesc is the grpc.ServiceDesc for SupportService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var SupportService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "huai.v1.SupportService",
+	HandlerType: (*SupportServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "SubmitFeedback",
+			Handler:    _SupportService_SubmitFeedback_Handler,
+		},
+		{
+			MethodName: "GetServerInfo",
+			Handler:    _SupportService_GetServerInfo_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "huai/v1/api.proto",
+}

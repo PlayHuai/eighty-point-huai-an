@@ -33,6 +33,10 @@ services:
     build:
       context: ../server
       dockerfile: Dockerfile
+      args:
+        SERVER_COMMIT: ${SERVER_COMMIT:-}
+        SERVER_VERSION: ${SERVER_VERSION:-}
+        SERVER_CHANGELIST: ${SERVER_CHANGELIST:-}
     command: ["migrate"]
     restart: "no"
     environment:
@@ -50,6 +54,10 @@ services:
     build:
       context: ../server
       dockerfile: Dockerfile
+      args:
+        SERVER_COMMIT: ${SERVER_COMMIT:-}
+        SERVER_VERSION: ${SERVER_VERSION:-}
+        SERVER_CHANGELIST: ${SERVER_CHANGELIST:-}
     command: ["serve"]
     restart: unless-stopped
     environment:
