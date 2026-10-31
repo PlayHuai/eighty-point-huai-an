@@ -10,6 +10,7 @@ import '../api/request_id.dart';
 import '../auth/auth_controller.dart';
 import 'client_providers.dart';
 import 'components/design_icon.dart';
+import 'create_room_dialog.dart';
 import 'friend_list_screen.dart';
 import 'responsive_breakpoints.dart';
 import 'room_chat_screen.dart';
@@ -319,98 +320,28 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   }
 
   Future<void> _showCreateRoomDialog(LobbyHall hall) async {
-    final nameController = TextEditingController();
-    final passwordController = TextEditingController();
-    final minimumPointsController = TextEditingController(text: '0');
-    var allowSpectators = false;
     final dialogRoute = DialogRoute<void>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          scrollable: true,
-          title: const Text('创建房间'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                maxLength: 32,
-                decoration: const InputDecoration(labelText: '房间名称'),
+      builder: (dialogContext) => Consumer(
+        builder: (context, ref, _) => CreateRoomDialog(
+          hall: hall,
+          statistics: ref.watch(lobbyPlayerStatisticsProvider),
+          onRetryStatistics: () =>
+              ref.invalidate(lobbyPlayerStatisticsProvider),
+          onCreate: (name, password, allowSpectators, minimumPoints) =>
+              _createRoom(
+                dialogContext,
+                hall.id,
+                name,
+                password,
+                allowSpectators,
+                minimumPoints,
               ),
-              if (hall.id != friendRoomHallId) ...[
-                const SizedBox(height: DarkTokens.spacingS3),
-                TextField(
-                  controller: passwordController,
-                  decoration: const InputDecoration(labelText: '房间密码（可选）'),
-                  obscureText: true,
-                ),
-                TextField(
-                  controller: minimumPointsController,
-                  decoration: const InputDecoration(labelText: '最低准入积分'),
-                  keyboardType: TextInputType.number,
-                ),
-                CheckboxListTile(
-                  contentPadding: EdgeInsets.zero,
-                  value: allowSpectators,
-                  title: const Text('允许观战'),
-                  onChanged: (value) =>
-                      setDialogState(() => allowSpectators = value ?? false),
-                ),
-              ],
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: _isCreating
-                  ? null
-                  : () => Navigator.of(dialogContext).pop(),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: _isCreating
-                  ? null
-                  : () {
-                      final parsedMinimumPoints = int.tryParse(
-                        minimumPointsController.text,
-                      );
-                      if (parsedMinimumPoints == null ||
-                          parsedMinimumPoints < 0) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('最低准入积分必须是非负整数。')),
-                        );
-                        return;
-                      }
-                      if (hall.maximumPoints > 0 &&
-                          parsedMinimumPoints > hall.maximumPoints) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              '最低准入积分不能超过当前大厅上限（${hall.maximumPoints} 分）。',
-                            ),
-                          ),
-                        );
-                        return;
-                      }
-                      _createRoom(
-                        dialogContext,
-                        hall.id,
-                        nameController.text.trim(),
-                        passwordController.text,
-                        allowSpectators,
-                        hall.id == friendRoomHallId ? 0 : parsedMinimumPoints,
-                      );
-                    },
-              child: const Text('创建'),
-            ),
-          ],
         ),
       ),
     );
     await Navigator.of(context, rootNavigator: true).push(dialogRoute);
     await dialogRoute.completed;
-    nameController.dispose();
-    passwordController.dispose();
-    minimumPointsController.dispose();
   }
 
   Future<void> _showFriendInviteDialog(String roomId) async {
