@@ -37,7 +37,7 @@ func HTTP(next http.Handler) http.Handler {
 		defer func() {
 			if value := recover(); value != nil {
 				Error("http.panic method=%q path=%q panic_type=%T", request.Method, request.URL.Path, value)
-				panic(value)
+				panic(http.ErrAbortHandler)
 			}
 			code := w.status
 			if code == 0 {

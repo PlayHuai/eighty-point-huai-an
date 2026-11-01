@@ -126,9 +126,34 @@ func TestHTTPLogsSuccessAndFailureWithoutQueryOrBody(t *testing.T) {
 			t.Errorf("missing %q: %s", text, &output)
 		}
 	}
+
 	for _, text := range []string{"secret", "private-body", "private-response"} {
 		if strings.Contains(output.String(), text) {
 			t.Errorf("logged sensitive text %q", text)
 		}
+	}
+}
+
+func TestHTTPPanicAbortsWithoutLoggingPanicValue(t *testing.T) {
+	var output bytes.Buffer
+	Configure(&output)
+	t.Cleanup(func() { Configure(os.Stderr) })
+	handler := HTTP(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		panic("private credential")
+	}))
+
+	var recovered any
+	func() {
+		defer func() { recovered = recover() }()
+		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/test", nil))
+	}()
+	if recovered != http.ErrAbortHandler {
+		t.Fatalf("recovered panic = %#v, want http.ErrAbortHandler", recovered)
+	}
+	if !strings.Contains(output.String(), "panic_type=string") {
+		t.Fatalf("missing sanitized panic diagnostic: %s", &output)
+	}
+	if strings.Contains(output.String(), "private credential") {
+		t.Fatalf("logged panic value: %s", &output)
 	}
 }

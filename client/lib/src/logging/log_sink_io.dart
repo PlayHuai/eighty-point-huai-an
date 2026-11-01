@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
@@ -9,9 +10,59 @@ Future<LogSink> openLogSink() async {
   final base = defaultTargetPlatform == TargetPlatform.iOS
       ? await getLibraryDirectory()
       : await getApplicationSupportDirectory();
-  return FileLogSink.open(
-    Directory('${base.path}${Platform.pathSeparator}Logs'),
-  );
+  final ready = ReceivePort();
+  try {
+    await Isolate.spawn(
+      _fileLogWorker,
+      [ready.sendPort, '${base.path}${Platform.pathSeparator}Logs'],
+    );
+    final result = await ready.first;
+    if (result is SendPort) return _QueuedFileLogSink(result);
+    throw StateError('File log sink initialization failed ($result)');
+  } finally {
+    ready.close();
+  }
+}
+
+void _fileLogWorker(List<Object> arguments) {
+  final ready = arguments[0] as SendPort;
+  late final FileLogSink sink;
+  try {
+    sink = FileLogSink.open(Directory(arguments[1] as String));
+  } catch (error) {
+    ready.send('error=${error.runtimeType}');
+    return;
+  }
+
+  final commands = ReceivePort();
+  ready.send(commands.sendPort);
+  commands.listen((message) {
+    if (message == null) {
+      sink.close();
+      commands.close();
+    } else if (message is String) {
+      sink.write(message);
+    }
+  });
+}
+
+class _QueuedFileLogSink implements LogSink {
+  _QueuedFileLogSink(this._commands);
+
+  final SendPort _commands;
+  bool _closed = false;
+
+  @override
+  void write(String line) {
+    if (!_closed) _commands.send(line);
+  }
+
+  @override
+  void close() {
+    if (_closed) return;
+    _closed = true;
+    _commands.send(null);
+  }
 }
 
 class FileLogSink implements LogSink {

@@ -24,14 +24,15 @@ void main() {
       });
       final sink = await openLogSink();
       sink.write('platform=$platform');
+      sink.write('second line');
       sink.close();
       final base = platform == TargetPlatform.iOS ? 'Library' : 'Support';
       final separator = Platform.pathSeparator;
-      expect(
+      await _expectFileContents(
         File(
           '${directory.path}$separator$base${separator}Logs${separator}huaian-80.log',
-        ).readAsStringSync(),
-        'platform=$platform\n',
+        ),
+        'platform=$platform\nsecond line\n',
       );
       expect(paths.libraryCalls, platform == TargetPlatform.iOS ? 1 : 0);
       expect(paths.supportCalls, platform == TargetPlatform.windows ? 1 : 0);
@@ -89,6 +90,15 @@ void main() {
       throwsA(isA<FileSystemException>()),
     );
   });
+}
+
+Future<void> _expectFileContents(File file, String contents) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 2));
+  while (DateTime.now().isBefore(deadline)) {
+    if (file.existsSync() && file.readAsStringSync() == contents) return;
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+  expect(file.readAsStringSync(), contents);
 }
 
 class _UserPaths extends PathProviderPlatform {
