@@ -49,6 +49,9 @@ Type=simple
 User=eighty-point
 Group=eighty-point
 EnvironmentFile=/etc/eighty-point/server.env
+Environment=LOG_DIR=/var/log/eighty-point
+LogsDirectory=eighty-point
+LogsDirectoryMode=0700
 ExecStartPre=/opt/eighty-point/server migrate
 ExecStart=/opt/eighty-point/server serve
 Restart=on-failure

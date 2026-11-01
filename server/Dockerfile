@@ -13,10 +13,13 @@ RUN test -n "$SERVER_COMMIT" && test -n "$SERVER_VERSION" && test -n "$SERVER_CH
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
     -ldflags="-s -w -X github.com/Derek0120/eighty-point-huai-an/server/internal/buildinfo.Commit=$SERVER_COMMIT -X github.com/Derek0120/eighty-point-huai-an/server/internal/buildinfo.Version=$SERVER_VERSION -X github.com/Derek0120/eighty-point-huai-an/server/internal/buildinfo.ChangelistBase64=$SERVER_CHANGELIST" \
     -o /server ./cmd/server
+RUN mkdir -p /var/log/eighty-point && chown 65532:65532 /var/log/eighty-point && chmod 700 /var/log/eighty-point
 
 FROM scratch
 
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=build /server /server
+COPY --from=build --chown=65532:65532 /var/log/eighty-point /var/log/eighty-point
+ENV LOG_DIR=/var/log/eighty-point
 USER 65532:65532
 ENTRYPOINT ["/server"]

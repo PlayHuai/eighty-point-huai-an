@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:grpc/grpc.dart';
 
 import '../api/api_client.dart';
+import '../logging/app_log.dart';
 import 'auth_session.dart';
 import 'session_store.dart';
 
@@ -34,6 +35,7 @@ class AuthController extends ChangeNotifier {
   Future<void> close() => _api.close();
 
   Future<void> restoreSession() async {
+    AppLog.info('auth.restore.start');
     _isLoading = true;
     _error = null;
     _canRetryRestore = false;
@@ -44,12 +46,15 @@ class AuthController extends ChangeNotifier {
         _session = await _api.refresh(saved.refreshToken);
         await _store.write(_session!);
       }
+      AppLog.info('auth.restore.complete authenticated=${_session != null}');
     } catch (error) {
+      AppLog.failure('auth.restore', error);
       _session = null;
       if (error is GrpcError && error.code == StatusCode.unauthenticated) {
         try {
           await _store.clear();
-        } catch (_) {
+        } catch (error) {
+          AppLog.failure('auth.store.clear', error);
           _error = 'Unable to clear the saved session.';
         }
       } else {
@@ -72,6 +77,7 @@ class AuthController extends ChangeNotifier {
     String avatarUrl,
   ) async {
     if (_isLoading) return false;
+    AppLog.info('auth.register.start');
     _isLoading = true;
     _error = null;
     _canRetryRestore = false;
@@ -86,7 +92,8 @@ class AuthController extends ChangeNotifier {
       final warnings = <String>[];
       try {
         await _store.write(session);
-      } catch (_) {
+      } catch (error) {
+        AppLog.failure('auth.store.write', error);
         warnings.add('账号已创建，但登录状态无法保存。');
       }
       try {
@@ -95,12 +102,15 @@ class AuthController extends ChangeNotifier {
           nickname: nickname,
           avatarUrl: avatarUrl,
         );
-      } catch (_) {
+      } catch (error) {
+        AppLog.failure('auth.profile.update', error);
         warnings.add('账号已创建，但头像暂未保存。');
       }
       _error = warnings.isEmpty ? null : warnings.join(' ');
+      AppLog.info('auth.register.complete warnings=${warnings.length}');
       return true;
     } catch (error) {
+      AppLog.failure('auth.register', error);
       _session = null;
       _error = error.toString();
       return false;
@@ -110,7 +120,10 @@ class AuthController extends ChangeNotifier {
     }
   }
 
-  Future<bool> _authenticate(Future<AuthSession> Function() authenticate) async {
+  Future<bool> _authenticate(
+    Future<AuthSession> Function() authenticate,
+  ) async {
+    AppLog.info('auth.login.start');
     _isLoading = true;
     _error = null;
     _canRetryRestore = false;
@@ -119,8 +132,10 @@ class AuthController extends ChangeNotifier {
       final session = await authenticate();
       await _store.write(session);
       _session = session;
+      AppLog.info('auth.login.complete');
       return true;
     } catch (error) {
+      AppLog.failure('auth.login', error);
       _session = null;
       _error = error.toString();
       return false;
@@ -131,6 +146,7 @@ class AuthController extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    AppLog.info('auth.logout.start');
     final current = _session;
     _isLoading = true;
     _error = null;
@@ -140,16 +156,19 @@ class AuthController extends ChangeNotifier {
         await _api.logout(current.refreshToken);
       }
     } catch (error) {
+      AppLog.failure('auth.logout', error);
       _error = error.toString();
     } finally {
       try {
         await _store.clear();
-      } catch (_) {
+      } catch (error) {
+        AppLog.failure('auth.store.clear', error);
         _error = 'Unable to clear the saved session.';
       }
       _session = null;
       _isLoading = false;
       notifyListeners();
+      AppLog.info('auth.logout.complete');
     }
   }
 }

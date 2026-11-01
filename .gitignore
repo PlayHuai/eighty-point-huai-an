@@ -55,6 +55,8 @@ compile_commands.json
 # Temporary files
 *.tmp
 *.log
+*.log.[0-9]*
+/server/logs/
 *.bak
 *.swp
 /deploy/.env

@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/Derek0120/eighty-point-huai-an/server/gen/huai/v1"
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/logging"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/social"
 	grpcgo "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -221,6 +222,7 @@ func socialError(err error) error {
 	case errors.Is(err, social.ErrRoomUnavailable):
 		return status.Error(codes.FailedPrecondition, "room invitation is not allowed")
 	default:
+		logging.Unexpected("social.operation", err)
 		return status.Error(codes.Internal, "social operation failed")
 	}
 }

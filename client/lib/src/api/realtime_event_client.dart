@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../logging/app_log.dart';
 import 'event_socket.dart';
 import 'realtime_event.dart';
 
@@ -21,6 +22,7 @@ class RealtimeEventClient {
   Stream<RealtimeEvent> get events => _events.stream;
 
   Future<void> close() async {
+    AppLog.info('websocket.close');
     _closed = true;
     await _socket?.close();
     await _events.close();
@@ -30,12 +32,14 @@ class RealtimeEventClient {
     var retryDelay = const Duration(seconds: 1);
     while (!_closed) {
       try {
+        AppLog.info('websocket.connect');
         final socket = await connectEventSocket(_uri, _accessToken);
         if (_closed) {
           await socket.close();
           return;
         }
         _socket = socket;
+        AppLog.info('websocket.connected restored=$_connectedOnce');
         if (_connectedOnce) {
           _events.add(const RealtimeEvent(type: 'CONNECTION_RESTORED'));
         }
@@ -44,13 +48,21 @@ class RealtimeEventClient {
         await for (final message in socket.messages) {
           if (_closed) break;
           try {
-            _events.add(RealtimeEvent.fromJson(message));
-          } on FormatException {
+            final event = RealtimeEvent.fromJson(message);
+            AppLog.info(
+              'websocket.event seq=${event.sequence} version=${event.version}',
+            );
+            _events.add(event);
+          } on FormatException catch (error) {
+            AppLog.failure('websocket.decode', error);
             continue;
           }
         }
-      } catch (_) {
+        if (!_closed) AppLog.warning('websocket.disconnected');
+      } catch (error) {
+        AppLog.failure('websocket.connection', error);
         if (_closed) return;
+        AppLog.info('websocket.retry delay_ms=${retryDelay.inMilliseconds}');
       } finally {
         _socket = null;
       }

@@ -11,6 +11,7 @@ import (
 	huaiv1 "github.com/Derek0120/eighty-point-huai-an/server/gen/huai/v1"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/game/engine"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/game/runtime"
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/logging"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/room"
 	grpcgo "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -91,6 +92,7 @@ func StartGameSession(
 		sessions.Delete(state.ID)
 		return room.Details{}, err
 	}
+	logging.Info("game.started room_id=%q game_session_id=%q version=%d", started.Room.ID, state.ID, state.Version)
 	return started, nil
 }
 
@@ -154,8 +156,11 @@ func (s *gameServer) SubmitAction(
 		}
 	}
 	if err := s.publishUpdate(context.Background(), request.GetGameSessionId(), userID, state.Version); err != nil {
+		logging.Error("game.publish.failed game_session_id=%q version=%d error_type=%T", state.ID, state.Version, err)
 		return nil, status.Error(codes.Internal, "could not publish game update")
 	}
+	logging.Info("game.action.complete game_session_id=%q request_id=%q user_id=%q version=%d phase=%v",
+		state.ID, request.GetRequestId(), userID, state.Version, state.Phase)
 	return &huaiv1.SubmitActionResponse{
 		Accepted: true, StateVersion: state.Version,
 	}, nil
@@ -560,6 +565,7 @@ func gameRuntimeError(err error) error {
 		errors.Is(err, engine.ErrInvalidScore):
 		return status.Error(codes.InvalidArgument, "game action is invalid")
 	default:
+		logging.Unexpected("game.action", err)
 		return status.Error(codes.Internal, "could not process game action")
 	}
 }

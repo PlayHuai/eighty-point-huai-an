@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/logging"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -36,6 +37,7 @@ func AuthUnaryServerInterceptor(authenticator AccessAuthenticator) grpc.UnarySer
 		if err != nil || userID == "" {
 			return nil, status.Error(codes.Unauthenticated, "invalid or expired access token")
 		}
+		logging.Info("rpc.authenticated method=%q user_id=%q", info.FullMethod, userID)
 		return handler(context.WithValue(ctx, userIDContextKey{}, userID), request)
 	}
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/Derek0120/eighty-point-huai-an/server/gen/huai/v1"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/auth"
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/logging"
 	grpcgo "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -34,6 +35,7 @@ func (s *authServer) Register(ctx context.Context, request *huaiv1.RegisterReque
 		case errors.Is(err, auth.ErrAccountExists):
 			return nil, status.Error(codes.AlreadyExists, "account already exists")
 		default:
+			logging.Unexpected("auth.register", err)
 			return nil, status.Error(codes.Internal, "registration failed")
 		}
 	}
@@ -49,6 +51,7 @@ func (s *authServer) Login(ctx context.Context, request *huaiv1.LoginRequest) (*
 		case errors.Is(err, auth.ErrInvalidInput):
 			return nil, status.Error(codes.InvalidArgument, "invalid login details")
 		default:
+			logging.Unexpected("auth.login", err)
 			return nil, status.Error(codes.Internal, "login failed")
 		}
 	}
@@ -63,6 +66,7 @@ func (s *authServer) RefreshSession(ctx context.Context, request *huaiv1.Refresh
 		if errors.Is(err, auth.ErrUnauthenticated) {
 			return nil, status.Error(codes.Unauthenticated, "invalid refresh session")
 		}
+		logging.Unexpected("auth.refresh", err)
 		return nil, status.Error(codes.Internal, "session refresh failed")
 	}
 	return authResponse(result), nil
@@ -73,6 +77,7 @@ func (s *authServer) Logout(ctx context.Context, request *huaiv1.LogoutRequest) 
 		if errors.Is(err, auth.ErrUnauthenticated) {
 			return nil, status.Error(codes.Unauthenticated, "refresh token is required")
 		}
+		logging.Unexpected("auth.logout", err)
 		return nil, status.Error(codes.Internal, "logout failed")
 	}
 	return &huaiv1.Empty{}, nil
@@ -90,6 +95,7 @@ func (s *authServer) ChangePassword(ctx context.Context, request *huaiv1.ChangeP
 		case errors.Is(err, auth.ErrInvalidCredentials):
 			return nil, status.Error(codes.Unauthenticated, "current password is incorrect")
 		default:
+			logging.Unexpected("auth.change_password", err)
 			return nil, status.Error(codes.Internal, "password change failed")
 		}
 	}
