@@ -32,7 +32,9 @@ Card strings use the stable `suit:rank:copy` identity (`clubs`, `diamonds`,
 16; copy 0 or 1). `bottom_cards` must remain empty for unauthorized viewers
 while play is active and may be populated for everyone only after bottom
 capture. `available_actions` contains server-authorized action labels and is
-not a client-side rules hint.
+not a client-side rules hint. `current_counter` identifies the current counter
+tier, and `suggested_play` contains a bounded, server-validated play for the
+current player when one can be found; clients may use it for autoplay following.
 
 `LobbyService.CreateRoom` accepts the reserved hall ID `practice` for a
 private room containing the authenticated player and three server-controlled

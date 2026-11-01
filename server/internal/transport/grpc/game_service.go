@@ -19,8 +19,8 @@ import (
 
 type gameServer struct {
 	huaiv1.UnimplementedGameServiceServer
-	rooms    *room.Manager
-	sessions *runtime.Repository
+	rooms     *room.Manager
+	sessions  *runtime.Repository
 	publisher gameUpdatePublisher
 }
 
@@ -41,7 +41,7 @@ func RegisterGameService(
 	if len(publishers) == 1 {
 		service.publisher = publishers[0]
 	}
-	rooms.SetPracticeCleanup(func(details room.Details) {
+	rooms.SetSessionCleanup(func(details room.Details) {
 		if details.GameSessionID != "" {
 			sessions.Delete(details.GameSessionID)
 		}
@@ -60,6 +60,16 @@ func StartGameSession(
 	}
 	if details.Room.Status == room.StatusPlaying && details.GameSessionID != "" {
 		return details, nil
+	}
+	if details.GameSessionID != "" {
+		if previous, loadErr := sessions.Load(details.GameSessionID); loadErr == nil {
+			if previous.Phase != runtime.Finished {
+				return room.Details{}, runtime.ErrInvalidConfig
+			}
+			sessions.Delete(details.GameSessionID)
+		} else if !errors.Is(loadErr, runtime.ErrNotFound) {
+			return room.Details{}, loadErr
+		}
 	}
 	var players [4]string
 	for _, member := range details.Members {
@@ -131,14 +141,19 @@ func (s *gameServer) SubmitAction(
 	if err != nil {
 		return nil, gameRuntimeError(err)
 	}
-	if err := s.advanceRobots(ctx, request.GetGameSessionId()); err != nil {
+	if err := s.advanceRobots(request.GetGameSessionId()); err != nil {
 		return nil, gameRuntimeError(err)
 	}
 	state, err := s.sessions.Load(request.GetGameSessionId())
 	if err != nil {
 		return nil, gameRuntimeError(err)
 	}
-	if err := s.publishUpdate(ctx, request.GetGameSessionId(), userID, state.Version); err != nil {
+	if state.Phase == runtime.Finished {
+		if _, err := s.rooms.CompleteGameSession(request.GetGameSessionId(), request.GetGameSessionId()); err != nil {
+			return nil, roomServiceError(err)
+		}
+	}
+	if err := s.publishUpdate(context.Background(), request.GetGameSessionId(), userID, state.Version); err != nil {
 		return nil, status.Error(codes.Internal, "could not publish game update")
 	}
 	return &huaiv1.SubmitActionResponse{
@@ -194,8 +209,17 @@ func (s *gameServer) authorizedRoom(sessionID, userID string) (room.Details, err
 	if err != nil {
 		return room.Details{}, roomServiceError(err)
 	}
-	if details.GameSessionID != sessionID || details.Room.Status != room.StatusPlaying {
+	if details.GameSessionID != sessionID {
 		return room.Details{}, status.Error(codes.NotFound, "game session not found")
+	}
+	if details.Room.Status != room.StatusPlaying {
+		if details.Room.Status != room.StatusWaiting {
+			return room.Details{}, status.Error(codes.NotFound, "game session not found")
+		}
+		state, err := s.sessions.Load(sessionID)
+		if err != nil || state.Phase != runtime.Finished {
+			return room.Details{}, status.Error(codes.NotFound, "game session not found")
+		}
 	}
 	return details, nil
 }
@@ -210,21 +234,28 @@ func (s *gameServer) snapshotForMember(
 	}
 	member := findRoomMember(details, userID)
 	seat := -1
+	visibleHand := false
 	if member.Role == room.RolePlayer && member.Seat >= 1 && member.Seat <= 4 {
 		seat = int(member.Seat) - 1
+		visibleHand = true
+	} else if member.Role == room.RoleSpectator && member.ViewSeat >= 1 && member.ViewSeat <= 4 {
+		seat = int(member.ViewSeat) - 1
+		for _, target := range details.Members {
+			if target.Role == room.RolePlayer && target.Seat == member.ViewSeat {
+				visibleHand = target.ShowHand
+				break
+			}
+		}
 	}
 	view, err := runtime.View(state, seat)
 	if err != nil {
 		return nil, gameRuntimeError(err)
 	}
-	return snapshotMessage(view, member), nil
+	return snapshotMessage(view, member, visibleHand), nil
 }
 
-func (s *gameServer) advanceRobots(ctx context.Context, sessionID string) error {
+func (s *gameServer) advanceRobots(sessionID string) error {
 	for range 128 {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
 		state, err := s.sessions.Load(sessionID)
 		if err != nil {
 			return err
@@ -351,7 +382,7 @@ func runtimeAction(
 	return result, nil
 }
 
-func snapshotMessage(view runtime.Snapshot, member room.Member) *huaiv1.GameSnapshot {
+func snapshotMessage(view runtime.Snapshot, member room.Member, visibleHand bool) *huaiv1.GameSnapshot {
 	visibleHandCount := uint32(0)
 	if view.Seat >= 0 && view.Seat < 4 {
 		visibleHandCount = uint32(view.HandCounts[view.Seat])
@@ -365,13 +396,16 @@ func snapshotMessage(view runtime.Snapshot, member room.Member) *huaiv1.GameSnap
 		TrumpSuit: view.Trump.Suit.String(), TrumpLevel: uint32(view.Trump.Level),
 		State: "IN_PROGRESS", Seq: view.Version,
 		AvailableActions: make([]string, 0, len(view.Actions)),
-		PublicPlays: make([]*huaiv1.PublicPlay, 0, len(view.Trick.Plays)),
+		PublicPlays:      make([]*huaiv1.PublicPlay, 0, len(view.Trick.Plays)),
 	}
 	if view.Phase == runtime.HandOver {
 		result.State = "SETTLED"
 	}
 	if view.Phase == runtime.Finished {
 		result.State = "FINISHED"
+	}
+	if view.Result != nil {
+		result.CapturedPoints = int64(view.Result.DefenderScore)
 	}
 	if view.Turn >= 0 && view.Turn < 4 {
 		result.CurrentTurnUserId = view.Players[view.Turn]
@@ -381,9 +415,14 @@ func snapshotMessage(view runtime.Snapshot, member room.Member) *huaiv1.GameSnap
 		result.DealerSeat = uint32(view.Dealer + 1)
 	}
 	if view.Seat >= 0 && view.Seat < 4 {
-		result.VisibleHand = cardsMessage(view.Hand)
-		result.VisibleHandCount = uint32(len(view.Hand))
+		result.VisibleHandCount = uint32(view.HandCounts[view.Seat])
 		result.ViewerTeam = uint32(view.Seat%2 + 1)
+		if visibleHand {
+			result.VisibleHand = cardsMessage(view.Hand)
+		}
+		if member.Role == room.RolePlayer {
+			result.SuggestedPlay = cardsMessage(view.SuggestedPlay)
+		}
 	}
 	if member.Role == room.RoleSpectator {
 		result.ViewSeat = member.ViewSeat
@@ -392,8 +431,11 @@ func snapshotMessage(view runtime.Snapshot, member room.Member) *huaiv1.GameSnap
 	if view.BottomOwner >= 0 && view.BottomOwner < 4 {
 		result.BottomOwnerUserId = view.Players[view.BottomOwner]
 	}
-	result.BottomCards = cardsMessage(view.Bottom)
-	result.BottomPublic = false
+	result.BottomPublic = view.BottomPublic
+	if view.BottomPublic ||
+		(member.Role == room.RolePlayer && view.BottomOwner == view.Seat) {
+		result.BottomCards = cardsMessage(view.Bottom)
+	}
 	if view.DefenderPoints > 0 {
 		result.ScoringTeam = uint32(2 - view.Dealer%2)
 	}
@@ -409,9 +451,18 @@ func snapshotMessage(view runtime.Snapshot, member room.Member) *huaiv1.GameSnap
 			SeatNo: uint32(play.Seat + 1), Cards: cards,
 		})
 	}
-	for _, available := range view.Actions {
-		result.AvailableActions = append(result.AvailableActions, actionName(available.Kind))
+	seenActions := make(map[string]struct{}, len(view.Actions))
+	if member.Role == room.RolePlayer {
+		for _, available := range view.Actions {
+			name := actionName(available.Kind)
+			if _, exists := seenActions[name]; exists {
+				continue
+			}
+			seenActions[name] = struct{}{}
+			result.AvailableActions = append(result.AvailableActions, name)
+		}
 	}
+	result.CurrentCounter = uint32(view.CounterKind)
 	return result
 }
 

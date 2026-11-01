@@ -82,10 +82,10 @@ type Member struct {
 }
 
 type Details struct {
-	Room           Summary
-	Members        []Member
-	Version        uint64
-	GameSessionID  string
+	Room          Summary
+	Members       []Member
+	Version       uint64
+	GameSessionID string
 }
 
 type memberState struct {
@@ -118,7 +118,7 @@ type Manager struct {
 	cleanup     func(Details)
 }
 
-func (m *Manager) SetPracticeCleanup(cleanup func(Details)) {
+func (m *Manager) SetSessionCleanup(cleanup func(Details)) {
 	m.cleanupMu.Lock()
 	m.cleanup = cleanup
 	m.cleanupMu.Unlock()
@@ -137,7 +137,7 @@ func (m *Manager) notifyRoom(details Details) {
 	if observer != nil {
 		observer(details)
 	}
-	if details.Room.PracticeMode && details.Room.Status == StatusClosed {
+	if details.Room.Status == StatusClosed {
 		m.cleanupMu.RLock()
 		cleanup := m.cleanup
 		m.cleanupMu.RUnlock()
@@ -228,6 +228,50 @@ func (m *Manager) StartWithGameSession(
 		return Details{}, ErrInvalidInput
 	}
 	return m.startRoom(roomID, userID, expectedVersion, sessionID)
+}
+
+func (m *Manager) CompleteGameSession(roomID, sessionID string) (Details, error) {
+	if sessionID == "" {
+		return Details{}, ErrInvalidInput
+	}
+	state, err := m.lockRoom(roomID)
+	if err != nil {
+		return Details{}, err
+	}
+	defer state.mu.Unlock()
+	if state.summary.Status != StatusPlaying || state.gameSessionID != sessionID {
+		return Details{}, ErrRoomStarted
+	}
+	state.summary.Status = StatusWaiting
+	state.version++
+	details := snapshotLocked(state)
+	m.notifyRoom(details)
+	return details, nil
+}
+
+func (m *Manager) DiscardPracticeRoom(roomID, userID string) error {
+	state, err := m.lockRoom(roomID)
+	if err != nil {
+		return err
+	}
+	if !state.summary.PracticeMode || state.ownerID != userID {
+		state.mu.Unlock()
+		return ErrOwnerRequired
+	}
+	state.summary.Status = StatusClosed
+	state.summary.OccupiedSeats = 0
+	state.members = make(map[string]memberState)
+	state.version++
+	details := snapshotLocked(state)
+	m.mu.Lock()
+	if m.rooms[roomID] == state {
+		delete(m.rooms, roomID)
+		m.removeRoomIDLocked(state.summary.HallID, roomID)
+	}
+	m.mu.Unlock()
+	state.mu.Unlock()
+	m.notifyRoom(details)
+	return nil
 }
 
 func (m *Manager) startRoom(

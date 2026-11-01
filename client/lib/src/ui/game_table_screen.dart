@@ -190,7 +190,8 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
         !_isPlayer ||
         game == null ||
         (game.currentTurnUserId != _userId &&
-            !game.availableActions.contains('CONTINUE')) ||
+            !game.availableActions.contains('CONTINUE') &&
+            !game.availableActions.contains('DECLARE')) ||
         _autoPausedVersion == game.stateVersion.toInt()) {
       return;
     }
@@ -242,6 +243,10 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
           canDeclare:
               available.contains('DECLARE') || available.contains('REDECLARE'),
           canCounter: available.contains('COUNTER'),
+          currentCounter: game.currentCounter > 0 &&
+                  game.currentCounter <= robot.CounterKind.values.length
+              ? robot.CounterKind.values[game.currentCounter - 1]
+              : null,
         ),
       );
       return switch (action.kind) {
@@ -267,6 +272,12 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
       final seen = _robotSeen(game, hand, publicPlays);
       if (publicPlays.isEmpty) {
         return ('PLAY', robot.lead(hand, seen).cards);
+      }
+      if (game.suggestedPlay.isNotEmpty) {
+        return (
+          'PLAY',
+          game.suggestedPlay.map(robot.Card.parse).toList(growable: false),
+        );
       }
       final winner = robot.currentWinningPlay(hand, publicPlays);
       return (
@@ -850,7 +861,7 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
             ),
         OutlinedButton(
           key: const ValueKey('autoplay-toggle'),
-          onPressed: _busy ? null : _toggleAutoPlay,
+          onPressed: _toggleAutoPlay,
           child: Text(_autoPlaying ? '取消托管' : '托管'),
         ),
       ],

@@ -18,13 +18,13 @@ import (
 
 type lobbyServer struct {
 	huaiv1.UnimplementedLobbyServiceServer
-	rooms                 *room.Manager
-	profiles              lobbyProfileRepository
-	identity              weChatIdentityResolver
-	practiceStarter       func(room.Details) (room.Details, error)
-	requestMu             sync.Mutex
-	createdRooms          map[roomRequestKey]createRoomResult
-	leftRooms             map[roomRequestKey]leaveRoomRequest
+	rooms           *room.Manager
+	profiles        lobbyProfileRepository
+	identity        weChatIdentityResolver
+	practiceStarter func(room.Details) (room.Details, error)
+	requestMu       sync.Mutex
+	createdRooms    map[roomRequestKey]createRoomResult
+	leftRooms       map[roomRequestKey]leaveRoomRequest
 }
 
 type weChatIdentityResolver interface {
@@ -245,9 +245,10 @@ func (s *lobbyServer) CreateRoom(
 		return nil, roomOperationError(err)
 	}
 	if requestData.hallID == "practice" && s.practiceStarter != nil {
-		details, err = s.practiceStarter(details)
+		created := details
+		details, err = s.practiceStarter(created)
 		if err != nil {
-			_, _ = s.rooms.Close(details.Room.ID, userID, details.Version)
+			_ = s.rooms.DiscardPracticeRoom(created.Room.ID, userID)
 			return nil, gameRuntimeError(err)
 		}
 	}

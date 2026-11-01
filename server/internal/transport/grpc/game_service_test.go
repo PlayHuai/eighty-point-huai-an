@@ -57,7 +57,7 @@ func TestPracticeGameStartsSnapshotsAndAdvancesRobots(t *testing.T) {
 	}
 	response, err := service.SubmitAction(ctx, &huaiv1.SubmitActionRequest{
 		GameSessionId: started.GameSessionID, HandId: snapshot.HandId,
-		RequestId: "11111111-1111-4111-8111-111111111111",
+		RequestId:       "11111111-1111-4111-8111-111111111111",
 		ExpectedVersion: snapshot.StateVersion, Action: action,
 	})
 	if err != nil {
@@ -73,7 +73,7 @@ func TestPracticeGameStartsSnapshotsAndAdvancesRobots(t *testing.T) {
 		t.Fatal(err)
 	}
 	if updated.StateVersion != response.StateVersion ||
-		len(updated.VisibleHand) != 25 {
+		len(updated.VisibleHand) != 33 {
 		t.Fatalf("unexpected updated snapshot: %+v", updated)
 	}
 }

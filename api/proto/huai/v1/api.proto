@@ -337,6 +337,8 @@ message GameSnapshot {
   uint64 seq = 24;
   string dealer_user_id = 25;
   uint32 dealer_seat = 26;
+  uint32 current_counter = 27;
+  repeated string suggested_play = 28;
 }
 
 message ListEventsAfterRequest {

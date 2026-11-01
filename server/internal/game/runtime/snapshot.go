@@ -12,31 +12,35 @@ type AvailableAction struct {
 }
 
 type Snapshot struct {
-	ID             string            `json:"id"`
-	Players        [4]string         `json:"players"`
-	Practice       bool              `json:"practice"`
-	Version        uint64            `json:"version"`
-	HandNumber     int               `json:"hand_number"`
-	Phase          Phase             `json:"phase"`
-	Dealer         int               `json:"dealer"`
-	Turn           int               `json:"turn"`
-	Levels         [2]engine.Rank    `json:"levels"`
-	Trump          engine.Trump      `json:"trump"`
-	Seat           int               `json:"seat"`
-	Hand           []engine.Card     `json:"hand,omitempty"`
-	HandCounts     [4]int            `json:"hand_counts"`
-	Bottom         []engine.Card     `json:"bottom,omitempty"`
-	BottomCount    int               `json:"bottom_count"`
-	Declarer       int               `json:"declarer"`
-	CounterPasses  int               `json:"counter_passes"`
-	Countered      bool              `json:"countered"`
-	FinalTrump     bool              `json:"final_trump"`
-	Trick          Trick             `json:"trick"`
-	Completed      []Trick           `json:"completed"`
-	DefenderPoints int               `json:"defender_points"`
-	Ready          [4]bool           `json:"ready"`
-	Result         *Result           `json:"result,omitempty"`
-	Actions        []AvailableAction `json:"actions"`
+	ID             string             `json:"id"`
+	Players        [4]string          `json:"players"`
+	Practice       bool               `json:"practice"`
+	Version        uint64             `json:"version"`
+	HandNumber     int                `json:"hand_number"`
+	Phase          Phase              `json:"phase"`
+	Dealer         int                `json:"dealer"`
+	Turn           int                `json:"turn"`
+	BottomOwner    int                `json:"bottom_owner"`
+	Levels         [2]engine.Rank     `json:"levels"`
+	Trump          engine.Trump       `json:"trump"`
+	CounterKind    engine.CounterKind `json:"counter_kind"`
+	Seat           int                `json:"seat"`
+	Hand           []engine.Card      `json:"hand,omitempty"`
+	SuggestedPlay  []engine.Card      `json:"suggested_play,omitempty"`
+	HandCounts     [4]int             `json:"hand_counts"`
+	Bottom         []engine.Card      `json:"bottom,omitempty"`
+	BottomCount    int                `json:"bottom_count"`
+	BottomPublic   bool               `json:"bottom_public"`
+	Declarer       int                `json:"declarer"`
+	CounterPasses  int                `json:"counter_passes"`
+	Countered      bool               `json:"countered"`
+	FinalTrump     bool               `json:"final_trump"`
+	Trick          Trick              `json:"trick"`
+	Completed      []Trick            `json:"completed"`
+	DefenderPoints int                `json:"defender_points"`
+	Ready          [4]bool            `json:"ready"`
+	Result         *Result            `json:"result,omitempty"`
+	Actions        []AvailableAction  `json:"actions"`
 }
 
 // View returns an isolated, personalized view. Seat -1 is a closed-hand
@@ -49,7 +53,8 @@ func View(state State, seat int) (Snapshot, error) {
 	view := Snapshot{
 		ID: s.ID, Players: s.Players, Practice: s.Practice, Version: s.Version,
 		HandNumber: s.HandNumber, Phase: s.Phase, Dealer: s.Dealer, Turn: s.Turn,
-		Levels: s.Levels, Trump: s.Trump, Seat: seat, BottomCount: len(s.Bottom),
+		BottomOwner: s.BottomOwner, Levels: s.Levels, Trump: s.Trump,
+		CounterKind: s.CounterKind, Seat: seat, BottomCount: len(s.Bottom),
 		Declarer: s.Declarer, CounterPasses: s.CounterPasses, Countered: s.Countered,
 		FinalTrump: s.FinalTrump, Trick: s.Trick, Completed: s.Completed,
 		DefenderPoints: s.DefenderPoints, Ready: s.Ready, Result: s.Result,
@@ -58,12 +63,21 @@ func View(state State, seat int) (Snapshot, error) {
 	for i := range s.Hands {
 		view.HandCounts[i] = len(s.Hands[i])
 	}
+	view.BottomPublic = s.Result != nil && s.Result.BottomCaptured
+	if view.BottomPublic {
+		view.Bottom = s.Bottom
+	}
 	if seat == -1 {
 		return view, nil
 	}
 	view.Hand = s.Hands[seat]
 	if seat == s.BottomOwner {
 		view.Bottom = s.Bottom
+	}
+	if s.Phase == Playing && s.Turn == seat {
+		if play, err := choosePlay(s, seat); err == nil {
+			view.SuggestedPlay = play
+		}
 	}
 	add := func(kind ActionKind, cards []engine.Card, count int) {
 		view.Actions = append(view.Actions, AvailableAction{Kind: kind, Cards: cards, Count: count})
