@@ -21,6 +21,29 @@ void main() {
     );
   });
 
+  test('preserves explicit WebSocket queries including an empty query', () {
+    for (final address in [
+      'ws://events.example.com/custom-events?room=one%20two&last_seen_seq=7',
+      'wss://events.example.com/custom-events?',
+    ]) {
+      final endpoint = Uri.parse(address);
+      expect(RealtimeEventClient.websocketUriForEndpoint(endpoint), endpoint);
+    }
+  });
+
+  test('uses the events path for root WebSocket endpoints', () {
+    for (final address in [
+      'ws://events.example.com',
+      'wss://events.example.com/',
+    ]) {
+      final endpoint = RealtimeEventClient.websocketUriForEndpoint(
+        Uri.parse(address),
+      );
+      expect(endpoint.path, '/events');
+      expect(endpoint.hasQuery, isFalse);
+    }
+  });
+
   test('decodes authenticated private chat events', () {
     final event = RealtimeEvent.fromJson(
       '{"type":"PRIVATE_MESSAGE_CREATED","seq":7,'
