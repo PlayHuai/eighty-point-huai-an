@@ -79,7 +79,16 @@ func TestRoomGameTableMutationsEnforcePermissionsVersionsAndDeduplicate(t *testi
 		RoomId: created.Room.ID, ShowHand: true, ExpectedVersion: details.Version,
 		RequestId: "11111111-1111-4111-8111-111111111111",
 	})
-	if err != nil || !opened.GetMembers()[0].GetShowHand() {
+	var owner *huaiv1.RoomMember
+	if opened != nil {
+		for _, member := range opened.GetMembers() {
+			if member.GetUserId() == "owner" {
+				owner = member
+				break
+			}
+		}
+	}
+	if err != nil || owner == nil || !owner.GetShowHand() {
 		t.Fatalf("SetHandVisibility() = %+v, %v", opened, err)
 	}
 	retry, err := server.SetHandVisibility(ownerContext, &huaiv1.SpectatorViewRequest{
