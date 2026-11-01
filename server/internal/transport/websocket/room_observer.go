@@ -34,10 +34,12 @@ func (h *Hub) ObserveRooms(manager *room.Manager) {
 		}
 		memberIDs := make([]string, 0, len(details.Members))
 		for _, member := range details.Members {
-			memberIDs = append(memberIDs, member.UserID)
+			if !member.IsRobot {
+				memberIDs = append(memberIDs, member.UserID)
+			}
 		}
 		h.PublishRoomUpdate(memberIDs, details.Room.ID, details.Version, payload)
-		if details.Room.HallID == lobby.HallFriend {
+		if details.Room.HallID == lobby.HallFriend || details.Room.PracticeMode {
 			return
 		}
 		lobbyPayload, err := json.Marshal(struct {

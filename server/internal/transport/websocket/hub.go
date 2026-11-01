@@ -239,6 +239,12 @@ func (h *Hub) PublishRoomUpdate(userIDs []string, roomID string, version uint64,
 	})
 }
 
+func (h *Hub) PublishGameUpdate(userIDs []string, roomID string, version uint64, payload json.RawMessage) {
+	h.publishUsers(userIDs, Event{
+		Type: "GAME_STATE_CHANGED", RoomID: roomID, Version: version, Payload: payload,
+	})
+}
+
 func (h *Hub) PublishUserUpdate(userIDs []string, userID string, payload []byte) {
 	h.publishUsers(userIDs, Event{
 		Type: "FRIEND_STATE_CHANGED", EntityID: userID, Payload: json.RawMessage(payload),

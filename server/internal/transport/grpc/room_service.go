@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/Derek0120/eighty-point-huai-an/server/gen/huai/v1"
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/game/runtime"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/lobby"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/player"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/room"
@@ -19,6 +20,7 @@ type roomServer struct {
 	huaiv1.UnimplementedRoomServiceServer
 	manager     *room.Manager
 	profiles    roomProfileRepository
+	sessions    *runtime.Repository
 	requestMu   sync.Mutex
 	requests    map[roomRequestKey]roomMutationResult
 	requestFIFO []roomRequestKey
@@ -48,13 +50,37 @@ func RegisterRoomService(
 	manager *room.Manager,
 	profiles ...roomProfileRepository,
 ) error {
+	return registerRoomService(server, manager, nil, profiles...)
+}
+
+func RegisterRoomServiceWithGame(
+	server grpcgo.ServiceRegistrar,
+	manager *room.Manager,
+	profiles roomProfileRepository,
+	sessions *runtime.Repository,
+) error {
+	if profiles == nil || sessions == nil {
+		return errors.New("room profiles and game sessions are required")
+	}
+	return registerRoomService(server, manager, sessions, profiles)
+}
+
+func registerRoomService(
+	server grpcgo.ServiceRegistrar,
+	manager *room.Manager,
+	sessions *runtime.Repository,
+	profiles ...roomProfileRepository,
+) error {
 	if server == nil || manager == nil {
 		return errors.New("gRPC registrar and room manager are required")
 	}
 	if len(profiles) > 1 {
 		return errors.New("only one room profile repository is allowed")
 	}
-	service := &roomServer{manager: manager, requests: make(map[roomRequestKey]roomMutationResult)}
+	service := &roomServer{
+		manager: manager, sessions: sessions,
+		requests: make(map[roomRequestKey]roomMutationResult),
+	}
 	if len(profiles) == 1 {
 		service.profiles = profiles[0]
 	}
@@ -222,6 +248,35 @@ func (s *roomServer) StartGame(ctx context.Context, request *huaiv1.RoomRequest)
 	if !validUUID(request.GetRequestId()) {
 		return nil, status.Error(codes.InvalidArgument, "request_id must be a UUID")
 	}
+	if s.sessions != nil {
+		signature := roomMutationSignature{
+			roomID: request.GetRoomId(), userID: userID, operation: "start_game",
+			expectedVersion: request.GetExpectedVersion(),
+		}
+		details, err := s.mutate(signature, request.GetRequestId(), func() (room.Details, error) {
+			current, err := s.manager.GetRoom(request.GetRoomId(), userID)
+			if err != nil {
+				return room.Details{}, err
+			}
+			if current.Room.OwnerID != userID {
+				return room.Details{}, room.ErrOwnerRequired
+			}
+			if current.Room.Status == room.StatusPlaying && current.GameSessionID != "" {
+				return current, nil
+			}
+			if current.Room.Status != room.StatusWaiting || current.Room.OccupiedSeats != 4 {
+				return room.Details{}, room.ErrRoomNotReady
+			}
+			if current.Version != request.GetExpectedVersion() {
+				return room.Details{}, room.ErrVersionConflict
+			}
+			return StartGameSession(s.manager, s.sessions, current)
+		})
+		if err != nil {
+			return nil, roomServiceError(err)
+		}
+		return (&gameServer{rooms: s.manager, sessions: s.sessions}).snapshotForMember(details, userID)
+	}
 	details, err := s.manager.GetRoom(request.GetRoomId(), userID)
 	if err != nil {
 		return nil, roomServiceError(err)
@@ -278,13 +333,26 @@ func (s *roomServer) detailsMessage(ctx context.Context, details room.Details) (
 	}
 	userIDs := make([]string, 0, len(details.Members))
 	for _, member := range details.Members {
-		userIDs = append(userIDs, member.UserID)
+		if !member.IsRobot {
+			userIDs = append(userIDs, member.UserID)
+		}
 	}
-	profiles, err := s.profiles.GetPublicProfiles(ctx, userIDs)
-	if err != nil {
-		return nil, status.Error(codes.Internal, "could not load room member profiles")
+	profiles := make(map[string]player.PublicProfile)
+	if len(userIDs) != 0 {
+		var err error
+		profiles, err = s.profiles.GetPublicProfiles(ctx, userIDs)
+		if err != nil {
+			return nil, status.Error(codes.Internal, "could not load room member profiles")
+		}
 	}
-	for _, member := range message.Members {
+	for i, member := range message.Members {
+		domainMember := details.Members[i]
+		if domainMember.IsRobot {
+			member.Profile = &huaiv1.UserProfile{
+				UserId: domainMember.UserID, Nickname: domainMember.Nickname,
+			}
+			continue
+		}
 		profile, exists := profiles[member.GetUserId()]
 		if !exists {
 			continue
@@ -324,6 +392,12 @@ func roomDetailsMessage(details room.Details) *huaiv1.RoomDetails {
 		}
 		response.Members = append(response.Members, &huaiv1.RoomMember{
 			UserId: member.UserID, Role: role, SeatNo: member.Seat,
+			Profile: func() *huaiv1.UserProfile {
+				if member.IsRobot {
+					return &huaiv1.UserProfile{UserId: member.UserID, Nickname: member.Nickname}
+				}
+				return nil
+			}(),
 			ShowHand: member.ShowHand, ViewSeat: member.ViewSeat, Team: teamForSeat(teamSeat),
 		})
 	}

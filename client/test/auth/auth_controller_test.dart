@@ -128,6 +128,12 @@ class _FakeApiClient implements ApiClient {
   }) => throw UnimplementedError();
 
   @override
+  Future<LobbyRoom> createPracticeRoom({
+    required String accessToken,
+    required String requestId,
+  }) => throw UnimplementedError();
+
+  @override
   Future<LobbyRoom> joinRoom({
     required String accessToken,
     required String roomId,

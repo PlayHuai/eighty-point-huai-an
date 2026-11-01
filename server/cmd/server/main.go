@@ -18,6 +18,7 @@ import (
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/auth"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/chat"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/feedback"
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/game/runtime"
 	mysqlstore "github.com/Derek0120/eighty-point-huai-an/server/internal/persistence/mysql"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/player"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/room"
@@ -137,6 +138,7 @@ type expiredChatMessagePurger interface {
 
 func newApplication(db *sql.DB, allowedOrigins []string) (*application, error) {
 	rooms := room.NewManager()
+	gameSessions := runtime.NewRepository(nil)
 	store, err := mysqlstore.NewWithRoomManager(db, rooms)
 	if err != nil {
 		return nil, err
@@ -170,8 +172,19 @@ func newApplication(db *sql.DB, allowedOrigins []string) (*application, error) {
 		func() error { return grpctransport.RegisterAuthService(grpcServer, authService) },
 		func() error { return grpctransport.RegisterPlayerService(grpcServer, playerService) },
 		func() error { return grpctransport.RegisterFriendService(grpcServer, socialService, hub) },
-		func() error { return grpctransport.RegisterLobbyService(grpcServer, rooms, store, authService) },
-		func() error { return grpctransport.RegisterRoomService(grpcServer, rooms, store) },
+		func() error {
+			return grpctransport.RegisterLobbyServiceWithPracticeStarter(
+				grpcServer, rooms, store,
+				func(details room.Details) (room.Details, error) {
+					return grpctransport.StartGameSession(rooms, gameSessions, details)
+				},
+				authService,
+			)
+		},
+		func() error {
+			return grpctransport.RegisterRoomServiceWithGame(grpcServer, rooms, store, gameSessions)
+		},
+		func() error { return grpctransport.RegisterGameService(grpcServer, rooms, gameSessions, hub) },
 		func() error { return grpctransport.RegisterChatService(grpcServer, chatService) },
 		func() error { return grpctransport.RegisterSupportService(grpcServer, feedbackService) },
 	}

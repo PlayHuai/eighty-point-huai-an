@@ -34,6 +34,26 @@ while play is active and may be populated for everyone only after bottom
 capture. `available_actions` contains server-authorized action labels and is
 not a client-side rules hint.
 
+`LobbyService.CreateRoom` accepts the reserved hall ID `practice` for a
+private room containing the authenticated player and three server-controlled
+robots. This hall is never listed and cannot be joined, invited to, or
+spectated. The server starts practice sessions immediately after creation and
+automatically advances robot turns using only each robot's current hand and
+public game state. Practice room state and game sessions are held in memory
+only; they are never sent to MySQL room, match, settlement, or statistics
+repositories. The room and its session are discarded when the creator leaves.
+
+`RoomService.StartGame` creates a versioned authoritative session for a ready
+four-player room. `GameService` binds actions to the authenticated seated
+player, validates the hand ID, request ID, expected state version, and action
+against the server rules, and returns personalized snapshots. Reconnect returns
+a fresh snapshot; event history is currently empty and the snapshot sequence
+is the state version. The current live runtime repository is in-memory for
+ordinary rooms as well as practice rooms, so active games do not survive a
+server restart; durable MySQL game-session/event persistence and settlement
+are not connected yet. Practice sessions must remain excluded from those
+durable paths.
+
 ## Generate bindings
 
 Install `buf` and the pinned Go plugins:
