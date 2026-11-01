@@ -592,6 +592,7 @@ final Map<String, RealCase> realCases = {
       (widget) => widget is TextField && widget.decoration?.labelText == '搜索玩家',
     );
     await e.visible(search);
+    await e.captureUi('好友列表');
     await e.tester.enterText(search, b.id);
     await e.tap(find.byTooltip('搜索'));
     await e.visible(find.text(b.session.nickname));
@@ -609,6 +610,7 @@ final Map<String, RealCase> realCases = {
     expect(find.text('积分 0'), findsOneWidget);
     expect(find.text('总场次 0'), findsOneWidget);
     await e.visible(find.text('暂无战绩'));
+    await e.captureUi('好友资料与战绩');
   },
   'FRIEND-002': (e) async {
     final a = await e.user();

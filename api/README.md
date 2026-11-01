@@ -49,12 +49,24 @@ repositories. The room and its session are discarded when the creator leaves.
 four-player room. `GameService` binds actions to the authenticated seated
 player, validates the hand ID, request ID, expected state version, and action
 against the server rules, and returns personalized snapshots. Reconnect returns
-a fresh snapshot; event history is currently empty and the snapshot sequence
-is the state version. The current live runtime repository is in-memory for
-ordinary rooms as well as practice rooms, so active games do not survive a
-server restart; durable MySQL game-session/event persistence and settlement
-are not connected yet. Practice sessions must remain excluded from those
-durable paths.
+a fresh personalized snapshot plus ordered public action metadata. Use
+`ListEventsAfter` pagination for more than 1,000 missed events. The live runtime
+and replay remain in memory, so active games cannot resume after a server restart.
+Ordinary matches receive a unique durable match ID (separate from the reusable
+room/session transport ID); MySQL records their participants and final snapshot,
+and atomically settles results, all four ledger entries and statistics.
+Zero-balance losses are capped and actual awards conserve the deducted amount.
+Equal-level finishes use a minimum scoring difference of one level.
+Practice sessions never enter these durable paths.
+
+`GameSnapshot.settlement` contains authoritative per-hand outcome flags and,
+on match completion, nominal points and actual durable player changes. `history`
+contains only completed public trick cards with hand/trick/seat attribution.
+`action_deadline` is a server-owned deadline; clients may display it but must not
+decide expiry. The server scheduler advances timed-out turns without any client.
+`ConfirmAutoplayAction.accept` enables/cancels server automation for that seat;
+`autoplay_seats` reports current settings. Older servers without deadlines retain
+the client's previous explicit-autoplay behavior for compatibility.
 
 ## Generate bindings
 

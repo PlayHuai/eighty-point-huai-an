@@ -71,6 +71,7 @@ try {
         "--dart-define=AUTO_TEST_CATALOG=$catalog",
         "--dart-define=AUTO_TEST_SELECTION=$selection",
         "--dart-define=AUTO_TEST_ROUND=$round"
+        "--dart-define=AUTO_TEST_UI=$(Join-Path $OutputDirectory 'ui')"
     )
     Push-Location (Join-Path $root 'client')
     try {
@@ -81,7 +82,7 @@ try {
         }
         & flutter drive -d windows --driver=test_driver\windows_driver.dart --target=integration_test\windows_real_test.dart @arguments 2>&1 |
             ForEach-Object { "$_" } | Tee-Object -FilePath (Join-Path $round 'integration.log')
-        if ($LASTEXITCODE -ne 0) { Write-Warning "flutter drive failed with exit code $LASTEXITCODE; preserving per-case failures." }
+        if ($LASTEXITCODE -ne 0) { throw "flutter drive failed with exit code $LASTEXITCODE; preserving framework and per-case failures." }
     } finally { Pop-Location }
 } catch {
     $issue = Join-Path $round 'issues\Environment-runner-failed-ENV-RUN'

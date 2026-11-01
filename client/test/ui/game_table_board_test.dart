@@ -19,6 +19,11 @@ void main() {
             body: GameTableBoard(
               members: [
                 pb.RoomMember(
+                  userId: 'player-1',
+                  seatNo: 1,
+                  profile: pb.UserProfile(nickname: '庄家'),
+                ),
+                pb.RoomMember(
                   userId: 'player-3',
                   seatNo: 3,
                   profile: pb.UserProfile(nickname: '当前视角'),
@@ -26,7 +31,7 @@ void main() {
               ],
               perspective: 3,
               ownerId: 'player-3',
-              dealerUserId: '',
+              dealerUserId: 'player-1',
               currentTurnUserId: 'player-3',
               center: const Text('公开出牌'),
               onSeat: seated.add,
@@ -34,12 +39,12 @@ void main() {
           ),
         ),
       );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('dealer-marker-1')), findsOneWidget);
       final bottom = tester.getCenter(
         find.byKey(const ValueKey('table-seat-3')),
       );
-      final top = tester.getCenter(
-        find.byKey(const ValueKey('table-seat-1')),
-      );
+      final top = tester.getCenter(find.byKey(const ValueKey('table-seat-1')));
       expect(bottom.dy, greaterThan(top.dy));
       expect(bottom.dx, top.dx);
       await tester.tap(find.byKey(const ValueKey('table-seat-2')));

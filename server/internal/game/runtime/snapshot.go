@@ -1,6 +1,9 @@
 package runtime
 
-import "github.com/Derek0120/eighty-point-huai-an/server/internal/game/engine"
+import (
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/game/engine"
+	"time"
+)
 
 // AvailableAction describes a private action opportunity, not a robot strategy.
 // Cards is populated for declaration/counter proofs. Bury/play require the
@@ -41,6 +44,9 @@ type Snapshot struct {
 	Ready          [4]bool            `json:"ready"`
 	Result         *Result            `json:"result,omitempty"`
 	Actions        []AvailableAction  `json:"actions"`
+	History        []HandHistory      `json:"history"`
+	Deadline       time.Time          `json:"deadline"`
+	Autoplay       [4]bool            `json:"autoplay"`
 }
 
 // View returns an isolated, personalized view. Seat -1 is a closed-hand
@@ -59,6 +65,7 @@ func View(state State, seat int) (Snapshot, error) {
 		FinalTrump: s.FinalTrump, Trick: s.Trick, Completed: s.Completed,
 		DefenderPoints: s.DefenderPoints, Ready: s.Ready, Result: s.Result,
 		Actions: []AvailableAction{},
+		History: s.History, Deadline: s.Deadline, Autoplay: s.Autoplay,
 	}
 	for i := range s.Hands {
 		view.HandCounts[i] = len(s.Hands[i])

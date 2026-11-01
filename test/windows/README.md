@@ -133,10 +133,52 @@ an installed, authenticated Copilot CLI with scoped tool permissions.
 ## Known incomplete coverage
 
 The latest evidence, root-cause assessment and remaining cases are written to
-`<output>\case_report.txt`. A passed hand or a `finished` snapshot does not prove
-durable match settlement, server-side disconnect automation or settlement/history
-UI. Those assertions remain failing until the corresponding live runtime,
-persistence and protocol/UI surfaces are wired. Fresh zero-balance accounts also
-cannot demonstrate a positive nominal settlement award under balance conservation:
-funded opponents and separate zero-balance fixtures are required.
+`<output>\case_report.txt`. A passed hand or a `finished` snapshot alone does not
+prove settlement: tests additionally inspect all four balances/statistics and
+retries, disconnect progression and structured settlement/history UI.
+The isolated autotest build funds the spring and A-level score fixture players
+with 1,000 points before play; ordinary accounts still start at zero. Funding
+is compiled out of production and requires `HUAI_AUTOTEST=1`. Zero-balance loss
+caps and conservation also have repository regression tests.
 Non-game `BLOCKED` catalogue entries remain explicit coverage gaps, not PASS.
+
+## UI reference screenshots
+
+Each round also visits real login, registration, lobby, room-creation, friend
+list/profile, waiting-room screens and support/join-by-ID dialogs independently
+of the retry selection.
+Game scenarios capture the table, spring settlement and history dialog.
+Screenshots are stored under `<output>\ui` with Chinese feature names, one
+current PNG per feature; `screenshots.tsv` records capture time/path. Later
+captures replace the same feature image, while per-round failure screenshots
+remain immutable. Capture errors are recorded in `ui\capture-error.txt`, not
+substituted with a mock image. Transient snackbars are dismissed for reference
+captures; failure screenshots are not altered. Chat pages are captured for design
+reference only: chat functional cases remain TODO. The room-chat page currently
+has no table navigation entry, so the walkthrough opens the existing page directly;
+this is not evidence that the room-chat entry or sending/receiving works.
+The dealer's lighter PNG is copied unchanged from
+`ui-design/asserts/ic_lighter/lighter.png` into the client asset bundle.
+
+To refresh these reference screens without deploying or executing another case
+round, run from the repository root (the existing selection must be valid):
+
+```powershell
+Push-Location .\client
+flutter drive -d windows --driver=test_driver\windows_driver.dart --target=integration_test\windows_real_test.dart `
+  --dart-define=API_ENDPOINT=http://192.168.117.129:8081 `
+  --dart-define=WEBSOCKET_ENDPOINT=ws://192.168.117.129:8080/events `
+  --dart-define=AUTO_TEST_CATALOG=D:\huai_an_80\eighty-point-huai-an\test\windows\case.list `
+  --dart-define=AUTO_TEST_SELECTION=D:\huai_an_80\auto_test\need_test.list `
+  --dart-define=AUTO_TEST_ROUND=D:\huai_an_80\auto_test\ui\capture-session `
+  --dart-define=AUTO_TEST_UI=D:\huai_an_80\auto_test\ui `
+  --dart-define=AUTO_TEST_UI_ONLY=true
+Pop-Location
+```
+
+Screenshot-only mode does not write catalogue results or clear previous failures.
+Settlement/history references are captured by their game cases, not this walkthrough.
+After a normal run the Flutter binding's final framework failures are reconciled
+with per-case statuses, preserving pre-reconciliation files as
+`results.before-framework.tsv` / `passed_case.before-framework.txt`. This prevents
+late image/layout errors from being incorrectly counted as a passing case.

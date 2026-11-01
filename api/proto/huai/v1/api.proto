@@ -310,6 +310,34 @@ message GameSnapshotRequest {
   string game_session_id = 1;
 }
 
+message PlayerPointChange {
+  string user_id = 1;
+  int64 delta = 2;
+  string rank = 3;
+}
+
+message HandSettlement {
+  uint32 round_no = 1;
+  uint32 winner_team = 2;
+  int64 defender_score = 3;
+  bool spring = 4;
+  bool sky_earth = 5;
+  bool comeback = 6;
+  bool natural_level = 7;
+  bool match_finished = 8;
+  int64 nominal_points = 9;
+  repeated PlayerPointChange point_changes = 10;
+  string team_one_level = 11;
+  string team_two_level = 12;
+}
+
+message TrickHistory {
+  uint32 round_no = 1;
+  uint32 trick_no = 2;
+  uint32 winner_seat = 3;
+  repeated PublicPlay plays = 4;
+}
+
 message GameSnapshot {
   string game_session_id = 1;
   string hand_id = 2;
@@ -339,6 +367,10 @@ message GameSnapshot {
   uint32 dealer_seat = 26;
   uint32 current_counter = 27;
   repeated string suggested_play = 28;
+  HandSettlement settlement = 29;
+  repeated TrickHistory history = 30;
+  google.protobuf.Timestamp action_deadline = 31;
+  repeated uint32 autoplay_seats = 32;
 }
 
 message ListEventsAfterRequest {

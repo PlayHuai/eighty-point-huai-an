@@ -1,13 +1,17 @@
 import 'dart:io';
 
+import 'package:eighty_point_huai_an/src/ui/game_table_screen.dart';
+import 'package:eighty_point_huai_an/src/ui/room_chat_screen.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'support/cases.dart';
+import 'support/case_results.dart';
 import 'support/real_environment.dart';
 
 Future<void> main() async {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   const catalogPath = String.fromEnvironment('AUTO_TEST_CATALOG');
   const selectedPath = String.fromEnvironment('AUTO_TEST_SELECTION');
   const roundPath = String.fromEnvironment('AUTO_TEST_ROUND');
@@ -40,6 +44,82 @@ Future<void> main() async {
     );
   }
   final directory = Directory(roundPath)..createSync(recursive: true);
+  if (uiOutputPath.isNotEmpty) {
+    testWidgets('UI reference capture: real account and feature screens', (
+      tester,
+    ) async {
+      final environment = RealEnvironment(tester);
+      try {
+        await environment.registerForm();
+        await environment.waitFor(
+          () => !environment.auth!.isLoading,
+          'UI reference registration',
+        );
+        await environment.visible(find.text('游戏大厅'));
+        await environment.captureUi('大厅');
+        await environment.tap(find.text('创建房间'));
+        await environment.visible(
+          find.byKey(const ValueKey('create-room-dialog')),
+        );
+        await environment.captureUi('创建房间弹窗');
+        await environment.tap(find.text('取消'));
+        await environment.tap(find.text('房间号加入'));
+        await environment.visible(find.text('通过房间号加入'));
+        await environment.captureUi('房间号加入弹窗');
+        await environment.tap(find.text('取消'));
+        await environment.tap(find.text('反馈'));
+        await environment.visible(find.byTooltip('关闭反馈'));
+        await environment.captureUi('反馈弹窗');
+        await environment.tap(find.byTooltip('关闭反馈'));
+        await environment.tap(find.text('关于'));
+        await environment.visible(find.text('更新记录'));
+        await environment.captureUi('关于与版本信息');
+        await environment.tap(find.text('关闭'));
+        await realCases['FRIEND-001']!(environment);
+        await environment.tap(find.byTooltip('聊天'));
+        await environment.visible(
+          find.byWidgetPredicate(
+            (widget) =>
+                widget is TextField && widget.decoration?.hintText == '输入消息',
+          ),
+        );
+        await environment.captureUi('好友聊天');
+        await tester.pageBack();
+        await realCases['ROOM-001']!(environment);
+        await environment.visible(find.text('站起'));
+        await environment.captureUi('房间等待入座');
+        final table = tester.widget<GameTableScreen>(
+          find.byType(GameTableScreen),
+        );
+        // This existing page has no table route yet; capture it without
+        // claiming chat functionality or navigation coverage.
+        Navigator.of(tester.element(find.byType(GameTableScreen))).push<void>(
+          MaterialPageRoute(
+            builder: (_) => RoomChatScreen(auth: table.auth, room: table.room),
+          ),
+        );
+        await environment.visible(find.byType(RoomChatScreen));
+        await environment.captureUi('房间聊天');
+      } catch (error, stack) {
+        final uiDirectory = Directory(uiOutputPath)
+          ..createSync(recursive: true);
+        File('${uiDirectory.path}\\capture-error.txt')
+            .writeAsStringSync('$error\n$stack\n', mode: FileMode.append);
+        rethrow;
+      } finally {
+        await environment.close();
+      }
+    }, timeout: const Timeout(Duration(minutes: 3)));
+  }
+  if (const bool.fromEnvironment('AUTO_TEST_UI_ONLY')) {
+    if (uiOutputPath.isEmpty) {
+      throw StateError('AUTO_TEST_UI_ONLY requires AUTO_TEST_UI.');
+    }
+    return;
+  }
+  tearDownAll(() {
+    reconcileFrameworkFailures(directory, binding.failureMethodsDetails);
+  });
   var serverUnavailable = false;
   for (final row in rows.where((row) => selected.contains(row.first))) {
     final id = row[0];

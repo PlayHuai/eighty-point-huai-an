@@ -1,12 +1,17 @@
 package runtime
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
 	"sync"
 	"time"
+
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/settlement"
 )
 
 type receipt struct {
@@ -30,13 +35,22 @@ type Event struct {
 	CreatedAt time.Time
 }
 
-// Repository owns live sessions only. There is intentionally no persistence
-// dependency or callback, so practice sessions cannot enter durable storage.
-// Callers should discard a session with Delete when its room closes.
+// Repository owns live state and replay. Optional match persistence records
+// ordinary match boundaries only; practice sessions never invoke it.
 type Repository struct {
-	mu       sync.Mutex
-	sessions map[string]*entry
-	shuffle  Shuffle
+	mu          sync.Mutex
+	sessions    map[string]*entry
+	shuffle     Shuffle
+	persistence MatchPersistence
+}
+
+type MatchPersistence interface {
+	StartLiveMatch(context.Context, State) error
+	FinishLiveMatch(context.Context, State) (settlement.MatchResult, error)
+}
+
+func NewPersistentRepository(shuffle Shuffle, persistence MatchPersistence) *Repository {
+	return &Repository{sessions: make(map[string]*entry), shuffle: shuffle, persistence: persistence}
 }
 
 func NewRepository(shuffle Shuffle) *Repository {
@@ -53,8 +67,24 @@ func (r *Repository) Create(config Config) (State, error) {
 	if err != nil {
 		return State{}, err
 	}
+	if err := initializeLiveState(&state); err != nil {
+		return State{}, err
+	}
+	if err := r.startPersistent(state); err != nil {
+		return State{}, err
+	}
 	r.sessions[state.ID] = &entry{state: state, receipts: make(map[string]receipt)}
 	return clone(state), nil
+}
+
+func initializeLiveState(state *State) error {
+	var id [16]byte
+	if _, err := rand.Read(id[:]); err != nil {
+		return err
+	}
+	state.MatchID = hex.EncodeToString(id[:])
+	state.Deadline = time.Now().UTC().Add(time.Minute)
+	return nil
 }
 
 // Load returns server-private state for trusted domain callers, never transport
@@ -125,6 +155,30 @@ func (r *Repository) submit(id, playerID, handID string, action Action) (Submiss
 	if err != nil {
 		return Submission{}, err
 	}
+	if action.Kind != SetAutoplay || state.Turn == action.Seat {
+		state.Deadline = time.Now().UTC().Add(time.Minute)
+	}
+	if state.Phase == Finished && !state.Practice && state.HallID != "" {
+		requested, err := MatchResult(state)
+		if err != nil {
+			return Submission{}, err
+		}
+		for _, change := range requested.Changes {
+			if change.Delta > 0 {
+				state.Result.NominalPoints = change.Delta
+				break
+			}
+		}
+	}
+	if state.Phase == Finished && r.persistence != nil && !state.Practice {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		settled, err := r.persistence.FinishLiveMatch(ctx, state)
+		cancel()
+		if err != nil {
+			return Submission{}, err
+		}
+		state.Result.PointChanges = settled.Changes
+	}
 	copied := action
 	copied.Cards = append(action.Cards[:0:0], action.Cards...)
 	view, err := View(state, action.Seat)
@@ -139,6 +193,33 @@ func (r *Repository) submit(id, playerID, handID string, action Action) (Submiss
 		Kind:   action.Kind, CreatedAt: time.Now().UTC(),
 	})
 	return Submission{Snapshot: view}, nil
+}
+
+func (r *Repository) startPersistent(state State) error {
+	if state.Practice || r.persistence == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return r.persistence.StartLiveMatch(ctx, state)
+}
+
+// Due returns isolated candidates. Submit's version check arbitrates races with
+// player commands; the scheduler never advances an obsolete turn.
+func (r *Repository) Due(now time.Time) []State {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var due []State
+	for _, item := range r.sessions {
+		s := item.state
+		if s.Turn < 0 || s.Turn > 3 || s.Phase == Finished || s.Phase == HandOver {
+			continue
+		}
+		if !now.Before(s.Deadline) || s.Autoplay[s.Turn] {
+			due = append(due, clone(s))
+		}
+	}
+	return due
 }
 
 func (r *Repository) EventsAfter(id string, sequence uint64, limit int) ([]Event, uint64, error) {

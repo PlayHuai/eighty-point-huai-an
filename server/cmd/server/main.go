@@ -104,6 +104,10 @@ func runServer(ctx context.Context, address string) error {
 	if err != nil {
 		return err
 	}
+	automationCtx, cancelAutomation := context.WithCancel(ctx)
+	automationDone := make(chan struct{})
+	go func() { defer close(automationDone); app.gameAutomation(automationCtx) }()
+	defer func() { cancelAutomation(); <-automationDone }()
 	grpcAddress := os.Getenv("GRPC_ADDR")
 	if grpcAddress == "" {
 		grpcAddress = ":8081"
@@ -163,9 +167,10 @@ func runServer(ctx context.Context, address string) error {
 }
 
 type application struct {
-	grpcServer    *grpcgo.Server
-	httpHandler   http.Handler
-	messagePurger expiredChatMessagePurger
+	grpcServer     *grpcgo.Server
+	httpHandler    http.Handler
+	messagePurger  expiredChatMessagePurger
+	gameAutomation func(context.Context)
 }
 
 type expiredChatMessagePurger interface {
@@ -174,11 +179,11 @@ type expiredChatMessagePurger interface {
 
 func newApplication(db *sql.DB, allowedOrigins []string) (*application, error) {
 	rooms := room.NewManager()
-	gameSessions := runtime.NewRepository(nil)
 	store, err := mysqlstore.NewWithRoomManager(db, rooms)
 	if err != nil {
 		return nil, err
 	}
+	gameSessions := runtime.NewPersistentRepository(nil, store)
 	authService, err := auth.NewService(store)
 	if err != nil {
 		return nil, fmt.Errorf("create auth service: %w", err)
@@ -254,6 +259,7 @@ func newApplication(db *sql.DB, allowedOrigins []string) (*application, error) {
 	mux.Handle("/api/", miniProgramHandler)
 	return &application{
 		grpcServer: grpcServer, httpHandler: logging.HTTP(mux), messagePurger: store,
+		gameAutomation: func(ctx context.Context) { grpctransport.RunGameAutomation(ctx, rooms, gameSessions, hub) },
 	}, nil
 }
 

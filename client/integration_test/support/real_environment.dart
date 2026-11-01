@@ -23,6 +23,7 @@ import 'package:grpc/grpc.dart' show GrpcError;
 const testPassword = 'Cards2026!integration';
 const apiEndpointValue = String.fromEnvironment('API_ENDPOINT');
 const websocketEndpointValue = String.fromEnvironment('WEBSOCKET_ENDPOINT');
+const uiOutputPath = String.fromEnvironment('AUTO_TEST_UI');
 final apiEndpoint = Uri.parse(apiEndpointValue);
 final websocketEndpoint = Uri.parse(websocketEndpointValue);
 
@@ -104,6 +105,7 @@ class RealEnvironment {
       RepaintBoundary(
         key: boundaryKey,
         child: ClientApp(
+          key: ObjectKey(controller),
           auth: controller,
           endpoint: apiEndpoint,
           websocketEndpoint: websocketEndpoint,
@@ -113,8 +115,10 @@ class RealEnvironment {
     await waitFor(() => !controller.isLoading, 'session restore');
     if (signedIn != null) {
       await visible(find.text('游戏大厅'));
+      await captureUi('大厅');
     } else {
       await visible(find.byKey(const ValueKey('login-account-field')));
+      await captureUi('登录');
     }
   }
 
@@ -160,6 +164,7 @@ class RealEnvironment {
   }) async {
     await mount();
     await tap(find.text('创建账号'));
+    await captureUi('注册');
     await text(
       'register-account-field',
       account ?? 'it_${createRequestId().replaceAll('-', '')}',
@@ -306,13 +311,31 @@ class RealEnvironment {
       ),
     );
     await visible(find.byKey(const ValueKey('room-identity')));
+    await visible(find.byKey(const ValueKey('play-buttons')));
+    await captureUi('游戏牌桌');
+  }
+
+  Future<void> captureUi(String function) async {
+    if (uiOutputPath.isEmpty) return;
+    final messengers = find.byType(ScaffoldMessenger);
+    if (messengers.evaluate().isNotEmpty) {
+      tester.state<ScaffoldMessengerState>(messengers.first).clearSnackBars();
+    }
+    await tester.pump(const Duration(milliseconds: 800));
+    final directory = Directory(uiOutputPath)..createSync(recursive: true);
+    final path = '${directory.path}\\$function.png';
+    await screenshot(path);
+    File('${directory.path}\\screenshots.tsv').writeAsStringSync(
+      '$function\t${DateTime.now().toIso8601String()}\t$path\n',
+      mode: FileMode.append,
+    );
+    step('Saved UI reference: $path');
   }
 
   Future<void> screenshot(String path) async {
     final boundary = boundaryKey.currentContext?.findRenderObject();
     if (boundary is! RenderRepaintBoundary || boundary.debugNeedsPaint) {
-      step('No painted UI available for screenshot.');
-      return;
+      throw StateError('No painted UI available for screenshot: $path');
     }
     final image = await boundary.toImage();
     try {

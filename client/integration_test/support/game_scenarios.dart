@@ -483,25 +483,24 @@ final Map<String, ScenarioCase> gameScenarios = {
     await finalScenario(e, 'sky', expectedOne: 'A', expectedTwo: '2', score: 0);
   },
   'GAME-023': (e) async {
-    // The scenario begins at the final trick of hand 2 with first-hand sky-earth
-    // recorded. This verifies the actual transition, not an engine-only mock.
-    await finalScenario(
-      e,
-      'spring',
-      expectedOne: 'A',
-      expectedTwo: '2',
-      score: 0,
-      finished: true,
+    final (players, _, initial) = await e.start(scenario: 'spring');
+    final before = await Future.wait(
+      players.map((p) => e.api.getStatistics(accessToken: p.token)),
     );
-    // Ledger validation remains a separate required assertion: snapshot success
-    // alone must not disguise the currently missing durable points settlement.
-    final owner = e.users[e.users.length - 4];
-    final statistics = await e.api.getStatistics(accessToken: owner.token);
-    expect(
-      statistics.points,
-      480,
-      reason: 'Spring must award 480 points in ordinary hall.',
-    );
+    await playFinal(e, players, initial.gameSessionId);
+    final state = await e.snapshot(players.first, initial.gameSessionId);
+    expect(state.phase, 'finished');
+    expect(state.settlement.spring, isTrue);
+    expect(state.settlement.nominalPoints.toInt(), 480);
+    var totalDelta = 0;
+    for (var seat = 0; seat < players.length; seat++) {
+      final after = await e.api.getStatistics(accessToken: players[seat].token);
+      final delta = after.points - before[seat].points;
+      expect(delta, seat.isEven ? 480 : -480);
+      expect(after.totalGames - before[seat].totalGames, 1);
+      totalDelta += delta;
+    }
+    expect(totalDelta, 0);
   },
   'GAME-024': (e) async {
     for (var score = 0; score <= 200; score += 5) {
@@ -594,7 +593,9 @@ final Map<String, ScenarioCase> gameScenarios = {
   },
   'GAME-028': (e) async {
     final (players, _, initial) = await e.start(scenario: 'score/14/70');
-    final before = await e.api.getStatistics(accessToken: players.first.token);
+    final before = await Future.wait(
+      players.map((p) => e.api.getStatistics(accessToken: p.token)),
+    );
     for (var seat = 0; seat < 4; seat++) {
       final state = await e.snapshot(players[seat], initial.gameSessionId);
       final action = pb.GameAction(
@@ -606,8 +607,19 @@ final Map<String, ScenarioCase> gameScenarios = {
       await e.submit(players[seat], state, action, requestId: requestId);
     }
     final after = await e.api.getStatistics(accessToken: players.first.token);
-    expect(after.points - before.points, 180);
-    expect(after.totalGames - before.totalGames, 1);
+    expect(after.points - before.first.points, 180);
+    expect(after.totalGames - before.first.totalGames, 1);
+    var totalDelta = 0;
+    for (var seat = 0; seat < players.length; seat++) {
+      final statistics = await e.api.getStatistics(
+        accessToken: players[seat].token,
+      );
+      final delta = statistics.points - before[seat].points;
+      expect(delta, seat.isEven ? 180 : -180);
+      expect(statistics.totalGames - before[seat].totalGames, 1);
+      totalDelta += delta;
+    }
+    expect(totalDelta, 0);
     final reconnect = await e.game.requestReconnect(
       pb.RequestReconnectRequest(gameSessionId: initial.gameSessionId),
       options: e.options(players.first),
@@ -642,6 +654,13 @@ final Map<String, ScenarioCase> gameScenarios = {
     expect(find.textContaining('春天'), findsWidgets);
     expect(find.textContaining('480'), findsWidgets);
     expect(find.textContaining('历史'), findsWidgets);
+    await e.tester.ensureVisible(
+      find.byKey(const ValueKey('settlement-panel')),
+    );
+    await e.captureUi('春天整盘结算');
+    await e.tap(find.widgetWithText(TextButton, '对局历史'));
+    await e.visible(find.textContaining('号位获胜'));
+    await e.captureUi('对局历史');
   },
   'GAME-030': (e) async {
     final (players, created, initial) = await e.start(scenario: 'declaration');

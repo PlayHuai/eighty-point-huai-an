@@ -83,6 +83,7 @@ func StartGameSession(
 	}
 	state, err := createGameSession(sessions, runtime.Config{
 		ID: details.Room.ID, Players: players, Practice: details.Room.PracticeMode,
+		HallID: details.Room.HallID, OwnerID: details.Room.OwnerID,
 	}, scenarios)
 	if err != nil {
 		return room.Details{}, err
@@ -409,6 +410,8 @@ func runtimeAction(
 		result.Kind = runtime.Pass
 	case *huaiv1.GameAction_ContinueAction:
 		result.Kind = runtime.Continue
+	case *huaiv1.GameAction_ConfirmAutoplay:
+		result.Kind, result.Accept = runtime.SetAutoplay, payload.ConfirmAutoplay.GetAccept()
 	default:
 		return runtime.Action{}, runtime.ErrInvalidAction
 	}
@@ -439,6 +442,36 @@ func snapshotMessage(view runtime.Snapshot, member room.Member, visibleHand bool
 	}
 	if view.Result != nil {
 		result.CapturedPoints = int64(view.Result.DefenderScore)
+		result.Settlement = &huaiv1.HandSettlement{
+			RoundNo: uint32(view.HandNumber), WinnerTeam: uint32(view.Result.WinnerTeam + 1),
+			DefenderScore: int64(view.Result.DefenderScore), Spring: view.Result.Spring,
+			SkyEarth: view.Result.SkyEarth, Comeback: view.Result.Resolution.Comeback,
+			NaturalLevel: view.Result.Resolution.NaturalLevel, MatchFinished: view.Phase == runtime.Finished,
+			NominalPoints: view.Result.NominalPoints,
+			TeamOneLevel:  view.Levels[0].String(), TeamTwoLevel: view.Levels[1].String(),
+		}
+		for _, change := range view.Result.PointChanges {
+			result.Settlement.PointChanges = append(result.Settlement.PointChanges, &huaiv1.PlayerPointChange{
+				UserId: change.UserID, Delta: change.Delta, Rank: change.Rank,
+			})
+		}
+	}
+	if !view.Deadline.IsZero() && view.Turn >= 0 {
+		result.ActionDeadline = timestamppb.New(view.Deadline)
+	}
+	for seat, enabled := range view.Autoplay {
+		if enabled {
+			result.AutoplaySeats = append(result.AutoplaySeats, uint32(seat+1))
+		}
+	}
+	for _, hand := range view.History {
+		for i, trick := range hand.Tricks {
+			history := &huaiv1.TrickHistory{RoundNo: uint32(hand.Number), TrickNo: uint32(i + 1), WinnerSeat: uint32(trick.Winner + 1)}
+			for _, play := range trick.Plays {
+				history.Plays = append(history.Plays, &huaiv1.PublicPlay{SeatNo: uint32(play.Seat + 1), Cards: cardsMessage(play.Cards)})
+			}
+			result.History = append(result.History, history)
+		}
 	}
 	if view.Turn >= 0 && view.Turn < 4 {
 		result.CurrentTurnUserId = view.Players[view.Turn]

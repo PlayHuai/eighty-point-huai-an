@@ -17,6 +17,10 @@ func (r *Repository) CreateScenario(config Config, name string) (State, error) {
 	if err != nil {
 		return State{}, err
 	}
+	state.TestScenario = name
+	if err := initializeLiveState(&state); err != nil {
+		return State{}, err
+	}
 	parts := strings.Split(name, "/")
 	switch parts[0] {
 	case "declaration", "red":
@@ -57,9 +61,13 @@ func (r *Repository) CreateScenario(config Config, name string) (State, error) {
 		return State{}, err
 	}
 	r.mu.Lock()
+	state.CompletedBaseline = len(state.Completed)
 	defer r.mu.Unlock()
 	if _, exists := r.sessions[state.ID]; exists {
 		return State{}, ErrExists
+	}
+	if err := r.startPersistent(state); err != nil {
+		return State{}, err
 	}
 	r.sessions[state.ID] = &entry{state: state, receipts: make(map[string]receipt)}
 	return clone(state), nil
