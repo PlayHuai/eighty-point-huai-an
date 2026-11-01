@@ -166,6 +166,76 @@ func TestAutomaticActionAlwaysReturnsRuleCheckedMoves(t *testing.T) {
 	}
 }
 
+func TestAutomaticPlayPreservesFollowObligationsAndWinsWhenPossible(t *testing.T) {
+	state := session(t)
+	state.Phase, state.Turn = Playing, 0
+	state.Trump = engine.Trump{Suit: engine.Spades, Level: engine.RankTwo}
+	state.Hands = [4][]engine.Card{}
+	state.Hands[0] = append(pair(engine.Clubs, engine.RankEight),
+		card(engine.Clubs, engine.RankThree, 0), card(engine.Clubs, engine.RankFour, 0))
+	lead := pair(engine.Clubs, engine.RankKing)
+	state.Hands[3] = lead
+	state.Trick = Trick{Leader: 3, Winner: 3, Plays: []Played{{Seat: 3, Cards: lead}}}
+
+	action, err := AutomaticAction(state, 0, "mandatory-pair")
+	if err != nil || len(action.Cards) != 2 || !engine.IsPair(action.Cards) ||
+		action.Cards[0].Rank != engine.RankEight || state.ValidatePlay(0, action.Cards) != nil {
+		t.Fatalf("automatic pair response = %+v, %v", action, err)
+	}
+
+	state.Hands[0] = []engine.Card{
+		card(engine.Clubs, engine.RankThree, 0),
+		card(engine.Clubs, engine.RankAce, 0),
+	}
+	state.Trick.Plays[0].Cards = []engine.Card{card(engine.Clubs, engine.RankKing, 0)}
+	action, err = AutomaticAction(state, 0, "winning-single")
+	if err != nil || len(action.Cards) != 1 || action.Cards[0].Rank != engine.RankAce {
+		t.Fatalf("automatic winning response = %+v, %v", action, err)
+	}
+}
+
+func TestAutomaticPlayFollowsMain510KForcedDraw(t *testing.T) {
+	state := session(t)
+	state.Phase, state.Turn = Playing, 0
+	state.Trump = engine.Trump{Suit: engine.Clubs, Level: engine.RankTwo}
+	state.Hands = [4][]engine.Card{}
+	state.Hands[0] = []engine.Card{
+		card(engine.Hearts, engine.RankTwo, 0),
+		card(engine.Hearts, engine.RankFive, 0),
+		card(engine.Diamonds, engine.RankThree, 0),
+	}
+	lead := fiveTenKing(engine.Clubs)
+	state.Hands[3] = lead
+	state.Trick = Trick{Leader: 3, Winner: 3, Plays: []Played{{Seat: 3, Cards: lead}}}
+
+	action, err := AutomaticAction(state, 0, "forced-draw")
+	if err != nil || state.ValidatePlay(0, action.Cards) != nil ||
+		len(filter(action.Cards, func(card engine.Card) bool {
+			return engine.IsTrump(card, state.Trump)
+		})) != 2 {
+		t.Fatalf("automatic forced draw = %+v, %v", action, err)
+	}
+}
+
+func TestAutomaticLeadPrioritizes510KAndTrumpPairs(t *testing.T) {
+	state := session(t)
+	state.Phase, state.Turn = Playing, 0
+	state.Trump = engine.Trump{Suit: engine.Spades, Level: engine.RankTwo}
+	state.Hands = [4][]engine.Card{
+		append(fiveTenKing(engine.Clubs), pair(engine.Spades, engine.RankEight)...),
+	}
+	action, err := AutomaticAction(state, 0, "lead-510k")
+	if err != nil || !engine.Is510K(action.Cards) {
+		t.Fatalf("automatic 510k lead = %+v, %v", action, err)
+	}
+
+	state.Hands[0] = pair(engine.Spades, engine.RankEight)
+	action, err = AutomaticAction(state, 0, "lead-trump-pair")
+	if err != nil || !engine.IsPair(action.Cards) || action.Cards[0].Suit != engine.Spades {
+		t.Fatalf("automatic trump-pair lead = %+v, %v", action, err)
+	}
+}
+
 func TestFallbackAndInitialBury(t *testing.T) {
 	state := session(t)
 	want, _ := engine.FallbackTrump(state.Bottom[0], engine.RankTwo)
@@ -414,6 +484,32 @@ func TestPersonalizedSnapshots(t *testing.T) {
 	}
 	if _, err := View(state, 4); err == nil {
 		t.Fatal("invalid viewer accepted")
+	}
+}
+
+func TestSnapshotProjectsCounterBottomOwnerAndPublicCapture(t *testing.T) {
+	state := counterState(t)
+	if state.BottomOwner != -1 {
+		t.Fatalf("unassigned bottom owner = %d, want -1", state.BottomOwner)
+	}
+	state.BottomOwner = 1
+	state.CounterKind = engine.CounterLevel
+	private, err := View(state, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if private.BottomOwner != 1 || private.CounterKind != engine.CounterLevel ||
+		len(private.Bottom) != 8 || private.BottomPublic {
+		t.Fatalf("private projection = %+v", private)
+	}
+	state.Phase = HandOver
+	state.Result = &Result{BottomCaptured: true}
+	public, err := View(state, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !public.BottomPublic || len(public.Bottom) != 8 {
+		t.Fatalf("captured bottom projection = %+v", public)
 	}
 }
 

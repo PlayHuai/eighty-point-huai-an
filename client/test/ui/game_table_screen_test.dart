@@ -229,6 +229,55 @@ void main() {
     await _close(tester);
   });
 
+  testWidgets('autoplay can be cancelled while a submitted action is pending', (
+    tester,
+  ) async {
+    final client = _FakeGameClient(_room(), _snapshot());
+    final pending = Completer<pb.SubmitActionResponse>();
+    client.pendingAction = pending;
+    await _open(tester, client);
+    await tester.tap(find.byKey(const ValueKey('autoplay-toggle')));
+    await tester.pump();
+    expect(client.actions, hasLength(1));
+    final toggle = tester.widget<OutlinedButton>(
+      find.byKey(const ValueKey('autoplay-toggle')),
+    );
+    expect(toggle.onPressed, isNotNull);
+    await tester.tap(find.byKey(const ValueKey('autoplay-toggle')));
+    await tester.pump();
+    expect(find.text('托管'), findsOneWidget);
+    pending.complete(pb.SubmitActionResponse(accepted: true, stateVersion: Int64(9)));
+    await tester.pumpAndSettle();
+    await _close(tester);
+  });
+
+  testWidgets('autoplay does not counter below the server tier', (tester) async {
+    final snapshot = _snapshot()
+      ..phase = 'COUNTER'
+      ..trumpSuit = 'clubs'
+      ..currentCounter = 2;
+    snapshot.visibleHand
+      ..clear()
+      ..addAll(['clubs:2:0', 'clubs:2:1', 'joker:16:0', 'joker:16:1']);
+    snapshot.availableActions
+      ..clear()
+      ..addAll(['COUNTER', 'PASS']);
+    final afterAction = _snapshot()
+      ..currentTurnUserId = 'player-2'
+      ..availableActions.clear();
+    final client = _FakeGameClient(_room(), snapshot)
+      ..afterActionSnapshot = afterAction;
+    await _open(tester, client);
+    await tester.tap(find.byKey(const ValueKey('autoplay-toggle')));
+    await tester.pumpAndSettle();
+    expect(client.actions, hasLength(1));
+    expect(client.actions.single.action.counterTrump.cards, [
+      'joker:16:0',
+      'joker:16:1',
+    ]);
+    await _close(tester);
+  });
+
   for (final width in [320.0, 600.0, 1449.0]) {
     testWidgets(
       'table fits $width with four seats',
@@ -257,6 +306,8 @@ class _FakeGameClient implements GameTableClient {
   pb.RoomDetails room;
   pb.GameSnapshot snapshot;
   GrpcError? actionError;
+  Completer<pb.SubmitActionResponse>? pendingAction;
+  pb.GameSnapshot? afterActionSnapshot;
   final actions = <pb.SubmitActionRequest>[];
   final views = <pb.SpectatorViewRequest>[];
   final visibility = <pb.SpectatorViewRequest>[];
@@ -291,6 +342,9 @@ class _FakeGameClient implements GameTableClient {
     actions.add(request);
     final error = actionError;
     if (error != null) throw error;
+    final pending = pendingAction;
+    if (pending != null) return pending.future;
+    if (afterActionSnapshot != null) snapshot = afterActionSnapshot!;
     return pb.SubmitActionResponse(accepted: true, stateVersion: Int64(9));
   }
 

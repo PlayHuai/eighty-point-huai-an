@@ -2819,6 +2819,8 @@ type GameSnapshot struct {
 	Seq               uint64                 `protobuf:"varint,24,opt,name=seq,proto3" json:"seq,omitempty"`
 	DealerUserId      string                 `protobuf:"bytes,25,opt,name=dealer_user_id,json=dealerUserId,proto3" json:"dealer_user_id,omitempty"`
 	DealerSeat        uint32                 `protobuf:"varint,26,opt,name=dealer_seat,json=dealerSeat,proto3" json:"dealer_seat,omitempty"`
+	CurrentCounter    uint32                 `protobuf:"varint,27,opt,name=current_counter,json=currentCounter,proto3" json:"current_counter,omitempty"`
+	SuggestedPlay     []string               `protobuf:"bytes,28,rep,name=suggested_play,json=suggestedPlay,proto3" json:"suggested_play,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -3033,6 +3035,20 @@ func (x *GameSnapshot) GetDealerSeat() uint32 {
 		return x.DealerSeat
 	}
 	return 0
+}
+
+func (x *GameSnapshot) GetCurrentCounter() uint32 {
+	if x != nil {
+		return x.CurrentCounter
+	}
+	return 0
+}
+
+func (x *GameSnapshot) GetSuggestedPlay() []string {
+	if x != nil {
+		return x.SuggestedPlay
+	}
+	return nil
 }
 
 type ListEventsAfterRequest struct {
@@ -4788,7 +4804,7 @@ const file_huai_v1_api_proto_rawDesc = "" +
 	"\aseat_no\x18\x01 \x01(\rR\x06seatNo\x12\x14\n" +
 	"\x05cards\x18\x02 \x03(\tR\x05cards\"=\n" +
 	"\x13GameSnapshotRequest\x12&\n" +
-	"\x0fgame_session_id\x18\x01 \x01(\tR\rgameSessionId\"\xad\a\n" +
+	"\x0fgame_session_id\x18\x01 \x01(\tR\rgameSessionId\"\xfd\a\n" +
 	"\fGameSnapshot\x12&\n" +
 	"\x0fgame_session_id\x18\x01 \x01(\tR\rgameSessionId\x12\x17\n" +
 	"\ahand_id\x18\x02 \x01(\tR\x06handId\x12#\n" +
@@ -4820,7 +4836,9 @@ const file_huai_v1_api_proto_rawDesc = "" +
 	"\x03seq\x18\x18 \x01(\x04R\x03seq\x12$\n" +
 	"\x0edealer_user_id\x18\x19 \x01(\tR\fdealerUserId\x12\x1f\n" +
 	"\vdealer_seat\x18\x1a \x01(\rR\n" +
-	"dealerSeat\"\x81\x01\n" +
+	"dealerSeat\x12'\n" +
+	"\x0fcurrent_counter\x18\x1b \x01(\rR\x0ecurrentCounter\x12%\n" +
+	"\x0esuggested_play\x18\x1c \x03(\tR\rsuggestedPlay\"\x81\x01\n" +
 	"\x16ListEventsAfterRequest\x12&\n" +
 	"\x0fgame_session_id\x18\x01 \x01(\tR\rgameSessionId\x12\"\n" +
 	"\rlast_seen_seq\x18\x02 \x01(\x04R\vlastSeenSeq\x12\x1b\n" +

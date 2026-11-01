@@ -65,6 +65,53 @@ func TestRoomAdmissionSeatingAndStart(t *testing.T) {
 	}
 }
 
+func TestGameCompletionReturnsRoomToWaitingAndCleansSessionOnClose(t *testing.T) {
+	manager := NewManager()
+	created, err := manager.CreateRoom(lobby.HallOrdinary, "owner", 0, Settings{Name: "table"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	details, err := manager.JoinRoom(created.Room.ID, "owner", 0, "", created.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, userID := range []string{"two", "three", "four"} {
+		details, err = manager.JoinRoom(created.Room.ID, userID, 0, "", details.Version)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	started, err := manager.StartWithGameSession(
+		created.Room.ID, "owner", details.Version, "session",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updates := make([]Status, 0, 3)
+	cleanedSession := ""
+	manager.SetSessionCleanup(func(details Details) {
+		cleanedSession = details.GameSessionID
+	})
+	manager.SetObserver(func(details Details) {
+		updates = append(updates, details.Room.Status)
+	})
+	completed, err := manager.CompleteGameSession(created.Room.ID, "session")
+	if err != nil || completed.Room.Status != StatusWaiting ||
+		completed.GameSessionID != "session" || completed.Version != started.Version+1 {
+		t.Fatalf("completed room = %+v, %v", completed, err)
+	}
+	closed, err := manager.Close(created.Room.ID, "owner", completed.Version)
+	if err != nil || closed.Room.Status != StatusClosed {
+		t.Fatalf("closed completed room = %+v, %v", closed, err)
+	}
+	if len(updates) != 2 || updates[0] != StatusWaiting || updates[1] != StatusClosed {
+		t.Fatalf("room updates = %v", updates)
+	}
+	if cleanedSession != "session" {
+		t.Fatalf("closed room cleaned session %q, want session", cleanedSession)
+	}
+}
+
 func TestPracticeRoomIsPrivatePreseatedAndDisposable(t *testing.T) {
 	manager := NewManager()
 	created, err := manager.CreatePracticeRoom("owner", "张三")

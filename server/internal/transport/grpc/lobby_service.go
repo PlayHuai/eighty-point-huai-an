@@ -234,7 +234,15 @@ func (s *lobbyServer) CreateRoom(
 		if request.GetPassword() != "" || requestData.allowSpectators || requestData.minimumPoints != 0 {
 			return nil, status.Error(codes.InvalidArgument, "practice rooms do not accept room settings")
 		}
-		details, err = s.rooms.CreatePracticeRoom(userID, profile.Nickname)
+		nickname := userID
+		publicProfiles, profileErr := s.profiles.GetPublicProfiles(ctx, []string{userID})
+		if profileErr != nil {
+			return nil, status.Error(codes.Internal, "could not load player profile")
+		}
+		if public, exists := publicProfiles[userID]; exists && public.Nickname != "" {
+			nickname = public.Nickname
+		}
+		details, err = s.rooms.CreatePracticeRoom(userID, nickname)
 	} else {
 		details, err = s.rooms.CreateRoom(requestData.hallID, userID, profile.Points, room.Settings{
 			Name: requestData.name, Password: request.GetPassword(),
