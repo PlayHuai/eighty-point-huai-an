@@ -169,6 +169,24 @@ func choosePlay(state State, seat int) ([]engine.Card, error) {
 	requiredSuit := min(count, len(filter(hand, func(card engine.Card) bool {
 		return state.suit(card) == leadSuit
 	})))
+	heldFollowSuit := filter(hand, func(card engine.Card) bool {
+		return state.suit(card) == leadSuit
+	})
+	requiredPairs := 0
+	if state.sameSuit(lead) && !engine.Is510K(lead) {
+		parts := state.parts(lead)
+		if shape, err := engine.ClassifyPlay(lead, state.Trump); err == nil &&
+			(shape.Kind == engine.PlayPair || shape.Kind == engine.PlayTwoPairs ||
+				shape.Kind == engine.PlayTractor) {
+			parts = [][]engine.Card{lead}
+		}
+		for _, part := range parts {
+			if shape, err := engine.ClassifyPlay(part, state.Trump); err == nil {
+				requiredPairs += shape.PairCount
+			}
+		}
+		requiredPairs = min(requiredPairs, pairCount(heldFollowSuit))
+	}
 	forcedTrump := -1
 	if engine.Is510K(lead) && lead[0].Suit == state.Trump.Suit {
 		forcedTrump = min(3, len(filter(hand, func(card engine.Card) bool {
@@ -188,6 +206,25 @@ func choosePlay(state State, seat int) ([]engine.Card, error) {
 	}
 
 	sort.SliceStable(hand, func(i, j int) bool {
+		aFollows, bFollows := state.suit(hand[i]) == leadSuit, state.suit(hand[j]) == leadSuit
+		if aFollows != bFollows {
+			return aFollows
+		}
+		if teammateControls {
+			a, b := feedValue([]engine.Card{hand[i]}), feedValue([]engine.Card{hand[j]})
+			if a != b {
+				return a > b
+			}
+		} else if aFollows {
+			if comparison := state.compare([]engine.Card{hand[i]}, []engine.Card{hand[j]}, lead); comparison != 0 {
+				return comparison > 0
+			}
+		} else {
+			aTrump, bTrump := engine.IsTrump(hand[i], state.Trump), engine.IsTrump(hand[j], state.Trump)
+			if aTrump != bTrump {
+				return aTrump
+			}
+		}
 		a, b := discardValue(state, hand[i]), discardValue(state, hand[j])
 		if a != b {
 			return a < b
@@ -201,6 +238,7 @@ func choosePlay(state State, seat int) ([]engine.Card, error) {
 		return hand[i].Copy < hand[j].Copy
 	})
 	chosen := make([]engine.Card, 0, count)
+	chosenFollowSuit := make([]engine.Card, 0, count)
 	var best []engine.Card
 	bestCategory, bestCost := 0, 0
 	nodes, checks := 0, 0
@@ -213,7 +251,9 @@ func choosePlay(state State, seat int) ([]engine.Card, error) {
 		}
 		nodes++
 		if len(chosen) == count {
-			if suitCount < requiredSuit || (forcedTrump >= 0 && trumpCount != forcedTrump) {
+			if suitCount < requiredSuit ||
+				pairCount(chosenFollowSuit) < requiredPairs ||
+				(forcedTrump >= 0 && trumpCount != forcedTrump) {
 				return
 			}
 			checks++
@@ -260,7 +300,24 @@ func choosePlay(state State, seat int) ([]engine.Card, error) {
 				continue
 			}
 			chosen = append(chosen, card)
+			if state.suit(card) == leadSuit {
+				chosenFollowSuit = append(chosenFollowSuit, card)
+			}
+			possibleFollow := append([]engine.Card(nil), chosenFollowSuit...)
+			possibleFollow = append(possibleFollow, filter(hand[i+1:], func(card engine.Card) bool {
+				return state.suit(card) == leadSuit
+			})...)
+			if requiredPairs > 0 && pairCount(possibleFollow) < requiredPairs {
+				if state.suit(card) == leadSuit {
+					chosenFollowSuit = chosenFollowSuit[:len(chosenFollowSuit)-1]
+				}
+				chosen = chosen[:len(chosen)-1]
+				continue
+			}
 			visit(i+1, nextSuitCount, nextTrumpCount)
+			if state.suit(card) == leadSuit {
+				chosenFollowSuit = chosenFollowSuit[:len(chosenFollowSuit)-1]
+			}
 			chosen = chosen[:len(chosen)-1]
 			if nodes >= maxSearchNodes || checks >= maxRuleChecks {
 				return

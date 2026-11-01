@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Derek0120/eighty-point-huai-an/server/gen/huai/v1"
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/game/runtime"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/lobby"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/player"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/room"
@@ -327,7 +328,9 @@ func TestCreatePracticeRoomIsPrivatePreseatedAndIdempotent(t *testing.T) {
 	server := &lobbyServer{
 		rooms: manager,
 		profiles: lobbyProfiles{profile: player.Profile{
-			UserID: "owner", Nickname: "张三", Points: 500,
+			UserID: "owner", Points: 500,
+		}, public: map[string]player.PublicProfile{
+			"owner": {UserID: "owner", Nickname: "张三"},
 		}},
 	}
 	ctx := ctxWithUserID(context.Background(), "owner")
@@ -362,6 +365,43 @@ func TestCreatePracticeRoomIsPrivatePreseatedAndIdempotent(t *testing.T) {
 	}
 	if len(wantNames) != 0 {
 		t.Fatalf("practice room is missing bots: %v", wantNames)
+	}
+}
+
+func TestFailedPracticeStartDiscardsAdvancedRoomAndSession(t *testing.T) {
+	manager := room.NewManager()
+	sessions := runtime.NewRepository(nil)
+	manager.SetSessionCleanup(func(details room.Details) {
+		if details.GameSessionID != "" {
+			sessions.Delete(details.GameSessionID)
+		}
+	})
+	var sessionID string
+	server := &lobbyServer{
+		rooms: manager,
+		profiles: lobbyProfiles{
+			profile: player.Profile{UserID: "owner"},
+			public:  map[string]player.PublicProfile{"owner": {UserID: "owner", Nickname: "张三"}},
+		},
+		practiceStarter: func(details room.Details) (room.Details, error) {
+			sessionID = details.Room.ID
+			if _, err := StartGameSession(manager, sessions, details); err != nil {
+				return room.Details{}, err
+			}
+			return room.Details{}, errors.New("startup failed after advancing room")
+		},
+	}
+	_, err := server.CreateRoom(ctxWithUserID(context.Background(), "owner"), &huaiv1.CreateRoomRequest{
+		HallId: "practice", RequestId: "11111111-1111-4111-8111-111111111111",
+	})
+	if status.Code(err) != codes.Internal {
+		t.Fatalf("failed practice start error = %v, want Internal", err)
+	}
+	if _, err := manager.GetSummary(sessionID); !errors.Is(err, room.ErrRoomNotFound) {
+		t.Fatalf("failed practice room remains available: %v", err)
+	}
+	if _, err := sessions.Load(sessionID); !errors.Is(err, runtime.ErrNotFound) {
+		t.Fatalf("failed practice session remains available: %v", err)
 	}
 }
 

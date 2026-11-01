@@ -279,17 +279,7 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
           game.suggestedPlay.map(robot.Card.parse).toList(growable: false),
         );
       }
-      final winner = robot.currentWinningPlay(hand, publicPlays);
-      return (
-        'PLAY',
-        robot
-            .followSuit(
-              hand,
-              robot.Trick(leadCards: publicPlays.first, winningCards: winner),
-              seen,
-            )
-            .cards,
-      );
+      return null;
     }
     return null;
   }
