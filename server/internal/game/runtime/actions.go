@@ -241,7 +241,10 @@ func (s *State) settle(score int, winning []engine.Card, winner int, fault bool)
 			resolution.DefenderLevel = defenderLevel
 		}
 	}
-	result := &Result{DefenderScore: score, Resolution: resolution, CounterFault: fault}
+	result := &Result{
+		DefenderScore: score, BottomCaptured: !fault && side == engine.DefenderSide,
+		Resolution: resolution, CounterFault: fault,
+	}
 	s.Levels[dealerTeam], s.Levels[1-dealerTeam] = resolution.DealerLevel, resolution.DefenderLevel
 	result.WinnerTeam = dealerTeam
 	result.NextDealer = (s.Dealer + 2) % 4

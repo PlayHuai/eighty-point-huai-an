@@ -26,13 +26,13 @@ const (
 type ActionKind string
 
 const (
-	Declare  ActionKind = "declare"
-	Pass     ActionKind = "pass"
+	Declare      ActionKind = "declare"
+	Pass         ActionKind = "pass"
 	CounterTrump ActionKind = "counter"
-	LookBack ActionKind = "look_back"
-	BuryCards ActionKind = "bury"
-	PlayCards ActionKind = "play"
-	Continue ActionKind = "continue"
+	LookBack     ActionKind = "look_back"
+	BuryCards    ActionKind = "bury"
+	PlayCards    ActionKind = "play"
+	Continue     ActionKind = "continue"
 )
 
 var (
@@ -71,46 +71,47 @@ type Trick struct {
 }
 
 type Result struct {
-	DefenderScore int                   `json:"defender_score"`
-	Resolution    engine.HandResolution `json:"resolution"`
-	NextDealer    int                   `json:"next_dealer"`
-	WinnerTeam    int                   `json:"winner_team"`
-	SkyEarth      bool                  `json:"sky_earth"`
-	Spring        bool                  `json:"spring"`
-	CounterFault  bool                  `json:"counter_fault"`
+	DefenderScore  int                   `json:"defender_score"`
+	BottomCaptured bool                  `json:"bottom_captured"`
+	Resolution     engine.HandResolution `json:"resolution"`
+	NextDealer     int                   `json:"next_dealer"`
+	WinnerTeam     int                   `json:"winner_team"`
+	SkyEarth       bool                  `json:"sky_earth"`
+	Spring         bool                  `json:"spring"`
+	CounterFault   bool                  `json:"counter_fault"`
 }
 
 // State contains hidden hands, bottom cards and declaration proofs. Persisting
 // practice State is prohibited; the repository deliberately has no storage hook.
 type State struct {
-	ID           string                `json:"id"`
-	Players      [4]string             `json:"players"`
-	Practice     bool                  `json:"practice"`
-	Version      uint64                `json:"version"`
-	HandNumber   int                   `json:"hand_number"`
-	Phase        Phase                 `json:"phase"`
-	Dealer       int                   `json:"dealer"`
-	Turn         int                   `json:"turn"`
-	Levels       [2]engine.Rank         `json:"levels"`
-	Trump        engine.Trump          `json:"trump"`
-	Hands        [4][]engine.Card       `json:"hands"`
-	Bottom       []engine.Card         `json:"bottom"`
-	BottomOwner  int                   `json:"bottom_owner"`
-	Declarer     int                   `json:"declarer"`
-	DeclaredCard *engine.Card          `json:"declared_card,omitempty"`
-	DeclarationPasses int             `json:"declaration_passes"`
-	CounterKind  engine.CounterKind    `json:"counter_kind"`
-	CounterProof []engine.Card         `json:"counter_proof,omitempty"`
-	CounterPasses int                  `json:"counter_passes"`
-	Countered    bool                  `json:"countered"`
-	FinalTrump   bool                  `json:"final_trump"`
-	InitialBury  bool                  `json:"initial_bury"`
-	Trick        Trick                 `json:"trick"`
-	Completed    []Trick               `json:"completed"`
-	DefenderPoints int                 `json:"defender_points"`
-	Ready        [4]bool               `json:"ready"`
-	FirstSkyTeam *int                  `json:"first_sky_team,omitempty"`
-	Result       *Result               `json:"result,omitempty"`
+	ID                string             `json:"id"`
+	Players           [4]string          `json:"players"`
+	Practice          bool               `json:"practice"`
+	Version           uint64             `json:"version"`
+	HandNumber        int                `json:"hand_number"`
+	Phase             Phase              `json:"phase"`
+	Dealer            int                `json:"dealer"`
+	Turn              int                `json:"turn"`
+	Levels            [2]engine.Rank     `json:"levels"`
+	Trump             engine.Trump       `json:"trump"`
+	Hands             [4][]engine.Card   `json:"hands"`
+	Bottom            []engine.Card      `json:"bottom"`
+	BottomOwner       int                `json:"bottom_owner"`
+	Declarer          int                `json:"declarer"`
+	DeclaredCard      *engine.Card       `json:"declared_card,omitempty"`
+	DeclarationPasses int                `json:"declaration_passes"`
+	CounterKind       engine.CounterKind `json:"counter_kind"`
+	CounterProof      []engine.Card      `json:"counter_proof,omitempty"`
+	CounterPasses     int                `json:"counter_passes"`
+	Countered         bool               `json:"countered"`
+	FinalTrump        bool               `json:"final_trump"`
+	InitialBury       bool               `json:"initial_bury"`
+	Trick             Trick              `json:"trick"`
+	Completed         []Trick            `json:"completed"`
+	DefenderPoints    int                `json:"defender_points"`
+	Ready             [4]bool            `json:"ready"`
+	FirstSkyTeam      *int               `json:"first_sky_team,omitempty"`
+	Result            *Result            `json:"result,omitempty"`
 }
 
 type Action struct {

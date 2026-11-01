@@ -156,6 +156,37 @@ func buryValue(state State, card engine.Card) int {
 
 func choosePlay(state State, seat int) ([]engine.Card, error) {
 	hand := append([]engine.Card(nil), state.Hands[seat]...)
+	if len(state.Trick.Plays) == 0 {
+		return chooseLead(state, seat, hand)
+	}
+
+	lead := state.Trick.Plays[0].Cards
+	count := len(lead)
+	if count == 0 || len(hand) < count {
+		return nil, ErrInvalidAction
+	}
+	leadSuit := state.suit(lead[0])
+	requiredSuit := min(count, len(filter(hand, func(card engine.Card) bool {
+		return state.suit(card) == leadSuit
+	})))
+	forcedTrump := -1
+	if engine.Is510K(lead) && lead[0].Suit == state.Trump.Suit {
+		forcedTrump = min(3, len(filter(hand, func(card engine.Card) bool {
+			return engine.IsTrump(card, state.Trump)
+		})))
+	}
+	teammateControls := state.Trick.Winner%2 == seat%2
+	var incumbent []engine.Card
+	for _, play := range state.Trick.Plays {
+		if play.Seat == state.Trick.Winner {
+			incumbent = play.Cards
+			break
+		}
+	}
+	if len(incumbent) == 0 {
+		return nil, ErrInvalidAction
+	}
+
 	sort.SliceStable(hand, func(i, j int) bool {
 		a, b := discardValue(state, hand[i]), discardValue(state, hand[j])
 		if a != b {
@@ -169,43 +200,235 @@ func choosePlay(state State, seat int) ([]engine.Card, error) {
 		}
 		return hand[i].Copy < hand[j].Copy
 	})
-	if len(state.Trick.Plays) == 0 {
-		if len(hand) == 0 {
-			return nil, ErrInvalidAction
-		}
-		candidate := []engine.Card{hand[0]}
-		if err := state.ValidatePlay(seat, candidate); err != nil {
-			return nil, err
-		}
-		return candidate, nil
-	}
-
-	count := len(state.Trick.Plays[0].Cards)
 	chosen := make([]engine.Card, 0, count)
-	var result []engine.Card
-	var visit func(int) bool
-	visit = func(start int) bool {
+	var best []engine.Card
+	bestCategory, bestCost := 0, 0
+	nodes, checks := 0, 0
+	const maxSearchNodes = 100_000
+	const maxRuleChecks = 4_096
+	var visit func(int, int, int)
+	visit = func(start, suitCount, trumpCount int) {
+		if nodes >= maxSearchNodes || checks >= maxRuleChecks {
+			return
+		}
+		nodes++
 		if len(chosen) == count {
-			if state.ValidatePlay(seat, chosen) == nil {
-				result = append([]engine.Card(nil), chosen...)
-				return true
+			if suitCount < requiredSuit || (forcedTrump >= 0 && trumpCount != forcedTrump) {
+				return
 			}
-			return false
+			checks++
+			if state.ValidatePlay(seat, chosen) == nil {
+				wins := state.beats(chosen, incumbent, lead)
+				category := 1
+				if wins != teammateControls {
+					category = 0
+				}
+				cost := discardCost(state, chosen)
+				if teammateControls && !wins {
+					cost = -feedValue(chosen)
+				}
+				if best == nil || category < bestCategory ||
+					(category == bestCategory && category == 0 && wins &&
+						state.compare(chosen, best, lead) < 0) ||
+					(category == bestCategory && !(wins && category == 0) && cost < bestCost) {
+					best = append([]engine.Card(nil), chosen...)
+					bestCategory, bestCost = category, cost
+				}
+			}
+			return
 		}
 		remaining := count - len(chosen)
 		for i := start; i <= len(hand)-remaining; i++ {
-			chosen = append(chosen, hand[i])
-			if visit(i + 1) {
-				return true
+			card := hand[i]
+			nextSuitCount := suitCount
+			if state.suit(card) == leadSuit {
+				nextSuitCount++
 			}
+			nextTrumpCount := trumpCount
+			if engine.IsTrump(card, state.Trump) {
+				nextTrumpCount++
+			}
+			slotsAfter := remaining - 1
+			if nextSuitCount+min(slotsAfter, remainingSuitCount(hand[i+1:], leadSuit, state)) < requiredSuit {
+				continue
+			}
+			if forcedTrump >= 0 && nextTrumpCount > forcedTrump {
+				continue
+			}
+			if forcedTrump >= 0 &&
+				nextTrumpCount+min(slotsAfter, remainingTrumpCount(hand[i+1:], state)) < forcedTrump {
+				continue
+			}
+			chosen = append(chosen, card)
+			visit(i+1, nextSuitCount, nextTrumpCount)
 			chosen = chosen[:len(chosen)-1]
+			if nodes >= maxSearchNodes || checks >= maxRuleChecks {
+				return
+			}
 		}
-		return false
 	}
-	if visit(0) {
-		return result, nil
+	visit(0, 0, 0)
+	if best != nil {
+		return best, nil
 	}
 	return nil, fmt.Errorf("%w: no legal automatic response found", ErrInvalidAction)
+}
+
+func chooseLead(state State, seat int, hand []engine.Card) ([]engine.Card, error) {
+	if len(hand) == 0 {
+		return nil, ErrInvalidAction
+	}
+	for suit := engine.Clubs; suit <= engine.Spades; suit++ {
+		for _, five := range hand {
+			if five.Suit != suit || five.Rank != engine.RankFive {
+				continue
+			}
+			for _, ten := range hand {
+				if ten.Suit != suit || ten.Rank != engine.RankTen {
+					continue
+				}
+				for _, king := range hand {
+					candidate := []engine.Card{five, ten, king}
+					if king.Suit == suit && king.Rank == engine.RankKing &&
+						state.ValidatePlay(seat, candidate) == nil {
+						return candidate, nil
+					}
+				}
+			}
+		}
+	}
+
+	groups := map[engine.Suit][]engine.Card{}
+	for _, card := range hand {
+		groups[state.suit(card)] = append(groups[state.suit(card)], card)
+	}
+	for suit := engine.Clubs; suit <= engine.NoSuit; suit++ {
+		cards := groups[suit]
+		if len(cards) < 4 {
+			continue
+		}
+		sort.SliceStable(cards, func(i, j int) bool {
+			return discardValue(state, cards[i]) > discardValue(state, cards[j])
+		})
+		if len(cards) > 8 {
+			cards = cards[:8]
+		}
+		if state.ValidatePlay(seat, cards) == nil {
+			return append([]engine.Card(nil), cards...), nil
+		}
+	}
+
+	pairs := make([][]engine.Card, 0)
+	for i := range hand {
+		for j := i + 1; j < len(hand); j++ {
+			candidate := []engine.Card{hand[i], hand[j]}
+			if engine.IsPair(candidate) && state.ValidatePlay(seat, candidate) == nil {
+				pairs = append(pairs, candidate)
+			}
+		}
+	}
+	for _, candidate := range pairs {
+		suit := state.suit(candidate[0])
+		if suit != engine.NoSuit && teammateVoid(state, seat, suit) {
+			return candidate, nil
+		}
+	}
+	for _, candidate := range pairs {
+		if state.suit(candidate[0]) == engine.NoSuit {
+			return candidate, nil
+		}
+	}
+
+	sort.SliceStable(hand, func(i, j int) bool {
+		a, b := discardValue(state, hand[i]), discardValue(state, hand[j])
+		if a != b {
+			return a < b
+		}
+		return hand[i].Copy < hand[j].Copy
+	})
+	for _, card := range hand {
+		if engine.IsTrump(card, state.Trump) {
+			candidate := []engine.Card{card}
+			if state.ValidatePlay(seat, candidate) == nil {
+				return candidate, nil
+			}
+		}
+	}
+	for _, card := range hand {
+		candidate := []engine.Card{card}
+		if state.ValidatePlay(seat, candidate) == nil {
+			return candidate, nil
+		}
+	}
+	return nil, ErrInvalidAction
+}
+
+func remainingSuitCount(cards []engine.Card, suit engine.Suit, state State) int {
+	count := 0
+	for _, card := range cards {
+		if state.suit(card) == suit {
+			count++
+		}
+	}
+	return count
+}
+
+func remainingTrumpCount(cards []engine.Card, state State) int {
+	count := 0
+	for _, card := range cards {
+		if engine.IsTrump(card, state.Trump) {
+			count++
+		}
+	}
+	return count
+}
+
+func discardCost(state State, cards []engine.Card) int {
+	cost := 0
+	for _, card := range cards {
+		cost += discardValue(state, card)
+	}
+	return cost
+}
+
+func feedValue(cards []engine.Card) int {
+	value := 0
+	for _, card := range cards {
+		switch card.Rank {
+		case engine.RankFive:
+			value += 5
+		case engine.RankTen:
+			value += 10
+		case engine.RankKing:
+			value += 10
+		}
+	}
+	return value
+}
+
+func teammateVoid(state State, seat int, suit engine.Suit) bool {
+	for _, trick := range state.Completed {
+		if len(trick.Plays) == 0 {
+			continue
+		}
+		leadSuit := state.suit(trick.Plays[0].Cards[0])
+		if leadSuit != suit {
+			continue
+		}
+		for _, play := range trick.Plays {
+			if play.Seat%2 != seat%2 || play.Seat == seat {
+				continue
+			}
+			followed := false
+			for _, card := range play.Cards {
+				followed = followed || state.suit(card) == suit
+			}
+			if !followed {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func discardValue(state State, card engine.Card) int {

@@ -487,26 +487,6 @@ func TestConcurrentRetries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	func TestRejectedRequestDoesNotReserveID(t *testing.T) {
-		repository := NewRepository(identity)
-		state, err := repository.Create(config())
-		if err != nil {
-			t.Fatal(err)
-		}
-		action := Action{Seat: 0, Kind: Continue, RequestID: "retry", ExpectedVersion: state.Version}
-		if _, err := repository.Submit(state.ID, "a", action); !errors.Is(err, ErrPhase) {
-			t.Fatal("invalid request was accepted")
-		}
-		action.Kind = Pass
-		if _, err := repository.Submit(state.ID, "a", action); err != nil {
-			t.Fatalf("failed request reserved its ID: %v", err)
-		}
-		action.RequestID = "stale"
-		if _, err := repository.Submit(state.ID, "a", action); !errors.Is(err, ErrVersion) {
-			t.Fatalf("distinct stale request accepted: %v", err)
-		}
-	}
 	action := Action{Seat: 0, Kind: Pass, RequestID: "r", ExpectedVersion: state.Version}
 	var wait sync.WaitGroup
 	errs := make(chan error, 16)
@@ -525,8 +505,29 @@ func TestConcurrentRetries(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+
 	loaded, _ := repository.Load(state.ID)
 	if loaded.Version != state.Version+1 || loaded.DeclarationPasses != 1 {
 		t.Fatal("concurrent retry applied more than once")
+	}
+}
+
+func TestRejectedRequestDoesNotReserveID(t *testing.T) {
+	repository := NewRepository(identity)
+	state, err := repository.Create(config())
+	if err != nil {
+		t.Fatal(err)
+	}
+	action := Action{Seat: 0, Kind: Continue, RequestID: "retry", ExpectedVersion: state.Version}
+	if _, err := repository.Submit(state.ID, "a", action); !errors.Is(err, ErrPhase) {
+		t.Fatal("invalid request was accepted")
+	}
+	action.Kind = Pass
+	if _, err := repository.Submit(state.ID, "a", action); err != nil {
+		t.Fatalf("failed request reserved its ID: %v", err)
+	}
+	action.RequestID = "stale"
+	if _, err := repository.Submit(state.ID, "a", action); !errors.Is(err, ErrVersion) {
+		t.Fatalf("distinct stale request accepted: %v", err)
 	}
 }
