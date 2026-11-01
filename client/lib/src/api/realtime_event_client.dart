@@ -81,7 +81,7 @@ class RealtimeEventClient {
     return endpoint.replace(
       scheme: scheme,
       path: path,
-      query: isWebSocket ? endpoint.query : null,
+      query: isWebSocket && endpoint.hasQuery ? endpoint.query : null,
       fragment: null,
     );
   }

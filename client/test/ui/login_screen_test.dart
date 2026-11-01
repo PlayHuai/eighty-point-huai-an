@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:eighty_point_huai_an/src/api/api_client.dart';
+import 'package:eighty_point_huai_an/src/api/game_table_client.dart';
 import 'package:eighty_point_huai_an/src/api/lobby_models.dart';
 import 'package:eighty_point_huai_an/src/api/player_models.dart';
 import 'package:eighty_point_huai_an/src/auth/auth_controller.dart';
@@ -9,8 +10,12 @@ import 'package:eighty_point_huai_an/src/auth/session_store.dart';
 import 'package:eighty_point_huai_an/src/generated/huai/v1/api.pb.dart'
     as proto;
 import 'package:eighty_point_huai_an/src/ui/client_app.dart';
+import 'package:eighty_point_huai_an/src/ui/client_providers.dart';
+import 'package:eighty_point_huai_an/src/ui/game_table_screen.dart';
 import 'package:eighty_point_huai_an/src/ui/login_screen.dart';
+import 'package:fixnum/fixnum.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grpc/grpc.dart';
 
@@ -193,7 +198,7 @@ void main() {
     api.loginCompleter.complete(_session);
     await login;
 
-    await tester.pumpWidget(ClientApp(auth: auth));
+    await tester.pumpWidget(_appWithGameTable(auth, api));
     await tester.pumpAndSettle();
     await tester.tap(find.text('好友房'));
     await tester.pumpAndSettle();
@@ -204,7 +209,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(api.joinedInvitationRoomId, 'friend-room-1');
     expect(api.joinedInvitationRequestId, matches(RegExp(r'^[0-9a-f-]{36}$')));
-    expect(find.text('好友房 · 房间聊天'), findsOneWidget);
+    _expectGameTable(tester, roomId: 'friend-room-1', roomName: '好友房');
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
@@ -277,7 +282,7 @@ void main() {
     api.loginCompleter.complete(_session);
     await login;
 
-    await tester.pumpWidget(ClientApp(auth: auth));
+    await tester.pumpWidget(_appWithGameTable(auth, api));
     await tester.pumpAndSettle();
     await tester.tap(find.text('创建房间'));
     await tester.pumpAndSettle();
@@ -294,7 +299,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(api.joinedRoomCode, 'created-friend-room');
-    expect(find.text('密码房 · 房间聊天'), findsOneWidget);
+    _expectGameTable(tester, roomId: 'created-friend-room', roomName: '密码房');
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
@@ -332,7 +337,7 @@ void main() {
     api.loginCompleter.complete(_session);
     await login;
 
-    await tester.pumpWidget(ClientApp(auth: auth));
+    await tester.pumpWidget(_appWithGameTable(auth, api));
     await tester.pumpAndSettle();
     expect(find.text('普通大厅'), findsOneWidget);
     expect(find.text('周末牌局'), findsOneWidget);
@@ -344,7 +349,7 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, '加入'));
     await tester.pumpAndSettle();
     expect(api.joinedRoomId, 'room-1');
-    expect(find.text('周末牌局 · 房间聊天'), findsOneWidget);
+    _expectGameTable(tester, roomId: 'room-1', roomName: '周末牌局');
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
@@ -368,7 +373,7 @@ void main() {
     api.loginCompleter.complete(_session);
     await login;
 
-    await tester.pumpWidget(ClientApp(auth: auth));
+    await tester.pumpWidget(_appWithGameTable(auth, api));
     await tester.pumpAndSettle();
     await tester.tap(find.text('创建房间'));
     await tester.pumpAndSettle();
@@ -402,7 +407,7 @@ void main() {
     expect(minimumPoints, 100);
     expect(requestId, matches(RegExp(r'^[0-9a-f-]{36}$')));
     expect(api.joinedExpectedVersion, 1);
-    expect(find.text('测试牌局 · 房间聊天'), findsOneWidget);
+    _expectGameTable(tester, roomId: 'created-friend-room', roomName: '测试牌局');
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
@@ -485,27 +490,25 @@ void main() {
       api.loginCompleter.complete(_session);
       await login;
 
-      await tester.pumpWidget(ClientApp(auth: auth));
+      await tester.pumpWidget(_appWithGameTable(auth, api));
       await tester.pumpAndSettle();
       await tester.tap(find.text('创建房间'));
       await tester.pumpAndSettle();
       await tester.enterText(
-        find
-            .descendant(
-              of: find.byType(AlertDialog),
-              matching: find.byType(TextField),
-            )
-            .first,
+        find.byKey(const ValueKey('create-room-name')),
         'test',
       );
+      await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(FilledButton, '创建'));
       await tester.pumpAndSettle();
-      expect(find.text('test · 房间聊天'), findsOneWidget);
+      _expectGameTable(tester, roomId: 'created-friend-room', roomName: 'test');
       final readsBeforeLeaving = api.requestedRoomHallIds.length;
 
       await tester.tap(find.byTooltip('离开房间'));
       await tester.pumpAndSettle();
       expect(api.leftRoomIds, ['created-friend-room']);
+      expect(api.leftRoomVersions, [1]);
+      expect(api.leaveRequestIds.single, matches(RegExp(r'^[0-9a-f-]{36}$')));
       expect(api.requestedRoomHallIds.length, readsBeforeLeaving + 1);
       expect(find.text('test'), findsNothing);
       expect(find.widgetWithText(FilledButton, '加入'), findsNothing);
@@ -531,7 +534,7 @@ void main() {
       api.loginCompleter.complete(_session);
       await login;
 
-      await tester.pumpWidget(ClientApp(auth: auth));
+      await tester.pumpWidget(_appWithGameTable(auth, api));
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(FilledButton, '加入'));
       await tester.pumpAndSettle();
@@ -556,7 +559,7 @@ void main() {
       await tester.tap(find.widgetWithText(FilledButton, '加入'));
       await tester.pumpAndSettle();
       expect(api.joinedExpectedVersions, [3, 5]);
-      expect(find.text('周末牌局 · 房间聊天'), findsOneWidget);
+      _expectGameTable(tester, roomId: 'room-1', roomName: '周末牌局');
       await tester.pumpWidget(const SizedBox.shrink());
     },
     variant: TargetPlatformVariant({
@@ -595,7 +598,7 @@ void main() {
       expect(api.requestedRoomHallIds, ['ordinary', 'ordinary']);
       expect(api.joinedExpectedVersions, [3]);
       expect(find.text('周末牌局'), findsNothing);
-      expect(find.text('周末牌局 · 房间聊天'), findsNothing);
+      expect(find.byType(GameTableScreen), findsNothing);
       await tester.pumpWidget(const SizedBox.shrink());
     });
   }
@@ -1092,6 +1095,74 @@ const _waitingRoom = LobbyRoom(
   version: 3,
 );
 
+Widget _appWithGameTable(AuthController auth, _FakeApiClient api) =>
+    ProviderScope(
+      overrides: [
+        apiClientProvider.overrideWithValue(api),
+        authControllerProvider.overrideWith(
+          (ref) => auth,
+          disposeNotifier: false,
+        ),
+        gameTableClientProvider.overrideWithValue(_LobbyGameTableClient(api)),
+      ],
+      child: ClientApp(auth: auth),
+    );
+
+void _expectGameTable(
+  WidgetTester tester, {
+  required String roomId,
+  required String roomName,
+}) {
+  expect(find.byType(GameTableScreen), findsOneWidget);
+  expect(find.byKey(const ValueKey('room-identity')), findsOneWidget);
+  expect(
+    tester.widget<Text>(find.byKey(const ValueKey('room-identity'))).data,
+    '$roomName $roomId · 第 1 局',
+  );
+  expect(find.text('重试'), findsNothing);
+}
+
+class _LobbyGameTableClient implements GameTableClient {
+  _LobbyGameTableClient(this.api);
+
+  final _FakeApiClient api;
+
+  @override
+  Future<proto.RoomDetails> getRoom(proto.RoomRequest request) async {
+    final room = await api.getRoom(
+      accessToken: _session.accessToken,
+      roomId: request.roomId,
+    );
+    return proto.RoomDetails(
+      room: proto.RoomSummary(
+        roomId: room.id,
+        hallId: room.hallId,
+        name: room.name,
+        owner: proto.UserProfile(userId: _session.userId),
+        status: proto.RoomStatus.ROOM_STATUS_WAITING,
+        capacity: room.capacity,
+        occupiedSeats: room.occupiedSeats,
+        version: Int64(room.version),
+      ),
+      version: Int64(room.version),
+      members: [
+        proto.RoomMember(
+          userId: _session.userId,
+          role: proto.RoomMemberRole.ROOM_MEMBER_ROLE_PLAYER,
+          seatNo: 1,
+          team: 1,
+        ),
+      ],
+    );
+  }
+
+  @override
+  Future<void> close() async {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 class _FakeApiClient implements ApiClient {
   @override
   Future<proto.ServerInfo> getServerInfo({required String accessToken}) =>
@@ -1135,6 +1206,9 @@ class _FakeApiClient implements ApiClient {
   bool failNextRoomCreation = false;
   int? joinedExpectedVersion;
   final leftRoomIds = <String>[];
+  final leftRoomVersions = <int>[];
+  final leaveRequestIds = <String>[];
+  final _enteredRooms = <String, LobbyRoom>{};
   bool failNextChatSend = false;
 
   @override
@@ -1249,6 +1323,8 @@ class _FakeApiClient implements ApiClient {
     required String requestId,
   }) async {
     leftRoomIds.add(roomId);
+    leftRoomVersions.add(expectedVersion);
+    leaveRequestIds.add(requestId);
     if (removeRoomOnLeave) {
       roomsByHall = {
         for (final entry in roomsByHall.entries)
@@ -1262,9 +1338,13 @@ class _FakeApiClient implements ApiClient {
     required String accessToken,
     required String roomId,
   }) async {
-    return roomsByHall.values
+    final room = roomsByHall.values
         .expand((rooms) => rooms)
-        .firstWhere((room) => room.id == roomId);
+        .where((room) => room.id == roomId)
+        .firstOrNull;
+    return room ??
+        _enteredRooms[roomId] ??
+        (throw StateError('Test room not found: $roomId'));
   }
 
   @override
@@ -1274,7 +1354,7 @@ class _FakeApiClient implements ApiClient {
     required String password,
   }) async {
     joinedRoomCode = roomCode;
-    return LobbyRoom(
+    final room = LobbyRoom(
       id: roomCode,
       hallId: 'normal',
       name: '密码房',
@@ -1284,6 +1364,8 @@ class _FakeApiClient implements ApiClient {
       hasPassword: true,
       version: 1,
     );
+    _enteredRooms[room.id] = room;
+    return room;
   }
 
   @override
@@ -1425,7 +1507,7 @@ class _FakeApiClient implements ApiClient {
   }) async {
     joinedInvitationRoomId = roomId;
     joinedInvitationRequestId = requestId;
-    return LobbyRoom(
+    final room = LobbyRoom(
       id: roomId,
       hallId: friendRoomHallId,
       name: '好友房',
@@ -1435,6 +1517,8 @@ class _FakeApiClient implements ApiClient {
       hasPassword: false,
       version: 3,
     );
+    _enteredRooms[room.id] = room;
+    return room;
   }
 
   @override
