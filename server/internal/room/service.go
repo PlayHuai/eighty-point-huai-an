@@ -68,14 +68,17 @@ type Summary struct {
 	AllowSpectators bool
 	MinimumPoints   int64
 	Version         uint64
+	PracticeMode    bool
 }
 
 type Member struct {
 	UserID   string
+	Nickname string
 	Role     Role
 	Seat     uint32
 	ViewSeat uint32
 	ShowHand bool
+	IsRobot  bool
 }
 
 type Details struct {
@@ -101,6 +104,7 @@ type roomState struct {
 	joinedInvites  map[string]struct{}
 	inviteRequests map[string]string
 	pendingInvites map[string]string
+	gameSessionID  string
 	version        uint64
 }
 
@@ -110,6 +114,14 @@ type Manager struct {
 	hallRoomIDs map[string][]string
 	observerMu  sync.RWMutex
 	observer    func(Details)
+	cleanupMu   sync.RWMutex
+	cleanup     func(Details)
+}
+
+func (m *Manager) SetPracticeCleanup(cleanup func(Details)) {
+	m.cleanupMu.Lock()
+	m.cleanup = cleanup
+	m.cleanupMu.Unlock()
 }
 
 func (m *Manager) SetObserver(observer func(Details)) {
@@ -125,6 +137,14 @@ func (m *Manager) notifyRoom(details Details) {
 	if observer != nil {
 		observer(details)
 	}
+	if details.Room.PracticeMode && details.Room.Status == StatusClosed {
+		m.cleanupMu.RLock()
+		cleanup := m.cleanup
+		m.cleanupMu.RUnlock()
+		if cleanup != nil {
+			cleanup(details)
+		}
+	}
 }
 
 func NewManager() *Manager {
@@ -132,6 +152,112 @@ func NewManager() *Manager {
 		rooms:       make(map[string]*roomState),
 		hallRoomIDs: make(map[string][]string),
 	}
+}
+
+func (m *Manager) CreatePracticeRoom(ownerID, nickname string) (Details, error) {
+	nickname = strings.TrimSpace(nickname)
+	if ownerID == "" || !utf8.ValidString(nickname) ||
+		strings.ContainsAny(nickname, "\x00\r\n") || utf8.RuneCountInString(nickname) > 64 {
+		return Details{}, ErrInvalidInput
+	}
+	if nickname == "" {
+		nickname = ownerID
+	}
+	id, err := newRoomID()
+	if err != nil {
+		return Details{}, err
+	}
+	state := &roomState{
+		summary: Summary{
+			ID: id, HallID: "practice", OwnerID: ownerID, Name: "练习房",
+			Status: StatusWaiting, OccupiedSeats: 4, Capacity: 4, PracticeMode: true,
+		},
+		ownerID: ownerID,
+		members: map[string]memberState{
+			ownerID: {Member: Member{UserID: ownerID, Role: RolePlayer, Seat: 1}},
+			"practice:" + id + ":Yao": {Member: Member{
+				UserID: "practice:" + id + ":Yao", Nickname: nickname + "的AI Yao",
+				Role: RolePlayer, Seat: 2, IsRobot: true,
+			}},
+			"practice:" + id + ":Jia": {Member: Member{
+				UserID: "practice:" + id + ":Jia", Nickname: nickname + "的AI Jia",
+				Role: RolePlayer, Seat: 3, IsRobot: true,
+			}},
+			"practice:" + id + ":Zhang": {Member: Member{
+				UserID: "practice:" + id + ":Zhang", Nickname: nickname + "的AI Zhang",
+				Role: RolePlayer, Seat: 4, IsRobot: true,
+			}},
+		},
+		invitees: make(map[string]struct{}), joinedInvites: make(map[string]struct{}),
+		inviteRequests: make(map[string]string), pendingInvites: make(map[string]string),
+		version: 1,
+	}
+	m.mu.Lock()
+	m.rooms[id] = state
+	m.mu.Unlock()
+	details := snapshot(state)
+	m.notifyRoom(details)
+	return details, nil
+}
+
+func (m *Manager) SetGameSessionID(roomID, sessionID string) (Details, error) {
+	if sessionID == "" {
+		return Details{}, ErrInvalidInput
+	}
+	state, err := m.lockRoom(roomID)
+	if err != nil {
+		return Details{}, err
+	}
+	defer state.mu.Unlock()
+	if state.summary.Status != StatusPlaying || state.gameSessionID != "" {
+		return Details{}, ErrRoomStarted
+	}
+	state.gameSessionID = sessionID
+	state.version++
+	details := snapshotLocked(state)
+	m.notifyRoom(details)
+	return details, nil
+}
+
+func (m *Manager) StartWithGameSession(
+	roomID, userID string,
+	expectedVersion uint64,
+	sessionID string,
+) (Details, error) {
+	if sessionID == "" {
+		return Details{}, ErrInvalidInput
+	}
+	return m.startRoom(roomID, userID, expectedVersion, sessionID)
+}
+
+func (m *Manager) startRoom(
+	roomID, userID string,
+	expectedVersion uint64,
+	sessionID string,
+) (Details, error) {
+	state, err := m.lockRoom(roomID)
+	if err != nil {
+		return Details{}, err
+	}
+	defer state.mu.Unlock()
+	if err := state.checkVersion(expectedVersion); err != nil {
+		return Details{}, err
+	}
+	if userID != state.ownerID {
+		return Details{}, ErrOwnerRequired
+	}
+	if state.summary.Status != StatusWaiting {
+		return Details{}, ErrRoomStarted
+	}
+	if state.summary.OccupiedSeats != 4 {
+		return Details{}, ErrRoomNotReady
+	}
+	state.summary.Status = StatusPlaying
+	state.gameSessionID = sessionID
+	state.version++
+	details := snapshotLocked(state)
+	m.notifyRoom(details)
+	return details, nil
 }
 
 func (m *Manager) CreateRoom(hallID, ownerID string, ownerPoints int64, settings Settings) (Details, error) {
@@ -645,13 +771,19 @@ func (m *Manager) LeaveRoom(roomID, userID string, expectedVersion uint64) (Deta
 	if !exists {
 		return Details{}, ErrNotMember
 	}
-	if member.Role == RolePlayer && member.Seat != 0 && state.summary.Status == StatusPlaying {
+	if member.Role == RolePlayer && member.Seat != 0 && state.summary.Status == StatusPlaying &&
+		!state.summary.PracticeMode {
 		return Details{}, ErrRoomStarted
 	}
 	delete(state.members, userID)
 	delete(state.joinedInvites, userID)
 	if member.Role == RolePlayer && member.Seat != 0 {
 		state.summary.OccupiedSeats--
+	}
+	if state.summary.PracticeMode && userID == state.ownerID {
+		state.summary.Status = StatusClosed
+		state.members = make(map[string]memberState)
+		state.summary.OccupiedSeats = 0
 	}
 	if userID == state.ownerID && state.summary.Status == StatusWaiting {
 		state.summary.Status = StatusClosed
@@ -709,28 +841,7 @@ func (m *Manager) SetHandVisibility(roomID, userID string, visible bool, expecte
 }
 
 func (m *Manager) Start(roomID, userID string, expectedVersion uint64) (Details, error) {
-	state, err := m.lockRoom(roomID)
-	if err != nil {
-		return Details{}, err
-	}
-	defer state.mu.Unlock()
-	if err := state.checkVersion(expectedVersion); err != nil {
-		return Details{}, err
-	}
-	if userID != state.ownerID {
-		return Details{}, ErrOwnerRequired
-	}
-	if state.summary.Status != StatusWaiting {
-		return Details{}, ErrRoomStarted
-	}
-	if state.summary.OccupiedSeats != 4 {
-		return Details{}, ErrRoomNotReady
-	}
-	state.summary.Status = StatusPlaying
-	state.version++
-	details := snapshotLocked(state)
-	m.notifyRoom(details)
-	return details, nil
+	return m.startRoom(roomID, userID, expectedVersion, "")
 }
 
 func (m *Manager) Close(roomID, userID string, expectedVersion uint64) (Details, error) {
@@ -908,7 +1019,7 @@ func snapshot(state *roomState) Details {
 func snapshotLocked(state *roomState) Details {
 	summary := state.summary
 	summary.Version = state.version
-	result := Details{Room: summary, Version: state.version}
+	result := Details{Room: summary, Version: state.version, GameSessionID: state.gameSessionID}
 	result.Members = make([]Member, 0, len(state.members))
 	for _, member := range state.members {
 		result.Members = append(result.Members, member.Member)

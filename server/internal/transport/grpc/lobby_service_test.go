@@ -322,6 +322,49 @@ func TestCreateRoomIsIdempotentByUserAndRequestID(t *testing.T) {
 	}
 }
 
+func TestCreatePracticeRoomIsPrivatePreseatedAndIdempotent(t *testing.T) {
+	manager := room.NewManager()
+	server := &lobbyServer{
+		rooms: manager,
+		profiles: lobbyProfiles{profile: player.Profile{
+			UserID: "owner", Nickname: "张三", Points: 500,
+		}},
+	}
+	ctx := ctxWithUserID(context.Background(), "owner")
+	request := &huaiv1.CreateRoomRequest{
+		HallId: "practice", Name: "练习房", RequestId: "11111111-1111-4111-8111-111111111111",
+	}
+	created, err := server.CreateRoom(ctx, request)
+	if err != nil {
+		t.Fatalf("CreateRoom(practice) error = %v", err)
+	}
+	retry, err := server.CreateRoom(ctx, request)
+	if err != nil || retry.GetRoomId() != created.GetRoomId() {
+		t.Fatalf("practice CreateRoom retry = %+v, %v; want room %q", retry, err, created.GetRoomId())
+	}
+	details, err := manager.GetRoom(created.GetRoomId(), "owner")
+	if err != nil || !details.Room.PracticeMode || details.Room.OccupiedSeats != 4 ||
+		len(details.Members) != 4 {
+		t.Fatalf("practice room details = %+v, %v", details, err)
+	}
+	wantNames := map[string]string{
+		"practice:" + created.GetRoomId() + ":Yao":   "张三的AI Yao",
+		"practice:" + created.GetRoomId() + ":Jia":   "张三的AI Jia",
+		"practice:" + created.GetRoomId() + ":Zhang": "张三的AI Zhang",
+	}
+	for _, member := range details.Members {
+		if member.IsRobot {
+			if wantNames[member.UserID] != member.Nickname {
+				t.Fatalf("unexpected robot %q named %q", member.UserID, member.Nickname)
+			}
+			delete(wantNames, member.UserID)
+		}
+	}
+	if len(wantNames) != 0 {
+		t.Fatalf("practice room is missing bots: %v", wantNames)
+	}
+}
+
 func TestRegisterLobbyServiceRequiresDependencies(t *testing.T) {
 	if err := RegisterLobbyService(nil, room.NewManager(), lobbyProfiles{}); err == nil {
 		t.Fatal("RegisterLobbyService accepted a nil registrar")

@@ -18,12 +18,13 @@ import (
 
 type lobbyServer struct {
 	huaiv1.UnimplementedLobbyServiceServer
-	rooms        *room.Manager
-	profiles     lobbyProfileRepository
-	identity     weChatIdentityResolver
-	requestMu    sync.Mutex
-	createdRooms map[roomRequestKey]createRoomResult
-	leftRooms    map[roomRequestKey]leaveRoomRequest
+	rooms                 *room.Manager
+	profiles              lobbyProfileRepository
+	identity              weChatIdentityResolver
+	practiceStarter       func(room.Details) (room.Details, error)
+	requestMu             sync.Mutex
+	createdRooms          map[roomRequestKey]createRoomResult
+	leftRooms             map[roomRequestKey]leaveRoomRequest
 }
 
 type weChatIdentityResolver interface {
@@ -63,10 +64,33 @@ func RegisterLobbyService(
 	profiles lobbyProfileRepository,
 	identities ...weChatIdentityResolver,
 ) error {
+	return registerLobbyService(server, rooms, profiles, nil, identities...)
+}
+
+func RegisterLobbyServiceWithPracticeStarter(
+	server grpcgo.ServiceRegistrar,
+	rooms *room.Manager,
+	profiles lobbyProfileRepository,
+	starter func(room.Details) (room.Details, error),
+	identities ...weChatIdentityResolver,
+) error {
+	if starter == nil {
+		return errors.New("practice room starter is required")
+	}
+	return registerLobbyService(server, rooms, profiles, starter, identities...)
+}
+
+func registerLobbyService(
+	server grpcgo.ServiceRegistrar,
+	rooms *room.Manager,
+	profiles lobbyProfileRepository,
+	starter func(room.Details) (room.Details, error),
+	identities ...weChatIdentityResolver,
+) error {
 	if server == nil || rooms == nil || profiles == nil {
 		return errors.New("gRPC registrar, room manager, and player profiles are required")
 	}
-	service := &lobbyServer{rooms: rooms, profiles: profiles}
+	service := &lobbyServer{rooms: rooms, profiles: profiles, practiceStarter: starter}
 	if len(identities) > 1 {
 		return errors.New("only one WeChat identity resolver is allowed")
 	}
@@ -175,8 +199,10 @@ func (s *lobbyServer) CreateRoom(
 	if err != nil {
 		return nil, err
 	}
-	if err := s.authorizeHall(ctx, userID, request.GetHallId()); err != nil {
-		return nil, err
+	if request.GetHallId() != "practice" {
+		if err := s.authorizeHall(ctx, userID, request.GetHallId()); err != nil {
+			return nil, err
+		}
 	}
 	requestID := request.GetRequestId()
 	if !validLobbyRequestID(requestID) {
@@ -203,12 +229,27 @@ func (s *lobbyServer) CreateRoom(
 	if err != nil {
 		return nil, status.Error(codes.Internal, "could not load player profile")
 	}
-	details, err := s.rooms.CreateRoom(requestData.hallID, userID, profile.Points, room.Settings{
-		Name: requestData.name, Password: request.GetPassword(),
-		AllowSpectators: requestData.allowSpectators, MinimumPoints: requestData.minimumPoints,
-	})
+	var details room.Details
+	if requestData.hallID == "practice" {
+		if request.GetPassword() != "" || requestData.allowSpectators || requestData.minimumPoints != 0 {
+			return nil, status.Error(codes.InvalidArgument, "practice rooms do not accept room settings")
+		}
+		details, err = s.rooms.CreatePracticeRoom(userID, profile.Nickname)
+	} else {
+		details, err = s.rooms.CreateRoom(requestData.hallID, userID, profile.Points, room.Settings{
+			Name: requestData.name, Password: request.GetPassword(),
+			AllowSpectators: requestData.allowSpectators, MinimumPoints: requestData.minimumPoints,
+		})
+	}
 	if err != nil {
 		return nil, roomOperationError(err)
+	}
+	if requestData.hallID == "practice" && s.practiceStarter != nil {
+		details, err = s.practiceStarter(details)
+		if err != nil {
+			_, _ = s.rooms.Close(details.Room.ID, userID, details.Version)
+			return nil, gameRuntimeError(err)
+		}
 	}
 	s.createdRooms[key] = createRoomResult{request: requestData, room: details.Room}
 	return roomSummaryMessage(details.Room, &huaiv1.UserProfile{UserId: userID}), nil

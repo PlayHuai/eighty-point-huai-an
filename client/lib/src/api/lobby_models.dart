@@ -1,6 +1,7 @@
 enum LobbyRoomStatus { waiting, playing, closed, unspecified }
 
 const friendRoomHallId = 'friend';
+const practiceRoomHallId = 'practice';
 
 class LobbyHall {
   const LobbyHall({
@@ -30,6 +31,7 @@ class LobbyRoom {
     required this.version,
     this.allowSpectators = false,
     this.minimumPoints = 0,
+    this.practiceMode = false,
   });
 
   final String id;
@@ -42,4 +44,5 @@ class LobbyRoom {
   final int version;
   final bool allowSpectators;
   final int minimumPoints;
+  final bool practiceMode;
 }

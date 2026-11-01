@@ -12,6 +12,7 @@ import '../api/realtime_event.dart';
 import '../api/request_id.dart';
 import '../auth/auth_controller.dart';
 import '../generated/huai/v1/api.pb.dart' as pb;
+import '../domain/robot_decision.dart' as robot;
 import 'client_providers.dart';
 import 'components/design_icon.dart';
 import 'components/game_table_board.dart';
@@ -50,6 +51,9 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
   bool _loading = true;
   bool _refreshing = false;
   bool _refreshAgain = false;
+  bool _autoPlaying = false;
+  bool _autoActionScheduled = false;
+  int? _autoPausedVersion;
   int _revision = 0;
   bool _canPop = false;
   int _lastSeenSeq = 0;
@@ -125,6 +129,8 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
         _loadError = null;
         _loading = false;
       });
+      _resetAutoPlayAtGameEnd(game);
+      if (_autoPlaying) unawaited(_maybeAutoPlay());
     } catch (error) {
       if (!mounted || revision != _revision || _canPop) return;
       setState(() {
@@ -152,6 +158,189 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
     }
   }
 
+  void _toggleAutoPlay() {
+    setState(() {
+      _autoPlaying = !_autoPlaying;
+      _autoPausedVersion = null;
+    });
+    if (_autoPlaying) unawaited(_maybeAutoPlay());
+  }
+
+  void _resetAutoPlayAtGameEnd(pb.GameSnapshot? game) {
+    if (game == null) return;
+    final terminal = {
+      'FINISHED',
+      'GAME_OVER',
+      'ABORTED',
+    }.contains(game.state.toUpperCase());
+    if (_autoPlaying && terminal) {
+      setState(() {
+        _autoPlaying = false;
+        _autoPausedVersion = null;
+      });
+    }
+  }
+
+  Future<void> _maybeAutoPlay() async {
+    final game = _game;
+    if (!mounted ||
+        !_autoPlaying ||
+        _autoActionScheduled ||
+        _busy ||
+        !_isPlayer ||
+        game == null ||
+        (game.currentTurnUserId != _userId &&
+            !game.availableActions.contains('CONTINUE')) ||
+        _autoPausedVersion == game.stateVersion.toInt()) {
+      return;
+    }
+    _autoActionScheduled = true;
+    try {
+      final selected = _chooseRobotAction(game);
+      if (selected == null) return;
+      final (type, cards) = selected;
+      setState(() {
+        _selected
+          ..clear()
+          ..addAll(cards.map((card) => card.toString()));
+      });
+      await _submit(type, automated: true);
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _autoPausedVersion = game.stateVersion.toInt();
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('托管决策失败，已等待下一次牌局状态更新：${_message(error)}')),
+        );
+      }
+    } finally {
+      _autoActionScheduled = false;
+    }
+  }
+
+  (String, List<robot.Card>)? _chooseRobotAction(pb.GameSnapshot game) {
+    final available = game.availableActions.toSet();
+    if (available.contains('CONTINUE')) return ('CONTINUE', const []);
+    final hand = _robotHand(game);
+    if (available.contains('BURY')) {
+      return (
+        'BURY',
+        robot.selectBottom(
+          hand,
+          _robotSuit(game.trumpSuit),
+          game.dealerUserId == _userId,
+        ),
+      );
+    }
+    if (available.contains('DECLARE') ||
+        available.contains('REDECLARE') ||
+        available.contains('COUNTER')) {
+      final action = robot.decideTrump(
+        hand,
+        robot.TrumpState(
+          canDeclare:
+              available.contains('DECLARE') || available.contains('REDECLARE'),
+          canCounter: available.contains('COUNTER'),
+        ),
+      );
+      return switch (action.kind) {
+        robot.TrumpActionKind.declare => (
+          available.contains('REDECLARE') ? 'REDECLARE' : 'DECLARE',
+          action.cards,
+        ),
+        robot.TrumpActionKind.counter => ('COUNTER', action.cards),
+        robot.TrumpActionKind.pass when available.contains('PASS') => (
+          'PASS',
+          const [],
+        ),
+        _ => null,
+      };
+    }
+    if (available.contains('PASS')) return ('PASS', const []);
+    if (available.contains('PLAY')) {
+      final publicPlays = game.publicPlays
+          .map(
+            (play) => play.cards.map(robot.Card.parse).toList(growable: false),
+          )
+          .toList(growable: false);
+      final seen = _robotSeen(game, hand, publicPlays);
+      if (publicPlays.isEmpty) {
+        return ('PLAY', robot.lead(hand, seen).cards);
+      }
+      final winner = robot.currentWinningPlay(hand, publicPlays);
+      return (
+        'PLAY',
+        robot
+            .followSuit(
+              hand,
+              robot.Trick(leadCards: publicPlays.first, winningCards: winner),
+              seen,
+            )
+            .cards,
+      );
+    }
+    return null;
+  }
+
+  robot.Hand _robotHand(pb.GameSnapshot game) => robot.Hand(
+    game.visibleHand.map(robot.Card.parse),
+    levelRank: game.trumpLevel >= 2 && game.trumpLevel <= 14
+        ? game.trumpLevel
+        : 2,
+    trumpSuit: _robotSuit(game.trumpSuit),
+  );
+
+  robot.Suit _robotSuit(String value) => switch (value.toLowerCase()) {
+    'clubs' => robot.Suit.clubs,
+    'diamonds' => robot.Suit.diamonds,
+    'hearts' => robot.Suit.hearts,
+    'spades' => robot.Suit.spades,
+    '' || 'none' || 'no suit' => robot.Suit.none,
+    _ => throw FormatException('Unknown trump suit: $value'),
+  };
+
+  robot.SeenInfo _robotSeen(
+    pb.GameSnapshot game,
+    robot.Hand hand,
+    List<List<robot.Card>> publicPlays,
+  ) {
+    final played = game.publicCards.map(robot.Card.parse).toList();
+    if (publicPlays.isEmpty) return robot.SeenInfo(playedCards: played);
+    final leadSuit = hand.effectiveSuit(publicPlays.first.first);
+    final ownTeam = _member?.team;
+    final voids = <robot.Suit>{};
+    for (final play in game.publicPlays) {
+      final teammate = _room?.members
+          .where((member) => member.seatNo == play.seatNo)
+          .firstOrNull;
+      if (teammate?.team == ownTeam &&
+          teammate?.userId != _userId &&
+          publicPlays[game.publicPlays.indexOf(play)].every(
+            (card) => hand.effectiveSuit(card) != leadSuit,
+          )) {
+        voids.add(leadSuit);
+      }
+    }
+    final winning = robot.currentWinningPlay(hand, publicPlays);
+    final winningSeat = game
+        .publicPlays[publicPlays.indexWhere(
+          (cards) =>
+              cards.toSet().containsAll(winning) &&
+              winning.toSet().containsAll(cards),
+        )]
+        .seatNo;
+    final winningMember = _room?.members
+        .where((member) => member.seatNo == winningSeat)
+        .firstOrNull;
+    return robot.SeenInfo(
+      playedCards: played,
+      teammateVoidSuits: voids,
+      teammateControlsTrick:
+          winningMember?.team == ownTeam && winningMember?.userId != _userId,
+    );
+  }
+
   String _message(Object error) => switch (error) {
     GrpcError(code: StatusCode.aborted) => '状态已更新，请检查当前牌局后重新操作。',
     GrpcError(code: StatusCode.permissionDenied) => '当前身份没有此操作或查看权限。',
@@ -167,6 +356,7 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
     String key,
     Future<void> Function(String requestId) operation, {
     bool clearPrivateState = false,
+    void Function()? onFailure,
   }) async {
     if (_busy || _room == null) return;
     final requestId = _pending.putIfAbsent(key, createRequestId);
@@ -183,6 +373,7 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
       _pending.remove(key);
       await _refresh();
     } catch (error) {
+      onFailure?.call();
       if (error is GrpcError && error.code == StatusCode.aborted) {
         _pending.remove(key);
         await _refresh();
@@ -272,7 +463,7 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
     }, clearPrivateState: true);
   }
 
-  Future<void> _submit(String type) async {
+  Future<void> _submit(String type, {bool automated = false}) async {
     final game = _game;
     if (!_isPlayer || game == null || !game.availableActions.contains(type)) {
       return;
@@ -302,21 +493,27 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
         return;
     }
     final key = 'game:${game.gameSessionId}:${game.stateVersion}:$type:$cards';
-    await _run(key, (id) async {
-      final response = await _client.submitAction(
-        pb.SubmitActionRequest(
-          gameSessionId: game.gameSessionId,
-          handId: game.handId,
-          requestId: id,
-          expectedVersion: game.stateVersion,
-          action: action,
-        ),
-      );
-      if (!response.accepted) {
-        throw GrpcError.failedPrecondition(response.errorCode);
-      }
-      _selected.clear();
-    });
+    await _run(
+      key,
+      (id) async {
+        final response = await _client.submitAction(
+          pb.SubmitActionRequest(
+            gameSessionId: game.gameSessionId,
+            handId: game.handId,
+            requestId: id,
+            expectedVersion: game.stateVersion,
+            action: action,
+          ),
+        );
+        if (!response.accepted) {
+          throw GrpcError.failedPrecondition(response.errorCode);
+        }
+        _selected.clear();
+      },
+      onFailure: automated
+          ? () => _autoPausedVersion = game.stateVersion.toInt()
+          : null,
+    );
   }
 
   Future<void> _leave() async {
@@ -372,7 +569,7 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
               child: Padding(
                 padding: const EdgeInsets.all(DarkTokens.spacingS3),
                 child: Text(
-                  '${widget.room.name} ${widget.room.id} · 第 ${_game?.roundNo ?? 1} 局',
+                  '${widget.room.name} ${widget.room.practiceMode ? '· 练习房' : widget.room.id} · 第 ${_game?.roundNo ?? 1} 局',
                   key: const ValueKey('room-identity'),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -534,13 +731,37 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
     }
     return Column(
       children: [
-        Text(
-          game.currentTurnUserId == _userId
-              ? '${game.phase} · 轮到你操作'
-              : game.phase,
-          key: _isPlayer ? const ValueKey('play-action') : null,
-          textAlign: TextAlign.center,
-          style: const TextStyle(color: DarkTokens.goldBright),
+        Wrap(
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: DarkTokens.spacingS2,
+          children: [
+            Text(
+              game.currentTurnUserId == _userId
+                  ? '${game.phase} · 轮到你操作'
+                  : game.phase,
+              key: _isPlayer ? const ValueKey('play-action') : null,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: DarkTokens.goldBright),
+            ),
+            if (_autoPlaying)
+              DecoratedBox(
+                key: const ValueKey('autoplay-status'),
+                decoration: const BoxDecoration(
+                  color: DarkTokens.goldDark,
+                  borderRadius: BorderRadius.all(
+                    Radius.circular(DarkTokens.radiusBadge),
+                  ),
+                ),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: DarkTokens.spacingS2,
+                    vertical: DarkTokens.spacingS1,
+                  ),
+                  child: Text('托管中'),
+                ),
+              ),
+          ],
         ),
         const SizedBox(height: DarkTokens.spacingS3),
         Expanded(
@@ -627,6 +848,11 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
                 _ => '托管',
               }),
             ),
+        OutlinedButton(
+          key: const ValueKey('autoplay-toggle'),
+          onPressed: _busy ? null : _toggleAutoPlay,
+          child: Text(_autoPlaying ? '取消托管' : '托管'),
+        ),
       ],
     );
   }

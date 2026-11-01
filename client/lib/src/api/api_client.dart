@@ -57,6 +57,11 @@ abstract interface class ApiClient {
     String requestId = '',
   });
 
+  Future<LobbyRoom> createPracticeRoom({
+    required String accessToken,
+    required String requestId,
+  }) => throw UnsupportedError('Practice rooms are not supported.');
+
   Future<LobbyRoom> joinRoom({
     required String accessToken,
     required String roomId,
@@ -341,6 +346,21 @@ class GrpcApiClient implements ApiClient {
         ..allowSpectators = allowSpectators
         ..minimumPoints = Int64(minimumPoints)
         ..requestId = requestId.isEmpty ? createRequestId() : requestId,
+      options: _authenticatedOptions(accessToken),
+    );
+    return _roomFrom(response);
+  }
+
+  @override
+  Future<LobbyRoom> createPracticeRoom({
+    required String accessToken,
+    required String requestId,
+  }) async {
+    final response = await _lobby.createRoom(
+      api.CreateRoomRequest()
+        ..hallId = practiceRoomHallId
+        ..name = '练习房'
+        ..requestId = requestId,
       options: _authenticatedOptions(accessToken),
     );
     return _roomFrom(response);
@@ -764,6 +784,7 @@ class GrpcApiClient implements ApiClient {
     version: room.version.toInt(),
     allowSpectators: room.allowSpectators,
     minimumPoints: room.minimumPoints.toInt(),
+    practiceMode: room.hallId == practiceRoomHallId,
   );
 
   @override

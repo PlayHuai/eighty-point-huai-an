@@ -81,6 +81,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   final _roomInviteRequestIds = <String, String>{};
   String? _createRequestKey;
   String? _createRequestId;
+  String? _practiceRequestId;
 
   Future<void> _openFeedback() async {
     final session = widget.auth.session;
@@ -133,6 +134,28 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       _showError(error);
     } finally {
       if (mounted) setState(() => _isJoining = false);
+    }
+  }
+
+  Future<void> _createPracticeRoom() async {
+    final session = widget.auth.session;
+    if (session == null || _isCreating) return;
+    final requestId = _practiceRequestId ??= createRequestId();
+    setState(() => _isCreating = true);
+    try {
+      final room = await ref
+          .read(apiClientProvider)
+          .createPracticeRoom(
+            accessToken: session.accessToken,
+            requestId: requestId,
+          );
+      _practiceRequestId = null;
+      if (!mounted) return;
+      await _openRoom(room);
+    } catch (error) {
+      _showError(error);
+    } finally {
+      if (mounted) setState(() => _isCreating = false);
     }
   }
 
@@ -203,7 +226,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       ),
     );
     if (!mounted) return;
-    ref.invalidate(lobbyRoomsProvider(room.hallId));
+    if (!room.practiceMode) ref.invalidate(lobbyRoomsProvider(room.hallId));
     if (room.hallId == friendRoomHallId) {
       ref.invalidate(roomInvitationsProvider);
     }
@@ -609,6 +632,11 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                             icon: const Icon(Icons.add),
                             label: const Text('创建房间'),
                           ),
+                          OutlinedButton.icon(
+                            onPressed: _isCreating ? null : _createPracticeRoom,
+                            icon: const Icon(Icons.smart_toy_outlined),
+                            label: const Text('练习'),
+                          ),
                         ],
                       ),
                       const SizedBox(height: DarkTokens.spacingS4),
@@ -750,7 +778,8 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         final canJoin =
             room.status == LobbyRoomStatus.waiting &&
             room.occupiedSeats < room.capacity;
-        final canSpectate = room.allowSpectators &&
+        final canSpectate =
+            room.allowSpectators &&
             (room.status == LobbyRoomStatus.waiting ||
                 room.status == LobbyRoomStatus.playing);
         return Card(
@@ -804,7 +833,11 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                         ? () => _joinRoom(room)
                         : null,
                     child: Text(
-                      _isJoining ? '加入中…' : canJoin ? '加入' : '观战',
+                      _isJoining
+                          ? '加入中…'
+                          : canJoin
+                          ? '加入'
+                          : '观战',
                     ),
                   ),
                 ),

@@ -65,6 +65,61 @@ func TestRoomAdmissionSeatingAndStart(t *testing.T) {
 	}
 }
 
+func TestPracticeRoomIsPrivatePreseatedAndDisposable(t *testing.T) {
+	manager := NewManager()
+	created, err := manager.CreatePracticeRoom("owner", "张三")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created.Room.PracticeMode || created.Room.AllowSpectators ||
+		created.Room.OccupiedSeats != 4 || created.Room.Status != StatusWaiting {
+		t.Fatalf("practice room has incorrect settings: %+v", created.Room)
+	}
+	wantNames := map[string]string{
+		"practice:" + created.Room.ID + ":Yao":   "张三的AI Yao",
+		"practice:" + created.Room.ID + ":Jia":   "张三的AI Jia",
+		"practice:" + created.Room.ID + ":Zhang": "张三的AI Zhang",
+	}
+	if len(created.Members) != 4 {
+		t.Fatalf("practice room has %d members, want 4", len(created.Members))
+	}
+	for _, member := range created.Members {
+		if member.IsRobot {
+			if member.Role != RolePlayer || wantNames[member.UserID] != member.Nickname {
+				t.Fatalf("unexpected robot member: %+v", member)
+			}
+			delete(wantNames, member.UserID)
+			continue
+		}
+		if member.UserID != "owner" || member.Seat != 1 {
+			t.Fatalf("unexpected human member: %+v", member)
+		}
+	}
+	if len(wantNames) != 0 {
+		t.Fatalf("practice room is missing robot names: %v", wantNames)
+	}
+	if _, err := manager.GetRoom(created.Room.ID, "other-user"); !errors.Is(err, ErrNotMember) {
+		t.Fatalf("GetRoom by non-member = %v, want ErrNotMember", err)
+	}
+	if _, err := manager.JoinSpectator(created.Room.ID, "spectator", 0, "", 1, created.Version); !errors.Is(err, ErrAdmissionDenied) {
+		t.Fatalf("spectating practice room = %v, want admission denied", err)
+	}
+	if _, err := manager.JoinRoom(created.Room.ID, "another-player", 0, "", created.Version); !errors.Is(err, ErrAdmissionDenied) {
+		t.Fatalf("joining practice room = %v, want admission denied", err)
+	}
+
+	started, err := manager.Start(created.Room.ID, "owner", created.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.LeaveRoom(created.Room.ID, "owner", started.Version); err != nil {
+		t.Fatalf("owner could not leave active practice room: %v", err)
+	}
+	if _, err := manager.GetSummary(created.Room.ID); !errors.Is(err, ErrRoomNotFound) {
+		t.Fatalf("practice room remains after owner exit: %v", err)
+	}
+}
+
 func TestRoomSpectatingAndHallIsolation(t *testing.T) {
 	manager := NewManager()
 	ordinary, err := manager.CreateRoom(lobby.HallOrdinary, "ordinary-owner", 9000, Settings{
