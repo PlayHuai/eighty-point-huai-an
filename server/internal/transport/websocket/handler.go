@@ -3,12 +3,14 @@ package websocket
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/lobby"
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/logging"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/player"
 	xwebsocket "golang.org/x/net/websocket"
 )
@@ -101,12 +103,19 @@ func NewHandlerWithLobbyProfiles(
 
 func (h *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	if request.URL.RawQuery != "" {
+		logging.Warn("websocket.rejected reason=query_parameters")
 		http.Error(writer, "query parameters are not accepted", http.StatusBadRequest)
 		return
 	}
 	server := xwebsocket.Server{
-		Handler:   h.serve,
-		Handshake: h.handshake,
+		Handler: h.serve,
+		Handshake: func(config *xwebsocket.Config, request *http.Request) error {
+			err := h.handshake(config, request)
+			if err != nil {
+				logging.Warn("websocket.handshake.failed error=%q", err)
+			}
+			return err
+		},
 	}
 	server.ServeHTTP(writer, request)
 }
@@ -203,6 +212,8 @@ func (h *Handler) serve(connection *xwebsocket.Conn) {
 		return
 	}
 	defer state.subscription.Close()
+	logging.Info("websocket.connected user_id=%q", state.userID)
+	defer logging.Info("websocket.disconnected user_id=%q", state.userID)
 	connection.MaxPayloadBytes = 1024
 	readDone := make(chan struct{})
 	go func() {
@@ -210,6 +221,9 @@ func (h *Handler) serve(connection *xwebsocket.Conn) {
 		var payload []byte
 		for {
 			if err := xwebsocket.Message.Receive(connection, &payload); err != nil {
+				if !errors.Is(err, io.EOF) {
+					logging.Warn("websocket.receive.failed user_id=%q error_type=%T", state.userID, err)
+				}
 				return
 			}
 		}
@@ -218,12 +232,15 @@ func (h *Handler) serve(connection *xwebsocket.Conn) {
 		select {
 		case event, open := <-state.subscription.Events():
 			if !open {
+				logging.Warn("websocket.subscription.closed user_id=%q", state.userID)
 				return
 			}
 			if err := connection.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+				logging.Error("websocket.deadline.failed user_id=%q error_type=%T", state.userID, err)
 				return
 			}
 			if err := xwebsocket.JSON.Send(connection, event); err != nil {
+				logging.Warn("websocket.send.failed user_id=%q error_type=%T", state.userID, err)
 				return
 			}
 		case <-readDone:

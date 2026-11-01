@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/Derek0120/eighty-point-huai-an/server/gen/huai/v1"
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/logging"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/player"
 	grpcgo "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -136,6 +137,7 @@ func playerReadError(err error) error {
 	case errors.Is(err, player.ErrProfileNotFound):
 		return status.Error(codes.NotFound, "player profile not found")
 	default:
+		logging.Unexpected("player.query", err)
 		return status.Error(codes.Internal, "player query failed")
 	}
 }
@@ -147,6 +149,7 @@ func playerProfileError(err error) error {
 	case errors.Is(err, player.ErrProfileNotFound):
 		return status.Error(codes.NotFound, "player profile not found")
 	default:
+		logging.Unexpected("player.profile", err)
 		return status.Error(codes.Internal, "player profile operation failed")
 	}
 }

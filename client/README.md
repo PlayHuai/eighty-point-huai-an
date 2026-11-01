@@ -18,6 +18,32 @@ The application disables Riverpod 3's automatic provider retries to preserve
 the explicit error/retry UI, and `ClientApp` remains the sole owner of its
 shared authentication controller's disposal.
 
+## Diagnostic logs
+
+Logs use `[TYPE] [DATETIME] [message]` with `INFO`, `WARN`, or `ERROR` and an
+ISO-8601 UTC timestamp. Startup, app lifecycle, authentication/session storage,
+every gRPC request/result (including failures), WebSocket connection/retry,
+event sequence/version, and uncaught Flutter/platform/zone errors are logged.
+Request IDs and expected versions are diagnostic metadata only: logging never
+changes them, retries, or server conflict handling. Passwords, tokens, accounts,
+chat/feedback bodies, cards, and full request/response messages are not logged.
+Error records contain exception types/status codes and, for uncaught errors,
+stack traces, not potentially sensitive exception messages.
+
+- Windows: `Logs` under path_provider's per-user application support directory
+  (`%APPDATA%\<company>\<application>\Logs`).
+- iOS: the app sandbox's `Library/Logs`.
+- Web: browser console only; no local files or storage.
+
+Each native process launch creates `huaian-80.log`. The previous launch becomes
+`huaian-80.log.0`, then `.1` through `.9` (smaller means newer). There are at most
+**11 files: current + 10 previous launches**. Hot reload does not rotate; hot
+restart reruns startup and rotates. File writes are flushed immediately.
+Initialization failures are reported to the console and stop startup rather
+than silently running without the requested log. Later write failures are
+explicitly reported to the console. There is no per-file size cap; protect logs
+as user-private diagnostic data and share only with trusted support.
+
 Hall and room admission remains server-authoritative. A denied hall listing
 shows the selected hall's minimum points instead of a network error. Returning
 from a room refreshes its hall's room list (and invitations for friend rooms).

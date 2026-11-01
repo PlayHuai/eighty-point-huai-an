@@ -6,11 +6,16 @@ import 'package:eighty_point_huai_an/src/generated/huai/v1/api.pbgrpc.dart'
     as proto;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grpc/grpc.dart';
+import 'package:eighty_point_huai_an/src/logging/app_log.dart';
 
 void main() {
   test(
     'support client sends authenticated generated Protobuf requests',
     () async {
+      final lines = <String>[];
+      final previousOutput = AppLog.output;
+      AppLog.output = lines.add;
+      addTearDown(() => AppLog.output = previousOutput);
       final service = _SupportService();
       final server = Server.create(services: [service]);
       await server.serve(address: '127.0.0.1', port: 0);
@@ -43,6 +48,15 @@ void main() {
         client.getServerInfo(accessToken: 'test-token'),
         throwsA(isA<GrpcError>()),
       );
+      expect(lines.any((line) => line.contains('rpc.start')), isTrue);
+      expect(lines.any((line) => line.contains('code=0')), isTrue);
+      expect(lines.any((line) => line.contains('code=14')), isTrue);
+      expect(
+        lines.join(),
+        contains('requestId=00000000-0000-4000-8000-000000000001'),
+      );
+      expect(lines.join(), isNot(contains('test-token')));
+      expect(lines.join(), isNot(contains('反馈内容')));
     },
   );
 }

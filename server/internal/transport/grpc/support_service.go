@@ -3,11 +3,11 @@ package grpc
 import (
 	"context"
 	"errors"
-	"log"
 
 	huaiv1 "github.com/Derek0120/eighty-point-huai-an/server/gen/huai/v1"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/buildinfo"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/feedback"
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/logging"
 	grpcgo "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -50,7 +50,7 @@ func (s *supportServer) SubmitFeedback(ctx context.Context, request *huaiv1.Subm
 		case errors.Is(err, feedback.ErrRequestConflict):
 			return nil, status.Error(codes.AlreadyExists, "feedback request ID already used with different content")
 		default:
-			log.Printf("submit feedback failed: %v", err)
+			logging.Unexpected("feedback.submit", err)
 			return nil, status.Error(codes.Internal, "could not save feedback")
 		}
 	}

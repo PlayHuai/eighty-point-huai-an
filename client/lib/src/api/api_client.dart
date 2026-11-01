@@ -5,6 +5,7 @@ import 'package:grpc/service_api.dart';
 
 import 'channel_factory.dart';
 import '../auth/auth_session.dart';
+import '../logging/rpc_logging.dart';
 import 'lobby_models.dart';
 import 'player_models.dart';
 import 'request_id.dart';
@@ -184,21 +185,33 @@ abstract interface class ApiClient {
 
 class GrpcApiClient implements ApiClient {
   GrpcApiClient(Uri endpoint) : _channel = createClientChannel(endpoint) {
-    _auth = api.AuthServiceClient(_channel);
-    _player = api.PlayerServiceClient(_channel);
+    _auth = api.AuthServiceClient(_channel, interceptors: _interceptors);
+    _player = api.PlayerServiceClient(_channel, interceptors: _interceptors);
   }
 
   final ClientChannel _channel;
+  final _interceptors = [RpcLoggingInterceptor()];
   late final api.AuthServiceClient _auth;
   late final api.PlayerServiceClient _player;
-  late final api.LobbyServiceClient _lobby = api.LobbyServiceClient(_channel);
+  late final api.LobbyServiceClient _lobby = api.LobbyServiceClient(
+    _channel,
+    interceptors: _interceptors,
+  );
   late final api.FriendServiceClient _friends = api.FriendServiceClient(
     _channel,
+    interceptors: _interceptors,
   );
-  late final api.RoomServiceClient _room = api.RoomServiceClient(_channel);
-  late final api.ChatServiceClient _chat = api.ChatServiceClient(_channel);
+  late final api.RoomServiceClient _room = api.RoomServiceClient(
+    _channel,
+    interceptors: _interceptors,
+  );
+  late final api.ChatServiceClient _chat = api.ChatServiceClient(
+    _channel,
+    interceptors: _interceptors,
+  );
   late final api.SupportServiceClient _support = api.SupportServiceClient(
     _channel,
+    interceptors: _interceptors,
   );
 
   @override

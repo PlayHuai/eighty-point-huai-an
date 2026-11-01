@@ -63,6 +63,46 @@ sudo systemctl status eighty-point
 sudo journalctl -u eighty-point -f
 ```
 
+### 诊断日志与保留
+
+应用日志格式为 `[TYPE] [DATETIME] [message]`，类型为 `INFO` / `WARN` / `ERROR`，
+时间统一为 ISO-8601 UTC。记录启动、数据库连接/迁移、停机、HTTP/gRPC 成功和失败、
+认证用户、请求 ID / expected_version、游戏阶段/版本、WebSocket 连接及断开。
+不输出密码、令牌、请求/响应全文、聊天/反馈正文、手牌或底牌。
+内部异常补充调用栈与异常类型链，不直接输出可能包含数据值的异常消息。
+成功的 `/healthz` 不逐次记录，避免存活探针淹没问题线索。
+
+服务端内置每日轮转及清理，两种部署均无需安装 logrotate：
+
+- 文件名：`huaian-80-YYYY-MM-DD.log`，按 **UTC 日期**追加，同日重启不会覆盖。
+- 保留今天及之前 9 个日历日，共 10 天；启动、跨日写入和每分钟维护时检查，
+  即使没有请求也会创建当天文件并清理过期文件。停机期间不执行清理，下次启动补做。
+- 仅清理日志目录内严格匹配上述命名的过期文件，不触碰其他文件。
+- `LOG_DIR` 指定日志目录，直接运行默认相对于工作目录的 `logs`。
+  systemd 固定为 `/var/log/eighty-point`（服务用户专用目录），Compose 将同一路径
+  挂载到持久化卷 `server_logs`；迁移命令也使用该目录。
+- 应用常规日志仅写每日文件，避免 journald/Docker 控制台额外保存超期副本；
+  初始化失败及写盘失败会输出 stderr，使用 `journalctl` / `docker compose logs` 排查。
+  健康检查失败也输出 stderr；这些平台级错误的保留仍由宿主机日志策略控制。
+- 文件无大小上限；需监控磁盘空间。清理/写盘失败会明确报错，不能保证磁盘故障时落盘。
+
+查看当前服务日志：
+
+```sh
+sudo tail -F "/var/log/eighty-point/huaian-80-$(date -u +%F).log"
+```
+
+Compose 的运行镜像不包含 shell，可通过临时只读挂载日志卷查看：
+
+```sh
+volume="$(docker inspect "$(docker compose -f deploy/compose.yaml ps -q server)" \
+  --format '{{range .Mounts}}{{if eq .Destination "/var/log/eighty-point"}}{{.Name}}{{end}}{{end}}')"
+docker run --rm -v "$volume:/logs:ro" alpine \
+  tail -n 100 "/logs/huaian-80-$(date -u +%F).log"
+```
+
+运维账号需保管好日志目录/卷；卸载服务不会删除保留的日志。
+
 ### 升级 systemd 部署
 
 编译并传输新版本前，请先备份数据库。然后停止服务、用新程序重新运行安装脚本，再启动服务。待执行的数据库迁移会在服务进程启动前运行：

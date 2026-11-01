@@ -1,6 +1,7 @@
 import 'package:grpc/service_api.dart';
 
 import '../generated/huai/v1/api.pbgrpc.dart' as pb;
+import '../logging/rpc_logging.dart';
 import 'channel_factory.dart';
 
 abstract interface class GameTableClient {
@@ -28,8 +29,15 @@ class GrpcGameTableClient implements GameTableClient {
 
   final ClientChannel _channel;
   final CallOptions _options;
-  late final _room = pb.RoomServiceClient(_channel);
-  late final _game = pb.GameServiceClient(_channel);
+  final _interceptors = [RpcLoggingInterceptor()];
+  late final _room = pb.RoomServiceClient(
+    _channel,
+    interceptors: _interceptors,
+  );
+  late final _game = pb.GameServiceClient(
+    _channel,
+    interceptors: _interceptors,
+  );
 
   @override
   Future<pb.RoomDetails> getRoom(pb.RoomRequest request) =>

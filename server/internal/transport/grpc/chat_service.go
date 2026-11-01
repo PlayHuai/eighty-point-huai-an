@@ -6,6 +6,7 @@ import (
 
 	"github.com/Derek0120/eighty-point-huai-an/server/gen/huai/v1"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/chat"
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/logging"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/room"
 	grpcgo "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -155,6 +156,7 @@ func chatError(err error) error {
 	case errors.Is(err, chat.ErrRequestConflict):
 		return status.Error(codes.AlreadyExists, "request ID was already used")
 	default:
+		logging.Unexpected("chat.operation", err)
 		return status.Error(codes.Internal, "private chat operation failed")
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/Derek0120/eighty-point-huai-an/server/gen/huai/v1"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/game/runtime"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/lobby"
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/logging"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/player"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/room"
 	grpcgo "google.golang.org/grpc"
@@ -428,6 +429,7 @@ func roomServiceError(err error) error {
 	case errors.Is(err, room.ErrInvalidPassword):
 		return status.Error(codes.PermissionDenied, "invalid room password")
 	default:
+		logging.Unexpected("room.operation", err)
 		return status.Error(codes.Internal, "could not process room request")
 	}
 }

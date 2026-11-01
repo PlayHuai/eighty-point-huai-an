@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -19,6 +18,7 @@ import (
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/chat"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/feedback"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/game/runtime"
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/logging"
 	mysqlstore "github.com/Derek0120/eighty-point-huai-an/server/internal/persistence/mysql"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/player"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/room"
@@ -33,8 +33,34 @@ import (
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if len(os.Args) != 2 || os.Args[1] != "healthcheck" {
+		directory := os.Getenv("LOG_DIR")
+		if directory == "" {
+			directory = "logs"
+		}
+		writer, err := logging.NewDailyWriter(directory)
+		if err != nil {
+			logging.Error("logging.initialize error=%q", err)
+			os.Exit(1)
+		}
+		logging.Configure(writer)
+		maintenanceCtx, cancelMaintenance := context.WithCancel(ctx)
+		maintenanceDone := make(chan struct{})
+		go func() {
+			defer close(maintenanceDone)
+			writer.Maintain(maintenanceCtx)
+		}()
+		defer func() {
+			cancelMaintenance()
+			<-maintenanceDone
+			if err := writer.Close(); err != nil {
+				logging.Configure(os.Stderr)
+				logging.Error("logging.close error=%q", err)
+			}
+		}()
+	}
 	if err := run(ctx, os.Args[1:]); err != nil {
-		log.Print(err)
+		logging.Error("process.failed error=%q", err)
 		os.Exit(1)
 	}
 }
@@ -53,6 +79,7 @@ func run(ctx context.Context, args []string) error {
 }
 
 func runServer(ctx context.Context, address string) error {
+	logging.Info("server.start")
 	if address == "" {
 		address = ":8080"
 	}
@@ -71,6 +98,7 @@ func runServer(ctx context.Context, address string) error {
 		return fmt.Errorf("connect to MySQL: %w", err)
 	}
 	cancelPing()
+	logging.Info("database.connected")
 
 	app, err := newApplication(db, allowedWebSocketOrigins())
 	if err != nil {
@@ -84,6 +112,11 @@ func runServer(ctx context.Context, address string) error {
 	if err != nil {
 		return fmt.Errorf("listen for gRPC: %w", err)
 	}
+	httpListener, err := net.Listen("tcp", address)
+	if err != nil {
+		_ = grpcListener.Close()
+		return fmt.Errorf("listen for HTTP: %w", err)
+	}
 	server := &http.Server{
 		Addr:              address,
 		Handler:           app.httpHandler,
@@ -91,8 +124,9 @@ func runServer(ctx context.Context, address string) error {
 	}
 	serveErr := make(chan error, 2)
 	go func() {
-		serveErr <- server.ListenAndServe()
+		serveErr <- server.Serve(httpListener)
 	}()
+	logging.Info("server.listening http=%q grpc=%q", httpListener.Addr(), grpcListener.Addr())
 	go func() {
 		serveErr <- app.grpcServer.Serve(grpcListener)
 	}()
@@ -112,6 +146,7 @@ func runServer(ctx context.Context, address string) error {
 		}
 		return err
 	case <-ctx.Done():
+		logging.Info("server.shutdown.start")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
@@ -122,6 +157,7 @@ func runServer(ctx context.Context, address string) error {
 		}
 		app.grpcServer.Stop()
 		_ = grpcListener.Close()
+		logging.Info("server.shutdown.complete")
 		return nil
 	}
 }
@@ -165,7 +201,8 @@ func newApplication(db *sql.DB, allowedOrigins []string) (*application, error) {
 	if err != nil {
 		return nil, err
 	}
-	grpcServer := grpcgo.NewServer(grpcgo.UnaryInterceptor(
+	grpcServer := grpcgo.NewServer(grpcgo.ChainUnaryInterceptor(
+		grpctransport.LoggingUnaryServerInterceptor(),
 		grpctransport.AuthUnaryServerInterceptor(authService),
 	))
 	registrations := []func() error{
@@ -216,7 +253,7 @@ func newApplication(db *sql.DB, allowedOrigins []string) (*application, error) {
 	mux.Handle("/events", eventHandler)
 	mux.Handle("/api/", miniProgramHandler)
 	return &application{
-		grpcServer: grpcServer, httpHandler: mux, messagePurger: store,
+		grpcServer: grpcServer, httpHandler: logging.HTTP(mux), messagePurger: store,
 	}, nil
 }
 
@@ -265,6 +302,7 @@ func checkHealth(ctx context.Context, endpoint string) error {
 }
 
 func runMigrations(ctx context.Context) error {
+	logging.Info("database.migrate.start")
 	config, err := databaseConfig()
 	if err != nil {
 		return err
@@ -283,6 +321,7 @@ func runMigrations(ctx context.Context) error {
 	if err := mysqlstore.ApplyMigrations(ctx, db); err != nil {
 		return fmt.Errorf("apply MySQL migrations: %w", err)
 	}
+	logging.Info("database.migrate.complete")
 	return nil
 }
 
@@ -293,8 +332,11 @@ func (app *application) purgeExpiredMessages(ctx context.Context) {
 		for ctx.Err() == nil {
 			deleted, err := app.messagePurger.PurgeExpiredChatMessages(ctx, 1000)
 			if err != nil {
-				log.Printf("purge expired chat messages: %v", err)
+				logging.Error("chat.purge.failed error=%q", err)
 				break
+			}
+			if deleted > 0 {
+				logging.Info("chat.purge.complete deleted=%d", deleted)
 			}
 			if deleted < 1000 {
 				break

@@ -8,6 +8,7 @@ import (
 
 	"github.com/Derek0120/eighty-point-huai-an/server/gen/huai/v1"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/lobby"
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/logging"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/player"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/room"
 	grpcgo "google.golang.org/grpc"
@@ -392,6 +393,7 @@ func roomOperationError(err error) error {
 		errors.Is(err, room.ErrRoomClosed), errors.Is(err, room.ErrRoomNotReady):
 		return status.Error(codes.FailedPrecondition, "room is not available")
 	default:
+		logging.Unexpected("lobby.room_operation", err)
 		return status.Error(codes.Internal, "room operation failed")
 	}
 }
