@@ -577,10 +577,10 @@ func TestLoadMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 8 || migrations[0].version != 1 || migrations[1].version != 2 ||
+	if len(migrations) != 9 || migrations[0].version != 1 || migrations[1].version != 2 ||
 		migrations[2].version != 3 || migrations[3].version != 4 ||
 		migrations[4].version != 5 || migrations[5].version != 6 ||
-		migrations[6].version != 7 || migrations[7].version != 8 {
+		migrations[6].version != 7 || migrations[7].version != 8 || migrations[8].version != 9 {
 		t.Fatalf("unexpected migrations: %#v", migrations)
 	}
 	for _, required := range []string{
@@ -642,14 +642,15 @@ func TestApplyMigrationsRecordsVersionsAndIsIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	firstDDLCount := db.state.ddlCount
-	if len(db.state.migrations) != 8 || db.state.migrations[1].name != "0001_initial.sql" ||
+	if len(db.state.migrations) != 9 || db.state.migrations[1].name != "0001_initial.sql" ||
 		db.state.migrations[2].name != "0002_session_access_tokens.sql" ||
 		db.state.migrations[3].name != "0003_player_result_outcomes.sql" ||
 		db.state.migrations[4].name != "0004_private_chat_requests.sql" ||
 		db.state.migrations[5].name != "0005_chat_retention_and_visibility.sql" ||
 		db.state.migrations[6].name != "0006_defer_chat_retention.sql" ||
 		db.state.migrations[7].name != "0007_wechat_openid.sql" ||
-		db.state.migrations[8].name != "0008_feedback.sql" {
+		db.state.migrations[8].name != "0008_feedback.sql" ||
+		db.state.migrations[9].name != "0009_password_attempts.sql" {
 		t.Fatalf("migration version was not recorded: %+v", db.state.migrations)
 	}
 	if err := ApplyMigrations(context.Background(), sqlDB); err != nil {

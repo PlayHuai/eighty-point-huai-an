@@ -31,6 +31,7 @@ var (
 	ErrInvalidCredentials = errors.New("invalid credentials")
 	ErrInvalidInput       = errors.New("invalid input")
 	ErrUnauthenticated    = errors.New("unauthenticated")
+	ErrLoginLocked        = errors.New("account temporarily locked")
 )
 
 type Profile struct {
@@ -100,11 +101,15 @@ func (s *Service) Login(ctx context.Context, account, password, deviceID string)
 		verifyPassword(password, s.dummyHash)
 		return Result{}, ErrInvalidCredentials
 	}
-	if err == nil && !verifyPassword(password, credential.PasswordHash) {
-		return Result{}, ErrInvalidCredentials
-	}
 	if err != nil {
 		return Result{}, err
+	}
+	correct := verifyPassword(password, credential.PasswordHash)
+	if err := s.repository.RecordPasswordAttempt(ctx, credential.UserID, correct, time.Now().UTC()); err != nil {
+		return Result{}, err
+	}
+	if !correct {
+		return Result{}, ErrInvalidCredentials
 	}
 	return s.createSession(ctx, Profile{
 		UserID: credential.UserID, Nickname: credential.Nickname, CreatedAt: credential.CreatedAt,

@@ -46,6 +46,8 @@ func (s *authServer) Login(ctx context.Context, request *huaiv1.LoginRequest) (*
 	result, err := s.service.Login(ctx, request.GetAccount(), request.GetPassword(), request.GetDeviceId())
 	if err != nil {
 		switch {
+		case errors.Is(err, auth.ErrLoginLocked):
+			return nil, status.Error(codes.ResourceExhausted, "account locked for 15 minutes after five failed attempts")
 		case errors.Is(err, auth.ErrInvalidCredentials):
 			return nil, status.Error(codes.Unauthenticated, "invalid account or password")
 		case errors.Is(err, auth.ErrInvalidInput):

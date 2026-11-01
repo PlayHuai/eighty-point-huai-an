@@ -814,7 +814,8 @@ void main() {
       GrpcError.unauthenticated('invalid credentials'),
     );
     await tester.pumpAndSettle();
-    expect(find.textContaining('invalid credentials'), findsOneWidget);
+    expect(find.text('账号或密码不正确，请重新输入。'), findsOneWidget);
+    expect(find.textContaining('gRPC Error'), findsNothing);
   });
 
   testWidgets('successful login opens the authenticated landing screen', (

@@ -252,7 +252,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('account already exists'), findsOneWidget);
+    expect(find.text('账号已存在，请直接登录或更换账号。'), findsOneWidget);
+    expect(find.textContaining('gRPC Error'), findsNothing);
     expect(find.byType(RegisterScreen), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     auth.dispose();
