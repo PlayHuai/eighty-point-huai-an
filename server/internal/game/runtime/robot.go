@@ -166,6 +166,9 @@ func choosePlay(state State, seat int) ([]engine.Card, error) {
 		return nil, ErrInvalidAction
 	}
 	leadSuit := state.suit(lead[0])
+	if engine.Is510K(lead) && lead[0].Suit != state.Trump.Suit {
+		leadSuit = lead[0].Suit
+	}
 	requiredSuit := min(count, len(filter(hand, func(card engine.Card) bool {
 		return state.suit(card) == leadSuit
 	})))

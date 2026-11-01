@@ -20,7 +20,9 @@ import 'components/table_cards.dart';
 import 'components/table_status_bar.dart';
 import 'theme/app_theme.dart';
 
-final gameTableClientProvider = Provider.autoDispose<GameTableClient>((ref) {
+// RPC calls read this provider outside build; keep the channel for the current
+// authenticated scope instead of disposing it between asynchronous requests.
+final gameTableClientProvider = Provider<GameTableClient>((ref) {
   final endpoint = ref.watch(apiEndpointProvider);
   final session = ref.watch(
     authControllerProvider.select((auth) => auth.session),
@@ -243,7 +245,8 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
           canDeclare:
               available.contains('DECLARE') || available.contains('REDECLARE'),
           canCounter: available.contains('COUNTER'),
-          currentCounter: game.currentCounter > 0 &&
+          currentCounter:
+              game.currentCounter > 0 &&
                   game.currentCounter <= robot.CounterKind.values.length
               ? robot.CounterKind.values[game.currentCounter - 1]
               : null,

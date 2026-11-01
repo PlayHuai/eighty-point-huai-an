@@ -60,6 +60,20 @@ func TestSpectatorSnapshotUsesSelectedSeatAndShowHandPermission(t *testing.T) {
 	}
 
 	service := &gameServer{rooms: rooms, sessions: sessions}
+	replayed, err := service.ListEventsAfter(ctxWithUserID(context.Background(), "spectator"),
+		&huaiv1.ListEventsAfterRequest{GameSessionId: started.GameSessionID, LastSeenSeq: state.Version})
+	if err != nil || len(replayed.GetEvents()) != 1 || replayed.GetLatestSeq() != state.Version+1 {
+		t.Fatalf("replayed events = %+v, %v", replayed, err)
+	}
+	if replayed.Events[0].Payload != nil || replayed.Events[0].Seq != state.Version+1 {
+		t.Fatal("public replay must contain ordered metadata without private cards")
+	}
+	reconnected, err := service.RequestReconnect(ctxWithUserID(context.Background(), "player-1"),
+		&huaiv1.RequestReconnectRequest{GameSessionId: started.GameSessionID, LastSeenSeq: state.Version})
+	if err != nil || len(reconnected.GetEvents()) != 1 ||
+		reconnected.GetSnapshot().GetSeq() != state.Version+1 {
+		t.Fatalf("reconnect = %+v, %v", reconnected, err)
+	}
 	open, err := service.snapshotForMember(started, "spectator")
 	if err != nil {
 		t.Fatal(err)

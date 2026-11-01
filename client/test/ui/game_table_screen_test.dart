@@ -80,6 +80,7 @@ Future<void> _open(
   _FakeGameClient client, {
   Stream<RealtimeEvent> events = const Stream.empty(),
   Size size = const Size(1440, 918),
+  VoidCallback? onClientDispose,
 }) async {
   await tester.binding.setSurfaceSize(size);
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -89,7 +90,10 @@ Future<void> _open(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        gameTableClientProvider.overrideWithValue(client),
+        gameTableClientProvider.overrideWith((ref) {
+          if (onClientDispose != null) ref.onDispose(onClientDispose);
+          return client;
+        }),
         realtimeEventsProvider.overrideWith((ref) => events),
       ],
       child: MaterialApp(
@@ -107,6 +111,21 @@ Future<void> _close(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('table retains its RPC client until the screen is removed', (
+    tester,
+  ) async {
+    var disposed = false;
+    await _open(
+      tester,
+      _FakeGameClient(_room(), _snapshot()),
+      onClientDispose: () => disposed = true,
+    );
+    await tester.pump(const Duration(seconds: 3));
+    expect(disposed, isFalse);
+    await _close(tester);
+    expect(disposed, isTrue);
+  });
+
   testWidgets('players see server actions and visibility but not perspective', (
     tester,
   ) async {
@@ -246,12 +265,16 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('autoplay-toggle')));
     await tester.pump();
     expect(find.text('托管'), findsOneWidget);
-    pending.complete(pb.SubmitActionResponse(accepted: true, stateVersion: Int64(9)));
+    pending.complete(
+      pb.SubmitActionResponse(accepted: true, stateVersion: Int64(9)),
+    );
     await tester.pumpAndSettle();
     await _close(tester);
   });
 
-  testWidgets('autoplay does not counter below the server tier', (tester) async {
+  testWidgets('autoplay does not counter below the server tier', (
+    tester,
+  ) async {
     final snapshot = _snapshot()
       ..phase = 'COUNTER'
       ..trumpSuit = 'clubs'

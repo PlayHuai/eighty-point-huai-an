@@ -239,6 +239,9 @@ func (m *Manager) CompleteGameSession(roomID, sessionID string) (Details, error)
 		return Details{}, err
 	}
 	defer state.mu.Unlock()
+	if state.summary.Status == StatusWaiting && state.gameSessionID == sessionID {
+		return snapshotLocked(state), nil
+	}
 	if state.summary.Status != StatusPlaying || state.gameSessionID != sessionID {
 		return Details{}, ErrRoomStarted
 	}

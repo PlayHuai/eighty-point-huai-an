@@ -16,6 +16,7 @@ import (
 	grpcgo "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type gameServer struct {
@@ -55,6 +56,7 @@ func StartGameSession(
 	rooms *room.Manager,
 	sessions *runtime.Repository,
 	details room.Details,
+	scenarios ...string,
 ) (room.Details, error) {
 	if rooms == nil || sessions == nil || details.Room.ID == "" {
 		return room.Details{}, runtime.ErrInvalidConfig
@@ -79,9 +81,9 @@ func StartGameSession(
 		}
 		players[member.Seat-1] = member.UserID
 	}
-	state, err := sessions.Create(runtime.Config{
+	state, err := createGameSession(sessions, runtime.Config{
 		ID: details.Room.ID, Players: players, Practice: details.Room.PracticeMode,
-	})
+	}, scenarios)
 	if err != nil {
 		return room.Details{}, err
 	}
@@ -178,11 +180,15 @@ func (s *gameServer) ListEventsAfter(
 	if err != nil {
 		return nil, err
 	}
-	state, err := s.sessions.Load(details.GameSessionID)
+	limit := request.GetPageSize()
+	if limit == 0 {
+		limit = 100
+	}
+	events, latest, err := s.sessions.EventsAfter(details.GameSessionID, request.GetLastSeenSeq(), int(limit))
 	if err != nil {
 		return nil, gameRuntimeError(err)
 	}
-	return &huaiv1.ListEventsAfterResponse{Events: []*huaiv1.GameEvent{}, LatestSeq: state.Version}, nil
+	return &huaiv1.ListEventsAfterResponse{Events: replayMessages(details.GameSessionID, events), LatestSeq: latest}, nil
 }
 
 func (s *gameServer) RequestReconnect(
@@ -201,9 +207,31 @@ func (s *gameServer) RequestReconnect(
 	if err != nil {
 		return nil, err
 	}
+	events, _, err := s.sessions.EventsAfter(details.GameSessionID, request.GetLastSeenSeq(), 1000)
+	if err != nil {
+		return nil, gameRuntimeError(err)
+	}
+	visible := events[:0]
+	for _, event := range events {
+		if event.Sequence <= snapshot.GetSeq() {
+			visible = append(visible, event)
+		}
+	}
 	return &huaiv1.RequestReconnectResponse{
-		Snapshot: snapshot, Events: []*huaiv1.GameEvent{},
+		Snapshot: snapshot, Events: replayMessages(details.GameSessionID, visible),
 	}, nil
+}
+
+func replayMessages(sessionID string, events []runtime.Event) []*huaiv1.GameEvent {
+	messages := make([]*huaiv1.GameEvent, 0, len(events))
+	for _, event := range events {
+		messages = append(messages, &huaiv1.GameEvent{
+			EventId: event.ID, Seq: event.Sequence, Type: strings.ToUpper(string(event.Kind)),
+			GameSessionId: sessionID, HandId: event.HandID, StateVersion: event.Sequence,
+			CreatedAt: timestamppb.New(event.CreatedAt),
+		})
+	}
+	return messages
 }
 
 func (s *gameServer) authorizedRoom(sessionID, userID string) (room.Details, error) {

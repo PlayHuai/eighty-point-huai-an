@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+	"time"
 )
 
 type receipt struct {
@@ -16,6 +17,17 @@ type receipt struct {
 type entry struct {
 	state    State
 	receipts map[string]receipt
+	events   []Event
+}
+
+// Event is public action metadata only: private cards and declaration proofs
+// must never enter a shared replay log.
+type Event struct {
+	ID        string
+	Sequence  uint64
+	HandID    string
+	Kind      ActionKind
+	CreatedAt time.Time
 }
 
 // Repository owns live sessions only. There is intentionally no persistence
@@ -121,7 +133,34 @@ func (r *Repository) submit(id, playerID, handID string, action Action) (Submiss
 	}
 	item.state = state
 	item.receipts[action.RequestID] = receipt{action: copied, snapshot: cloneSnapshot(view)}
+	item.events = append(item.events, Event{
+		ID: action.RequestID, Sequence: state.Version,
+		HandID: fmt.Sprintf("%s:%d", id, state.HandNumber),
+		Kind:   action.Kind, CreatedAt: time.Now().UTC(),
+	})
 	return Submission{Snapshot: view}, nil
+}
+
+func (r *Repository) EventsAfter(id string, sequence uint64, limit int) ([]Event, uint64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	item, ok := r.sessions[id]
+	if !ok {
+		return nil, 0, ErrNotFound
+	}
+	if sequence > item.state.Version || limit < 1 || limit > 1000 {
+		return nil, 0, ErrInvalidAction
+	}
+	events := make([]Event, 0)
+	for _, event := range item.events {
+		if event.Sequence > sequence {
+			events = append(events, event)
+			if len(events) == limit {
+				break
+			}
+		}
+	}
+	return events, item.state.Version, nil
 }
 
 func (r *Repository) Delete(id string) {
