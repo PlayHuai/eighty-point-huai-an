@@ -37,3 +37,28 @@ Pop-Location
 ```
 
 `protoc_plugin 25.1.0` 与 protobuf 6 配套，`--include-imports` 同时生成 `Any`、`Timestamp` 等标准类型。Riverpod 运行时、注解和生成器需配套升级；当前生成器仍依赖 build 4，因此 build_runner 限制在 2.17 之前。升级依赖后应重新生成代码、运行分析和测试，并一并提交更新后的锁文件。
+
+## Windows 客户端打包
+
+本地 Windows 打包需要 Flutter 3.47.8、启用 Windows Developer Mode，并安装带有“使用 C++ 的桌面开发”工作负载的 Visual Studio。先按上文生成 Dart API bindings，再从仓库根目录用 PowerShell 执行：
+
+```powershell
+$env:API_ENDPOINT = "https://localhost:8443"
+$env:WEBSOCKET_ENDPOINT = ""
+
+Push-Location client
+try {
+  flutter pub get --enforce-lockfile
+  if ($LASTEXITCODE -ne 0) { throw "flutter pub get failed" }
+  dart run build_runner build
+  if ($LASTEXITCODE -ne 0) { throw "Riverpod code generation failed" }
+  flutter build windows --release `
+    "--dart-define=API_ENDPOINT=$env:API_ENDPOINT" `
+    "--dart-define=WEBSOCKET_ENDPOINT=$env:WEBSOCKET_ENDPOINT"
+  if ($LASTEXITCODE -ne 0) { throw "Windows release build failed" }
+} finally {
+  Pop-Location
+}
+```
+
+将 `API_ENDPOINT` 和 `WEBSOCKET_ENDPOINT` 替换为部署环境的 HTTPS / WSS 地址；同一 TLS 网关同时提供 API 与 `/events` 时，可留空 `WEBSOCKET_ENDPOINT`。Windows release 文件生成在 `client/build/windows/x64/runner/Release/`。
