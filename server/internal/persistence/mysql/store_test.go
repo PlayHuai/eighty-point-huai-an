@@ -115,6 +115,7 @@ type memoryDB struct {
 	mu            sync.Mutex
 	state         *memoryState
 	lastExecQuery string
+	lastQuery     string
 	failLedgerFor string
 	failEvent     bool
 }
@@ -264,8 +265,11 @@ func (c *memoryConn) ExecContext(_ context.Context, query string, args []driver.
 
 func (c *memoryConn) QueryContext(_ context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
 	query = strings.Join(strings.Fields(query), " ")
+	c.db.lastQuery = query
 	state := c.current()
 	switch {
+	case strings.HasPrefix(query, "SELECT CAST(id AS CHAR), sender_id, recipient_id, body, created_at FROM chat_messages"):
+		return &memoryRows{columns: []string{"id", "sender_id", "recipient_id", "body", "created_at"}}, nil
 	case strings.HasPrefix(query, "SELECT kind, body FROM feedback"):
 		value, ok := state.feedback[args[0].Value.(string)+":"+args[1].Value.(string)]
 		rows := &memoryRows{columns: []string{"kind", "body"}}
@@ -483,6 +487,16 @@ type memoryResultRows int64
 func (r memoryResultRows) LastInsertId() (int64, error) { return 0, nil }
 func (r memoryResultRows) RowsAffected() (int64, error) { return int64(r), nil }
 
+func TestPrivateMessageQueryIncludesDeferredRetention(t *testing.T) {
+	store, db := newTestStore(t, testMemoryState())
+	if _, err := store.ListPrivateMessages(context.Background(), "one", "two", 0, 50); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(db.lastQuery, "(expires_at IS NULL OR expires_at > UTC_TIMESTAMP(6))") {
+		t.Fatalf("private history must include messages with deferred retention: %s", db.lastQuery)
+	}
+}
+
 func sortLedger(entries []memoryLedgerEntry) {
 	for i := 0; i < len(entries); i++ {
 		for j := i + 1; j < len(entries); j++ {
@@ -577,10 +591,10 @@ func TestLoadMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 8 || migrations[0].version != 1 || migrations[1].version != 2 ||
+	if len(migrations) != 9 || migrations[0].version != 1 || migrations[1].version != 2 ||
 		migrations[2].version != 3 || migrations[3].version != 4 ||
 		migrations[4].version != 5 || migrations[5].version != 6 ||
-		migrations[6].version != 7 || migrations[7].version != 8 {
+		migrations[6].version != 7 || migrations[7].version != 8 || migrations[8].version != 9 {
 		t.Fatalf("unexpected migrations: %#v", migrations)
 	}
 	for _, required := range []string{
@@ -642,14 +656,15 @@ func TestApplyMigrationsRecordsVersionsAndIsIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	firstDDLCount := db.state.ddlCount
-	if len(db.state.migrations) != 8 || db.state.migrations[1].name != "0001_initial.sql" ||
+	if len(db.state.migrations) != 9 || db.state.migrations[1].name != "0001_initial.sql" ||
 		db.state.migrations[2].name != "0002_session_access_tokens.sql" ||
 		db.state.migrations[3].name != "0003_player_result_outcomes.sql" ||
 		db.state.migrations[4].name != "0004_private_chat_requests.sql" ||
 		db.state.migrations[5].name != "0005_chat_retention_and_visibility.sql" ||
 		db.state.migrations[6].name != "0006_defer_chat_retention.sql" ||
 		db.state.migrations[7].name != "0007_wechat_openid.sql" ||
-		db.state.migrations[8].name != "0008_feedback.sql" {
+		db.state.migrations[8].name != "0008_feedback.sql" ||
+		db.state.migrations[9].name != "0009_password_attempts.sql" {
 		t.Fatalf("migration version was not recorded: %+v", db.state.migrations)
 	}
 	if err := ApplyMigrations(context.Background(), sqlDB); err != nil {

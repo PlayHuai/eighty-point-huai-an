@@ -91,14 +91,18 @@ class GameTableBoard extends StatelessWidget {
               },
               width: seatWidth,
               height: seatHeight,
-              child: _seat(context, (perspective - 1 + relative) % 4 + 1),
+              child: _seat(
+                context,
+                (perspective - 1 + relative) % 4 + 1,
+                compact: compact,
+              ),
             ),
         ],
       );
     },
   );
 
-  Widget _seat(BuildContext context, int seat) {
+  Widget _seat(BuildContext context, int seat, {required bool compact}) {
     final member = members.where((member) => member.seatNo == seat).firstOrNull;
     final active =
         member != null &&
@@ -126,7 +130,7 @@ class GameTableBoard extends StatelessWidget {
           ),
           child: Row(
             children: [
-              if (MediaQuery.sizeOf(context).width > 600)
+              if (!compact)
                 Padding(
                   padding: const EdgeInsets.only(right: DarkTokens.spacingS2),
                   child: DesignIcon(
@@ -169,7 +173,7 @@ class GameTableBoard extends StatelessWidget {
                               left: DarkTokens.spacingS1,
                             ),
                             child: Image.asset(
-                              '../ui-design/asserts/ic_lighter/lighter.png',
+                              'assets/icons/ic_lighter/lighter.png',
                               key: ValueKey('dealer-marker-$seat'),
                               width: DarkTokens.spacingS5,
                               height: DarkTokens.spacingS5,

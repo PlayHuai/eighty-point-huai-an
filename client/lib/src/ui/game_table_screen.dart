@@ -16,11 +16,15 @@ import '../domain/robot_decision.dart' as robot;
 import 'client_providers.dart';
 import 'components/design_icon.dart';
 import 'components/game_table_board.dart';
+import 'components/game_settlement_panel.dart';
 import 'components/table_cards.dart';
 import 'components/table_status_bar.dart';
 import 'theme/app_theme.dart';
+import 'room_chat_screen.dart';
 
-final gameTableClientProvider = Provider.autoDispose<GameTableClient>((ref) {
+// RPC calls read this provider outside build; keep the channel for the current
+// authenticated scope instead of disposing it between asynchronous requests.
+final gameTableClientProvider = Provider<GameTableClient>((ref) {
   final endpoint = ref.watch(apiEndpointProvider);
   final session = ref.watch(
     authControllerProvider.select((auth) => auth.session),
@@ -120,6 +124,13 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
       setState(() {
         _room = room;
         _game = game;
+        if (game != null && game.hasActionDeadline()) {
+          final seat = room.members
+              .where((member) => member.userId == _userId)
+              .firstOrNull
+              ?.seatNo;
+          _autoPlaying = game.autoplaySeats.contains(seat);
+        }
         if (game != null) {
           _lastSeenSeq = math.max(_lastSeenSeq, game.seq.toInt());
         }
@@ -158,7 +169,27 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
     }
   }
 
-  void _toggleAutoPlay() {
+  Future<void> _toggleAutoPlay() async {
+    final game = _game;
+    if (game != null && game.hasActionDeadline()) {
+      final accept = !_autoPlaying;
+      await _run('autoplay:${game.stateVersion}:$accept', (id) async {
+        final response = await _client.submitAction(
+          pb.SubmitActionRequest(
+            gameSessionId: game.gameSessionId,
+            handId: game.handId,
+            requestId: id,
+            expectedVersion: game.stateVersion,
+            action: pb.GameAction(
+              confirmAutoplay: pb.ConfirmAutoplayAction(accept: accept),
+            ),
+          ),
+        );
+        if (!response.accepted)
+          throw GrpcError.failedPrecondition(response.errorCode);
+      });
+      return;
+    }
     setState(() {
       _autoPlaying = !_autoPlaying;
       _autoPausedVersion = null;
@@ -189,6 +220,7 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
         _busy ||
         !_isPlayer ||
         game == null ||
+        game.hasActionDeadline() ||
         (game.currentTurnUserId != _userId &&
             !game.availableActions.contains('CONTINUE') &&
             !game.availableActions.contains('DECLARE')) ||
@@ -243,7 +275,8 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
           canDeclare:
               available.contains('DECLARE') || available.contains('REDECLARE'),
           canCounter: available.contains('COUNTER'),
-          currentCounter: game.currentCounter > 0 &&
+          currentCounter:
+              game.currentCounter > 0 &&
                   game.currentCounter <= robot.CounterKind.values.length
               ? robot.CounterKind.values[game.currentCounter - 1]
               : null,
@@ -566,6 +599,19 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
           ),
           title: const Text('淮安80分'),
           actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).push<void>(
+                MaterialPageRoute(
+                  builder: (_) =>
+                      RoomChatScreen(auth: widget.auth, room: widget.room),
+                ),
+              ),
+              child: const Text('房间聊天'),
+            ),
+            TextButton(
+              onPressed: _room == null ? null : _showMembers,
+              child: const Text('成员'),
+            ),
             Flexible(
               child: Padding(
                 padding: const EdgeInsets.all(DarkTokens.spacingS3),
@@ -617,108 +663,114 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
             ? DarkTokens.spacingS6 * 20
             : DarkTokens.spacingS6 * 22;
         return SingleChildScrollView(
-          child: SizedBox(
-            height: math.max(constraints.maxHeight, minHeight),
-            child: Column(
-              children: [
-                TableStatusBar(
-                  ownLevel: ownLevel ?? '—',
-                  opponentLevel: otherLevel ?? '—',
-                  points: game?.capturedPoints.toInt() ?? 0,
-                  scoringPerspective: game?.scoringTeam == ownTeam,
-                ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.all(DarkTokens.spacingS3),
-                    child: GameTableBoard(
-                      members: room.members,
-                      perspective: perspective,
-                      currentTurnUserId: game?.currentTurnUserId ?? '',
-                      ownerId: room.room.owner.userId,
-                      dealerUserId: game?.dealerUserId ?? '',
-                      onSeat:
-                          room.room.status ==
-                                  pb.RoomStatus.ROOM_STATUS_WAITING &&
-                              !_busy
-                          ? _seat
-                          : null,
-                      center: _publicPlays(),
+          child: Column(
+            children: [
+              SizedBox(
+                height: math.max(constraints.maxHeight, minHeight),
+                child: Column(
+                  children: [
+                    TableStatusBar(
+                      ownLevel: ownLevel ?? '—',
+                      opponentLevel: otherLevel ?? '—',
+                      points: game?.capturedPoints.toInt() ?? 0,
+                      scoringPerspective: game?.scoringTeam == ownTeam,
                     ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(DarkTokens.spacingS3),
-                  child: Wrap(
-                    alignment: WrapAlignment.start,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: DarkTokens.spacingS5,
-                    runSpacing: DarkTokens.spacingS3,
-                    children: [
-                      if (game != null &&
-                          (game.bottomPublic ||
-                              (_isPlayer &&
-                                  game.bottomOwnerUserId == _userId)) &&
-                          game.bottomCards.isNotEmpty)
-                        SizedBox(
-                          width: math.min(
-                            constraints.maxWidth - DarkTokens.spacingS5,
-                            DarkTokens.spacingS6 * 8,
-                          ),
-                          child: BottomCardsPanel(
-                            key: ValueKey(
-                              '${game.handId}:${game.bottomPublic}',
-                            ),
-                            cards: game.bottomCards,
-                            publiclyRevealed: game.bottomPublic,
-                            level: ownLevel ?? '',
-                            trumpSuit: game.trumpSuit,
-                          ),
-                        ),
-                      if (_isPlayer) _playerActions(),
-                    ],
-                  ),
-                ),
-                SizedBox(
-                  height: DarkTokens.spacingS6 * (compact ? 3 : 4),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (game != null && game.dealerSeat == perspective)
-                        Padding(
-                          padding: const EdgeInsets.only(
-                            left: DarkTokens.spacingS3,
-                            top: DarkTokens.spacingS5,
-                            right: DarkTokens.spacingS3,
-                          ),
-                          child: Image.asset(
-                            '../ui-design/asserts/ic_lighter/lighter.png',
-                            key: const ValueKey('dealer-marker-main'),
-                            width: DarkTokens.spacingS6,
-                            height: DarkTokens.spacingS6,
-                            semanticLabel: '本轮庄家',
-                          ),
-                        ),
-                      Expanded(
-                        child: TableHand(
-                          cards: game?.visibleHand ?? const [],
-                          selected: _selected,
-                          hiddenCount: game?.visibleHandCount ?? 0,
-                          level: ownLevel ?? '',
-                          trumpSuit: game?.trumpSuit ?? '',
-                          onSelect: _isPlayer && !_busy && game != null
-                              ? (card) => setState(() {
-                                  if (!_selected.add(card))
-                                    _selected.remove(card);
-                                })
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.all(DarkTokens.spacingS3),
+                        child: GameTableBoard(
+                          members: room.members,
+                          perspective: perspective,
+                          currentTurnUserId: game?.currentTurnUserId ?? '',
+                          ownerId: room.room.owner.userId,
+                          dealerUserId: game?.dealerUserId ?? '',
+                          onSeat:
+                              room.room.status ==
+                                      pb.RoomStatus.ROOM_STATUS_WAITING &&
+                                  !_busy
+                              ? _seat
                               : null,
+                          center: _publicPlays(),
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(DarkTokens.spacingS3),
+                      child: Wrap(
+                        alignment: WrapAlignment.start,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: DarkTokens.spacingS5,
+                        runSpacing: DarkTokens.spacingS3,
+                        children: [
+                          if (game != null &&
+                              (game.bottomPublic ||
+                                  (_isPlayer &&
+                                      game.bottomOwnerUserId == _userId)) &&
+                              game.bottomCards.isNotEmpty)
+                            SizedBox(
+                              width: math.min(
+                                constraints.maxWidth - DarkTokens.spacingS5,
+                                DarkTokens.spacingS6 * 8,
+                              ),
+                              child: BottomCardsPanel(
+                                key: ValueKey(
+                                  '${game.handId}:${game.bottomPublic}',
+                                ),
+                                cards: game.bottomCards,
+                                publiclyRevealed: game.bottomPublic,
+                                level: ownLevel ?? '',
+                                trumpSuit: game.trumpSuit,
+                              ),
+                            ),
+                          if (_isPlayer) _playerActions(),
+                        ],
+                      ),
+                    ),
+                    SizedBox(
+                      height: DarkTokens.spacingS6 * (compact ? 3 : 4),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (game != null && game.dealerSeat == perspective)
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                left: DarkTokens.spacingS3,
+                                top: DarkTokens.spacingS5,
+                                right: DarkTokens.spacingS3,
+                              ),
+                              child: Image.asset(
+                                'assets/icons/ic_lighter/lighter.png',
+                                key: const ValueKey('dealer-marker-main'),
+                                width: DarkTokens.spacingS6,
+                                height: DarkTokens.spacingS6,
+                                semanticLabel: '本轮庄家',
+                              ),
+                            ),
+                          Expanded(
+                            child: TableHand(
+                              cards: game?.visibleHand ?? const [],
+                              selected: _selected,
+                              hiddenCount: game?.visibleHandCount ?? 0,
+                              level: ownLevel ?? '',
+                              trumpSuit: game?.trumpSuit ?? '',
+                              onSelect: _isPlayer && !_busy && game != null
+                                  ? (card) => setState(() {
+                                      if (!_selected.add(card))
+                                        _selected.remove(card);
+                                    })
+                                  : null,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    _footer(),
+                  ],
                 ),
-                _footer(),
-              ],
-            ),
+              ),
+              if (game != null && game.hasSettlement())
+                GameSettlementPanel(game: game, onHistory: _showHistory),
+            ],
           ),
         );
       },
@@ -800,9 +852,93 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
     );
   }
 
+  Future<void> _showHistory() async {
+    final game = _game;
+    if (game == null) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('对局历史'),
+        content: SizedBox(
+          width: MediaQuery.sizeOf(context).width * 0.8,
+          child: game.history.isEmpty
+              ? const Text('暂无已完成轮次')
+              : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: game.history.length,
+                  itemBuilder: (_, index) {
+                    final trick = game.history[index];
+                    return Padding(
+                      padding: const EdgeInsets.all(DarkTokens.spacingS3),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '第 ${trick.roundNo} 局 · 第 ${trick.trickNo} 轮 · ${trick.winnerSeat} 号位获胜',
+                          ),
+                          for (final play in trick.plays)
+                            Text('${play.seatNo} 号位：${play.cards.join('、')}'),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showMembers() async {
+    final room = _room!;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: DarkTokens.bgPanel,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(DarkTokens.radiusPanel),
+        ),
+        scrollable: true,
+        title: const Text('房间成员'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final member in room.members)
+              Padding(
+                padding: const EdgeInsets.only(bottom: DarkTokens.spacingS3),
+                child: Text(
+                  '${member.profile.nickname.isEmpty ? member.userId : member.profile.nickname}'
+                  ' · ${member.role == pb.RoomMemberRole.ROOM_MEMBER_ROLE_SPECTATOR ? '旁观' : '${member.seatNo}号位'}'
+                  '${member.userId == room.room.owner.userId ? ' · 房主' : ''}'
+                  '\n段位 ${member.rank} · 积分 ${member.points}'
+                  '${member.seatNo == 0 ? '' : ' · 级数 ${member.team == 1 ? (_game?.teamOneLevel ?? '2') : (_game?.teamTwoLevel ?? '2')}'}',
+                  key: ValueKey('room-member-${member.userId}'),
+                ),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _playerActions() {
     final game = _game;
-    if (game == null) {
+    if (game == null ||
+        (game.phase == 'finished' &&
+            _room!.room.status == pb.RoomStatus.ROOM_STATUS_WAITING)) {
       return Wrap(
         spacing: DarkTokens.spacingS3,
         children: [

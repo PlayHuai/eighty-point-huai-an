@@ -252,7 +252,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('account already exists'), findsOneWidget);
+    expect(find.text('账号已存在，请直接登录或更换账号。'), findsOneWidget);
+    expect(find.textContaining('gRPC Error'), findsNothing);
     expect(find.byType(RegisterScreen), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     auth.dispose();
@@ -290,6 +291,12 @@ Future<void> _enterText(
 }
 
 class _FakeApiClient implements ApiClient {
+  @override
+  Future<void> changePassword({
+    required String accessToken,
+    required String currentPassword,
+    required String newPassword,
+  }) async => throw UnimplementedError();
   @override
   Future<proto.ServerInfo> getServerInfo({required String accessToken}) =>
       throw UnimplementedError();

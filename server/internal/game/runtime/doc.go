@@ -12,7 +12,7 @@
 // transition checks expected versions and clones inputs. Repository additionally
 // authenticates seat ownership, serializes transitions and deduplicates request
 // IDs. Retries must include the same complete action, including expected version.
-// Player identifiers must be authenticated by a future transport before Submit.
+// The transport authenticates player identifiers before Submit.
 //
 // State can be JSON-serialized for trusted server use, but contains every hidden
 // card. View and Repository.Snapshot are the only client-facing projections.
@@ -21,9 +21,10 @@
 // select any nonempty legal combination; all selections still go through Apply.
 //
 // Teams are seats 0/2 and 1/3. Shuffle is injected for reproducibility; the default
-// uses crypto/rand. Repository has no durable storage integration for either
-// normal or practice sessions. A fresh repository is empty, and Delete removes
-// both state and retry receipts.
+// uses crypto/rand. Optional match persistence records ordinary match creation
+// and atomic final settlement before publishing the finished state. Practice
+// sessions never invoke it. A fresh repository is empty: active turn recovery
+// after restart is not implemented. Delete removes live state and retry receipts.
 //
 // Trick scoring and settlement use engine helpers, with effective-trump suit
 // validation and mandatory-level barriers enforced here. The business rules do

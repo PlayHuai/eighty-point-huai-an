@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"errors"
+	"sync"
 
 	"github.com/Derek0120/eighty-point-huai-an/server/gen/huai/v1"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/logging"
@@ -15,8 +16,11 @@ import (
 
 type friendServer struct {
 	huaiv1.UnimplementedFriendServiceServer
-	service  *social.Service
-	presence friendPresence
+	service     *social.Service
+	presence    friendPresence
+	requestMu   sync.Mutex
+	requests    map[roomRequestKey]string
+	requestFIFO []roomRequestKey
 }
 
 type friendPresence interface {
@@ -67,13 +71,47 @@ func (s *friendServer) SendRequest(ctx context.Context, request *huaiv1.FriendRe
 	if err != nil {
 		return nil, err
 	}
-	if err := s.service.SendFriendRequest(ctx, userID, request.GetTargetUserId()); err != nil {
+	if err := s.sendRequestOnce(userID, request.GetRequestId(), request.GetTargetUserId(), func() error {
+		return s.service.SendFriendRequest(ctx, userID, request.GetTargetUserId())
+	}); err != nil {
 		return nil, socialError(err)
 	}
 	s.publishFriendChange(userID, request.GetTargetUserId(), "friend_request")
 	return &huaiv1.Empty{}, nil
 }
 
+func (s *friendServer) sendRequestOnce(userID, requestID, target string, send func() error) error {
+	// Older clients omitted request_id. Preserve that behavior while honoring
+	// explicit UUID retries, like the existing room-mutation receipt cache.
+	if requestID == "" {
+		return send()
+	}
+	if !validUUID(requestID) {
+		return social.ErrInvalidInput
+	}
+	s.requestMu.Lock()
+	defer s.requestMu.Unlock()
+	key := roomRequestKey{userID: userID, requestID: requestID}
+	if previous, ok := s.requests[key]; ok {
+		if previous != target {
+			return social.ErrInvalidInput
+		}
+		return nil
+	}
+	if err := send(); err != nil {
+		return err
+	}
+	if s.requests == nil {
+		s.requests = make(map[roomRequestKey]string)
+	}
+	s.requests[key] = target
+	s.requestFIFO = append(s.requestFIFO, key)
+	if len(s.requestFIFO) > 10000 {
+		delete(s.requests, s.requestFIFO[0])
+		s.requestFIFO = s.requestFIFO[1:]
+	}
+	return nil
+}
 func (s *friendServer) RespondRequest(ctx context.Context, request *huaiv1.RespondFriendRequest) (*huaiv1.Empty, error) {
 	userID, err := authenticatedUserID(ctx)
 	if err != nil {

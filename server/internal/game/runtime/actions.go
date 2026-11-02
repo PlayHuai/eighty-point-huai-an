@@ -32,6 +32,11 @@ func Apply(state State, action Action, shuffle Shuffle) (State, error) {
 		err = next.play(action)
 	case Continue:
 		err = next.continueHand(action, shuffle)
+	case SetAutoplay:
+		if next.Phase == Finished {
+			return State{}, ErrPhase
+		}
+		next.Autoplay[action.Seat] = action.Accept
 	default:
 		err = ErrInvalidAction
 	}
@@ -303,6 +308,7 @@ func (s *State) settle(score int, winning []engine.Card, winner int, fault bool)
 		engine.IsSpring(true, s.HandNumber, s.Trump.Level,
 			result.Resolution.GameWon && result.WinnerTeam == dealerTeam, score)
 	s.Phase, s.Result, s.Turn = HandOver, result, -1
+	s.History = append(s.History, HandHistory{Number: s.HandNumber, Tricks: append([]Trick(nil), s.Completed[s.CompletedBaseline:]...)})
 	if result.Resolution.GameWon {
 		s.Phase = Finished
 	}

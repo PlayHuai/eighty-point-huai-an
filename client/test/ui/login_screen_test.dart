@@ -814,7 +814,8 @@ void main() {
       GrpcError.unauthenticated('invalid credentials'),
     );
     await tester.pumpAndSettle();
-    expect(find.textContaining('invalid credentials'), findsOneWidget);
+    expect(find.text('账号或密码不正确，请重新输入。'), findsOneWidget);
+    expect(find.textContaining('gRPC Error'), findsNothing);
   });
 
   testWidgets('successful login opens the authenticated landing screen', (
@@ -1164,6 +1165,12 @@ class _LobbyGameTableClient implements GameTableClient {
 }
 
 class _FakeApiClient implements ApiClient {
+  @override
+  Future<void> changePassword({
+    required String accessToken,
+    required String currentPassword,
+    required String newPassword,
+  }) async => throw UnimplementedError();
   @override
   Future<proto.ServerInfo> getServerInfo({required String accessToken}) =>
       throw UnimplementedError();

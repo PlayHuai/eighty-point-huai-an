@@ -13,6 +13,7 @@ import (
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/room"
 	grpcgo "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -271,7 +272,8 @@ func (s *roomServer) StartGame(ctx context.Context, request *huaiv1.RoomRequest)
 			if current.Version != request.GetExpectedVersion() {
 				return room.Details{}, room.ErrVersionConflict
 			}
-			return StartGameSession(s.manager, s.sessions, current)
+			return StartGameSession(s.manager, s.sessions, current,
+				metadata.ValueFromIncomingContext(ctx, "x-huai-test-scenario")...)
 		})
 		if err != nil {
 			return nil, roomServiceError(err)
@@ -352,6 +354,7 @@ func (s *roomServer) detailsMessage(ctx context.Context, details room.Details) (
 			member.Profile = &huaiv1.UserProfile{
 				UserId: domainMember.UserID, Nickname: domainMember.Nickname,
 			}
+			member.Rank = "练习AI"
 			continue
 		}
 		profile, exists := profiles[member.GetUserId()]
@@ -362,6 +365,8 @@ func (s *roomServer) detailsMessage(ctx context.Context, details room.Details) (
 			UserId: profile.UserID, Nickname: profile.Nickname, AvatarUrl: profile.AvatarURL,
 			CreatedAt: timestamppb.New(profile.CreatedAt),
 		}
+		member.Points = profile.Points
+		member.Rank = profile.Rank
 	}
 	return message, nil
 }

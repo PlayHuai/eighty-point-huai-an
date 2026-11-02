@@ -48,6 +48,7 @@ type Session struct {
 }
 
 type Repository interface {
+	RecordPasswordAttempt(ctx context.Context, userID string, correct bool, now time.Time) error
 	FindByAccount(ctx context.Context, account string, email bool) (Credential, error)
 	FindByUserID(ctx context.Context, userID string) (Credential, error)
 	FindByWeChatOpenID(ctx context.Context, openID string) (Credential, error)

@@ -14,6 +14,7 @@ import 'package:eighty_point_huai_an/src/ui/game_table_screen.dart';
 import 'package:eighty_point_huai_an/src/ui/theme/app_theme.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grpc/grpc.dart';
@@ -80,6 +81,7 @@ Future<void> _open(
   _FakeGameClient client, {
   Stream<RealtimeEvent> events = const Stream.empty(),
   Size size = const Size(1440, 918),
+  VoidCallback? onClientDispose,
 }) async {
   await tester.binding.setSurfaceSize(size);
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -89,7 +91,10 @@ Future<void> _open(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        gameTableClientProvider.overrideWithValue(client),
+        gameTableClientProvider.overrideWith((ref) {
+          if (onClientDispose != null) ref.onDispose(onClientDispose);
+          return client;
+        }),
         realtimeEventsProvider.overrideWith((ref) => events),
       ],
       child: MaterialApp(
@@ -107,6 +112,99 @@ Future<void> _close(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets(
+    'completed room exposes restart and authoritative member details',
+    (tester) async {
+      final room = _room()
+        ..room.status = pb.RoomStatus.ROOM_STATUS_WAITING
+        ..room.owner.userId = 'viewer';
+      room.members.first
+        ..points = Int64(1234)
+        ..rank = '白银';
+      final snapshot = _snapshot()..phase = 'finished';
+      await _open(tester, _FakeGameClient(room, snapshot));
+      expect(find.text('开始游戏'), findsOneWidget);
+      await tester.tap(find.text('成员'));
+      await tester.pumpAndSettle();
+      expect(find.text('房间成员'), findsOneWidget);
+      expect(find.textContaining('段位 白银 · 积分 1234'), findsOneWidget);
+      expect(find.textContaining('级数 A'), findsNWidgets(2));
+      expect(tester.takeException(), isNull);
+      await _close(tester);
+    },
+  );
+
+  testWidgets('dealer lighter is installed in the Flutter asset bundle', (
+    tester,
+  ) async {
+    final bytes = await rootBundle.load('assets/icons/ic_lighter/lighter.png');
+    expect(bytes.lengthInBytes, greaterThan(0));
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Image(image: AssetImage('assets/icons/ic_lighter/lighter.png')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('settlement and trick history use authoritative generated data', (
+    tester,
+  ) async {
+    final snapshot = _snapshot()
+      ..phase = 'finished'
+      ..state = 'FINISHED'
+      ..settlement = pb.HandSettlement(
+        roundNo: 2,
+        winnerTeam: 1,
+        spring: true,
+        matchFinished: true,
+        nominalPoints: Int64(480),
+        teamOneLevel: 'A',
+        teamTwoLevel: '2',
+      )
+      ..history.add(
+        pb.TrickHistory(
+          roundNo: 2,
+          trickNo: 1,
+          winnerSeat: 1,
+          plays: [
+            pb.PublicPlay(seatNo: 1, cards: ['clubs:3:0']),
+          ],
+        ),
+      );
+    await _open(
+      tester,
+      _FakeGameClient(_room(), snapshot),
+      size: const Size(1268, 685),
+    );
+    expect(tester.takeException(), isNull);
+    expect(find.text('春天'), findsOneWidget);
+    expect(find.text('本盘标准积分 480'), findsOneWidget);
+    await tester.ensureVisible(find.text('对局历史'));
+    await tester.tap(find.text('对局历史'));
+    await tester.pumpAndSettle();
+    expect(find.text('第 2 局 · 第 1 轮 · 1 号位获胜'), findsOneWidget);
+    expect(find.text('1 号位：clubs:3:0'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await _close(tester);
+  });
+
+  testWidgets('table retains its RPC client until the screen is removed', (
+    tester,
+  ) async {
+    var disposed = false;
+    await _open(
+      tester,
+      _FakeGameClient(_room(), _snapshot()),
+      onClientDispose: () => disposed = true,
+    );
+    await tester.pump(const Duration(seconds: 3));
+    expect(disposed, isFalse);
+    await _close(tester);
+    expect(disposed, isTrue);
+  });
+
   testWidgets('players see server actions and visibility but not perspective', (
     tester,
   ) async {
@@ -246,12 +344,16 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('autoplay-toggle')));
     await tester.pump();
     expect(find.text('托管'), findsOneWidget);
-    pending.complete(pb.SubmitActionResponse(accepted: true, stateVersion: Int64(9)));
+    pending.complete(
+      pb.SubmitActionResponse(accepted: true, stateVersion: Int64(9)),
+    );
     await tester.pumpAndSettle();
     await _close(tester);
   });
 
-  testWidgets('autoplay does not counter below the server tier', (tester) async {
+  testWidgets('autoplay does not counter below the server tier', (
+    tester,
+  ) async {
     final snapshot = _snapshot()
       ..phase = 'COUNTER'
       ..trumpSuit = 'clubs'
@@ -355,6 +457,12 @@ class _FakeGameClient implements GameTableClient {
 }
 
 class _AuthApi implements ApiClient {
+  @override
+  Future<void> changePassword({
+    required String accessToken,
+    required String currentPassword,
+    required String newPassword,
+  }) async => throw UnimplementedError();
   @override
   Future<AuthSession> login({
     required String account,

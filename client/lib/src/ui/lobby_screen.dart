@@ -511,6 +511,14 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         ],
       ),
       actions: [
+        TextButton(
+          onPressed: () => showDialog<bool>(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => ChangePasswordDialog(auth: widget.auth),
+          ),
+          child: const Text('修改密码'),
+        ),
         TextButton(onPressed: _openFeedback, child: const Text('反馈')),
         TextButton(onPressed: _openServerInfo, child: const Text('关于')),
         IconButton(

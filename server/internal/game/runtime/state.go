@@ -8,8 +8,10 @@ import (
 	"encoding/json"
 	"errors"
 	"math/big"
+	"time"
 
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/game/engine"
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/settlement"
 )
 
 type Phase string
@@ -33,6 +35,7 @@ const (
 	BuryCards    ActionKind = "bury"
 	PlayCards    ActionKind = "play"
 	Continue     ActionKind = "continue"
+	SetAutoplay  ActionKind = "autoplay"
 )
 
 var (
@@ -57,6 +60,13 @@ type Config struct {
 	Practice bool
 	Dealer   int
 	Levels   [2]engine.Rank // Zero values start both teams at 2.
+	HallID   string
+	OwnerID  string
+}
+
+type HandHistory struct {
+	Number int     `json:"number"`
+	Tricks []Trick `json:"tricks"`
 }
 
 type Played struct {
@@ -71,18 +81,20 @@ type Trick struct {
 }
 
 type Result struct {
-	DefenderScore  int                   `json:"defender_score"`
-	BottomCaptured bool                  `json:"bottom_captured"`
-	Resolution     engine.HandResolution `json:"resolution"`
-	NextDealer     int                   `json:"next_dealer"`
-	WinnerTeam     int                   `json:"winner_team"`
-	SkyEarth       bool                  `json:"sky_earth"`
-	Spring         bool                  `json:"spring"`
-	CounterFault   bool                  `json:"counter_fault"`
+	DefenderScore  int                      `json:"defender_score"`
+	BottomCaptured bool                     `json:"bottom_captured"`
+	Resolution     engine.HandResolution    `json:"resolution"`
+	NextDealer     int                      `json:"next_dealer"`
+	WinnerTeam     int                      `json:"winner_team"`
+	SkyEarth       bool                     `json:"sky_earth"`
+	Spring         bool                     `json:"spring"`
+	CounterFault   bool                     `json:"counter_fault"`
+	NominalPoints  int64                    `json:"nominal_points"`
+	PointChanges   []settlement.PointChange `json:"point_changes,omitempty"`
 }
 
 // State contains hidden hands, bottom cards and declaration proofs. Persisting
-// practice State is prohibited; the repository deliberately has no storage hook.
+// practice State is prohibited; the repository excludes it from storage hooks.
 type State struct {
 	ID                string             `json:"id"`
 	Players           [4]string          `json:"players"`
@@ -112,6 +124,14 @@ type State struct {
 	Ready             [4]bool            `json:"ready"`
 	FirstSkyTeam      *int               `json:"first_sky_team,omitempty"`
 	Result            *Result            `json:"result,omitempty"`
+	MatchID           string             `json:"match_id"`
+	HallID            string             `json:"hall_id"`
+	OwnerID           string             `json:"owner_id"`
+	History           []HandHistory      `json:"history,omitempty"`
+	Deadline          time.Time          `json:"deadline"`
+	Autoplay          [4]bool            `json:"autoplay"`
+	TestScenario      string             `json:"test_scenario,omitempty"`
+	CompletedBaseline int                `json:"completed_baseline,omitempty"`
 }
 
 type Action struct {
@@ -120,6 +140,7 @@ type Action struct {
 	Cards           []engine.Card `json:"cards,omitempty"`
 	RequestID       string        `json:"request_id"`
 	ExpectedVersion uint64        `json:"expected_version"`
+	Accept          bool          `json:"accept,omitempty"`
 }
 
 func NewSession(config Config, shuffle Shuffle) (State, error) {
@@ -144,6 +165,7 @@ func NewSession(config Config, shuffle Shuffle) (State, error) {
 	state := State{
 		ID: config.ID, Players: config.Players, Practice: config.Practice,
 		Version: 1, Dealer: config.Dealer, Levels: config.Levels,
+		HallID: config.HallID, OwnerID: config.OwnerID,
 	}
 	if err := deal(&state, shuffle); err != nil {
 		return State{}, err
@@ -197,6 +219,7 @@ func deal(state *State, shuffle Shuffle) error {
 	state.DeclarationPasses, state.CounterPasses, state.CounterKind = 0, 0, 0
 	state.Countered, state.FinalTrump, state.InitialBury = false, false, true
 	state.Trick, state.Completed = Trick{}, nil
+	state.CompletedBaseline = 0
 	state.DefenderPoints, state.Ready, state.Result = 0, [4]bool{}, nil
 	return nil
 }

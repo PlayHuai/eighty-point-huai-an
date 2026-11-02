@@ -41,6 +41,12 @@ abstract interface class ApiClient {
 
   Future<void> logout(String refreshToken);
 
+  Future<void> changePassword({
+    required String accessToken,
+    required String currentPassword,
+    required String newPassword,
+  });
+
   Future<List<LobbyHall>> listHalls({required String accessToken});
 
   Future<List<LobbyRoom>> listRooms({
@@ -295,6 +301,21 @@ class GrpcApiClient implements ApiClient {
   @override
   Future<void> logout(String refreshToken) async {
     await _auth.logout(api.LogoutRequest()..refreshToken = refreshToken);
+  }
+
+  @override
+  Future<void> changePassword({
+    required String accessToken,
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    await _auth.changePassword(
+      api.ChangePasswordRequest(
+        currentPassword: currentPassword,
+        newPassword: newPassword,
+      ),
+      options: _authenticatedOptions(accessToken),
+    );
   }
 
   @override

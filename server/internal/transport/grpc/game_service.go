@@ -16,6 +16,7 @@ import (
 	grpcgo "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type gameServer struct {
@@ -55,6 +56,7 @@ func StartGameSession(
 	rooms *room.Manager,
 	sessions *runtime.Repository,
 	details room.Details,
+	scenarios ...string,
 ) (room.Details, error) {
 	if rooms == nil || sessions == nil || details.Room.ID == "" {
 		return room.Details{}, runtime.ErrInvalidConfig
@@ -79,9 +81,10 @@ func StartGameSession(
 		}
 		players[member.Seat-1] = member.UserID
 	}
-	state, err := sessions.Create(runtime.Config{
+	state, err := createGameSession(sessions, runtime.Config{
 		ID: details.Room.ID, Players: players, Practice: details.Room.PracticeMode,
-	})
+		HallID: details.Room.HallID, OwnerID: details.Room.OwnerID,
+	}, scenarios)
 	if err != nil {
 		return room.Details{}, err
 	}
@@ -178,11 +181,15 @@ func (s *gameServer) ListEventsAfter(
 	if err != nil {
 		return nil, err
 	}
-	state, err := s.sessions.Load(details.GameSessionID)
+	limit := request.GetPageSize()
+	if limit == 0 {
+		limit = 100
+	}
+	events, latest, err := s.sessions.EventsAfter(details.GameSessionID, request.GetLastSeenSeq(), int(limit))
 	if err != nil {
 		return nil, gameRuntimeError(err)
 	}
-	return &huaiv1.ListEventsAfterResponse{Events: []*huaiv1.GameEvent{}, LatestSeq: state.Version}, nil
+	return &huaiv1.ListEventsAfterResponse{Events: replayMessages(details.GameSessionID, events), LatestSeq: latest}, nil
 }
 
 func (s *gameServer) RequestReconnect(
@@ -201,9 +208,31 @@ func (s *gameServer) RequestReconnect(
 	if err != nil {
 		return nil, err
 	}
+	events, _, err := s.sessions.EventsAfter(details.GameSessionID, request.GetLastSeenSeq(), 1000)
+	if err != nil {
+		return nil, gameRuntimeError(err)
+	}
+	visible := events[:0]
+	for _, event := range events {
+		if event.Sequence <= snapshot.GetSeq() {
+			visible = append(visible, event)
+		}
+	}
 	return &huaiv1.RequestReconnectResponse{
-		Snapshot: snapshot, Events: []*huaiv1.GameEvent{},
+		Snapshot: snapshot, Events: replayMessages(details.GameSessionID, visible),
 	}, nil
+}
+
+func replayMessages(sessionID string, events []runtime.Event) []*huaiv1.GameEvent {
+	messages := make([]*huaiv1.GameEvent, 0, len(events))
+	for _, event := range events {
+		messages = append(messages, &huaiv1.GameEvent{
+			EventId: event.ID, Seq: event.Sequence, Type: strings.ToUpper(string(event.Kind)),
+			GameSessionId: sessionID, HandId: event.HandID, StateVersion: event.Sequence,
+			CreatedAt: timestamppb.New(event.CreatedAt),
+		})
+	}
+	return messages
 }
 
 func (s *gameServer) authorizedRoom(sessionID, userID string) (room.Details, error) {
@@ -381,6 +410,8 @@ func runtimeAction(
 		result.Kind = runtime.Pass
 	case *huaiv1.GameAction_ContinueAction:
 		result.Kind = runtime.Continue
+	case *huaiv1.GameAction_ConfirmAutoplay:
+		result.Kind, result.Accept = runtime.SetAutoplay, payload.ConfirmAutoplay.GetAccept()
 	default:
 		return runtime.Action{}, runtime.ErrInvalidAction
 	}
@@ -411,6 +442,36 @@ func snapshotMessage(view runtime.Snapshot, member room.Member, visibleHand bool
 	}
 	if view.Result != nil {
 		result.CapturedPoints = int64(view.Result.DefenderScore)
+		result.Settlement = &huaiv1.HandSettlement{
+			RoundNo: uint32(view.HandNumber), WinnerTeam: uint32(view.Result.WinnerTeam + 1),
+			DefenderScore: int64(view.Result.DefenderScore), Spring: view.Result.Spring,
+			SkyEarth: view.Result.SkyEarth, Comeback: view.Result.Resolution.Comeback,
+			NaturalLevel: view.Result.Resolution.NaturalLevel, MatchFinished: view.Phase == runtime.Finished,
+			NominalPoints: view.Result.NominalPoints,
+			TeamOneLevel:  view.Levels[0].String(), TeamTwoLevel: view.Levels[1].String(),
+		}
+		for _, change := range view.Result.PointChanges {
+			result.Settlement.PointChanges = append(result.Settlement.PointChanges, &huaiv1.PlayerPointChange{
+				UserId: change.UserID, Delta: change.Delta, Rank: change.Rank,
+			})
+		}
+	}
+	if !view.Deadline.IsZero() && view.Turn >= 0 {
+		result.ActionDeadline = timestamppb.New(view.Deadline)
+	}
+	for seat, enabled := range view.Autoplay {
+		if enabled {
+			result.AutoplaySeats = append(result.AutoplaySeats, uint32(seat+1))
+		}
+	}
+	for _, hand := range view.History {
+		for i, trick := range hand.Tricks {
+			history := &huaiv1.TrickHistory{RoundNo: uint32(hand.Number), TrickNo: uint32(i + 1), WinnerSeat: uint32(trick.Winner + 1)}
+			for _, play := range trick.Plays {
+				history.Plays = append(history.Plays, &huaiv1.PublicPlay{SeatNo: uint32(play.Seat + 1), Cards: cardsMessage(play.Cards)})
+			}
+			result.History = append(result.History, history)
+		}
 	}
 	if view.Turn >= 0 && view.Turn < 4 {
 		result.CurrentTurnUserId = view.Players[view.Turn]

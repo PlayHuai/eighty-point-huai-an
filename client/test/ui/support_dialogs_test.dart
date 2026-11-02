@@ -16,6 +16,50 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grpc/grpc.dart';
 
 void main() {
+  testWidgets(
+    'password dialog validates, retains failed session and clears success',
+    (tester) async {
+      final api = _FakeApiClient();
+      final auth = AuthController(api: api, store: _MemorySessionStore());
+      await auth.login('user', 'Old2026!');
+      addTearDown(auth.dispose);
+      await _openDialog(tester, ChangePasswordDialog(auth: auth));
+      await tester.enterText(
+        find.byKey(const ValueKey('password-current')),
+        'Wrong2026!',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('password-new')),
+        'New2026!',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('password-confirm')),
+        'Other2026!',
+      );
+      await tester.tap(find.text('确认修改'));
+      await tester.pumpAndSettle();
+      expect(find.text('两次输入的密码不一致'), findsOneWidget);
+      expect(api.passwordChanges, 0);
+      await tester.enterText(
+        find.byKey(const ValueKey('password-confirm')),
+        'New2026!',
+      );
+      await tester.tap(find.text('确认修改'));
+      await tester.pumpAndSettle();
+      expect(find.text('当前密码不正确，请重新输入。'), findsOneWidget);
+      expect(auth.session, isNotNull);
+      await tester.enterText(
+        find.byKey(const ValueKey('password-current')),
+        'Old2026!',
+      );
+      await tester.tap(find.text('确认修改'));
+      await tester.pumpAndSettle();
+      expect(auth.session, isNull);
+      expect(find.byType(ChangePasswordDialog), findsNothing);
+      expect(api.passwordChanges, 2);
+    },
+  );
+
   for (final platform in [TargetPlatform.iOS, TargetPlatform.windows]) {
     testWidgets('lobby support buttons open dialogs on $platform', (
       tester,
@@ -184,6 +228,19 @@ Future<void> _openDialog(
 }
 
 class _FakeApiClient implements ApiClient {
+  @override
+  Future<void> changePassword({
+    required String accessToken,
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    passwordChanges++;
+    if (currentPassword != 'Old2026!') throw GrpcError.unauthenticated();
+    expect(accessToken, 'token');
+    expect(newPassword, 'New2026!');
+  }
+
+  int passwordChanges = 0;
   final requests = <proto.SubmitFeedbackRequest>[];
   bool failNextSubmit = false;
   Completer<void>? submitCompletion;

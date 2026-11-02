@@ -100,6 +100,10 @@ func TestGameCompletionReturnsRoomToWaitingAndCleansSessionOnClose(t *testing.T)
 		completed.GameSessionID != "session" || completed.Version != started.Version+1 {
 		t.Fatalf("completed room = %+v, %v", completed, err)
 	}
+	retried, err := manager.CompleteGameSession(created.Room.ID, "session")
+	if err != nil || retried.Version != completed.Version {
+		t.Fatalf("completion retry changed result: %+v, %v", retried, err)
+	}
 	closed, err := manager.Close(created.Room.ID, "owner", completed.Version)
 	if err != nil || closed.Room.Status != StatusClosed {
 		t.Fatalf("closed completed room = %+v, %v", closed, err)

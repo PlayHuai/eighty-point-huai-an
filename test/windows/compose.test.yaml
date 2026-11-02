@@ -1,0 +1,17 @@
+services:
+  mysql:
+    image: huai-auto-test/mysql:cached
+    pull_policy: never
+  redis:
+    image: huai-auto-test/redis:cached
+    pull_policy: never
+  migrate:
+    image: huai-auto-test-server:local
+    build:
+      dockerfile: Dockerfile.autotest
+  server:
+    image: huai-auto-test-server:local
+    build:
+      dockerfile: Dockerfile.autotest
+    environment:
+      HUAI_AUTOTEST: "1"

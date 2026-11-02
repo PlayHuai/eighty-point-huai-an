@@ -13,6 +13,8 @@ type testRepository struct {
 	wechatIDs   map[string]string
 	sessions    map[string]Session
 	revoked     map[string]bool
+	attempts    map[string]int
+	locks       map[string]time.Time
 }
 
 func newTestRepository() *testRepository {
@@ -21,9 +23,61 @@ func newTestRepository() *testRepository {
 		wechatIDs:   make(map[string]string),
 		sessions:    make(map[string]Session),
 		revoked:     make(map[string]bool),
+		attempts:    make(map[string]int),
+		locks:       make(map[string]time.Time),
 	}
 }
 
+func (r *testRepository) RecordPasswordAttempt(_ context.Context, userID string, correct bool, now time.Time) error {
+	if now.Before(r.locks[userID]) {
+		return ErrLoginLocked
+	}
+	if !r.locks[userID].IsZero() || correct {
+		r.attempts[userID] = 0
+		delete(r.locks, userID)
+	}
+	if !correct {
+		r.attempts[userID]++
+	}
+	if r.attempts[userID] >= 5 {
+		r.locks[userID] = now.Add(15 * time.Minute)
+		return ErrLoginLocked
+	}
+	return nil
+}
+
+func TestPasswordAttemptsLockAndReset(t *testing.T) {
+	repository := newTestRepository()
+	service, err := NewService(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	created, err := service.Register(ctx, "lock-test", "Password123", "Lock test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 5; i++ {
+		_, err := service.Login(ctx, "lock-test", "Wrong1234", "")
+		want := ErrInvalidCredentials
+		if i == 5 {
+			want = ErrLoginLocked
+		}
+		if !errors.Is(err, want) {
+			t.Fatalf("attempt %d = %v, want %v", i, err, want)
+		}
+	}
+	if _, err := service.Login(ctx, "lock-test", "Password123", ""); !errors.Is(err, ErrLoginLocked) {
+		t.Fatalf("correct password bypassed lock: %v", err)
+	}
+	repository.locks[created.Profile.UserID] = time.Now().Add(-time.Second)
+	if _, err := service.Login(ctx, "lock-test", "Password123", ""); err != nil {
+		t.Fatal(err)
+	}
+	if repository.attempts[created.Profile.UserID] != 0 {
+		t.Fatal("successful login did not reset failures")
+	}
+}
 func accountKey(account string, email bool) string {
 	if email {
 		return "email:" + account

@@ -112,7 +112,7 @@ class AuthController extends ChangeNotifier {
     } catch (error) {
       AppLog.failure('auth.register', error);
       _session = null;
-      _error = error.toString();
+      _error = _authenticationMessage(error);
       return false;
     } finally {
       _isLoading = false;
@@ -137,13 +137,25 @@ class AuthController extends ChangeNotifier {
     } catch (error) {
       AppLog.failure('auth.login', error);
       _session = null;
-      _error = error.toString();
+      _error = _authenticationMessage(error);
       return false;
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
+
+  String _authenticationMessage(Object error) => switch (error) {
+    GrpcError(code: StatusCode.alreadyExists) => '账号已存在，请直接登录或更换账号。',
+    GrpcError(code: StatusCode.unauthenticated) => '账号或密码不正确，请重新输入。',
+    GrpcError(code: StatusCode.resourceExhausted) =>
+      '密码错误次数过多，账号已临时锁定，请15分钟后重试。',
+    GrpcError(code: StatusCode.invalidArgument) => '账号或密码格式不正确，请检查后重试。',
+    GrpcError(code: StatusCode.permissionDenied) => '账号暂不可用，请联系管理员。',
+    GrpcError(code: StatusCode.unavailable || StatusCode.deadlineExceeded) =>
+      '连接服务失败，请检查网络后重试。',
+    _ => '登录或注册失败，请稍后重试。',
+  };
 
   Future<void> logout() async {
     AppLog.info('auth.logout.start');
@@ -170,5 +182,27 @@ class AuthController extends ChangeNotifier {
       notifyListeners();
       AppLog.info('auth.logout.complete');
     }
+  }
+
+  Future<void> changePassword(
+    String currentPassword,
+    String newPassword,
+  ) async {
+    final session = _session;
+    if (session == null) throw StateError('请先登录。');
+    await _api.changePassword(
+      accessToken: session.accessToken,
+      currentPassword: currentPassword,
+      newPassword: newPassword,
+    );
+    // The server revokes every session, including this one.
+    _session = null;
+    _error = null;
+    try {
+      await _store.clear();
+    } finally {
+      notifyListeners();
+    }
+    AppLog.info('auth.password.changed');
   }
 }

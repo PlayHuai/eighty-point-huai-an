@@ -410,10 +410,10 @@ func (s *Store) SaveProfile(ctx context.Context, profile player.Profile) error {
 
 func (s *Store) GetPublicProfile(ctx context.Context, userID string) (player.PublicProfile, error) {
 	var profile player.PublicProfile
-	err := s.db.QueryRowContext(ctx, `SELECT p.user_id, p.nickname, p.avatar, u.created_at
+	err := s.db.QueryRowContext(ctx, `SELECT p.user_id, p.nickname, p.avatar, u.created_at, p.points, p.rank_name
 		FROM player_profiles p JOIN users u ON u.id = p.user_id
 		WHERE p.user_id = ? AND u.status = 'ACTIVE'`, userID).Scan(
-		&profile.UserID, &profile.Nickname, &profile.AvatarURL, &profile.CreatedAt)
+		&profile.UserID, &profile.Nickname, &profile.AvatarURL, &profile.CreatedAt, &profile.Points, &profile.Rank)
 	if errors.Is(err, sql.ErrNoRows) {
 		return player.PublicProfile{}, player.ErrProfileNotFound
 	}
@@ -431,7 +431,7 @@ func (s *Store) GetPublicProfiles(ctx context.Context, userIDs []string) (map[st
 	for i, userID := range userIDs {
 		args[i] = userID
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT p.user_id, p.nickname, p.avatar, u.created_at
+	rows, err := s.db.QueryContext(ctx, `SELECT p.user_id, p.nickname, p.avatar, u.created_at, p.points, p.rank_name
 		FROM player_profiles p JOIN users u ON u.id = p.user_id
 		WHERE p.user_id IN (`+placeholders+`) AND u.status = 'ACTIVE'`, args...)
 	if err != nil {
@@ -440,7 +440,7 @@ func (s *Store) GetPublicProfiles(ctx context.Context, userIDs []string) (map[st
 	defer rows.Close()
 	for rows.Next() {
 		var profile player.PublicProfile
-		if err := rows.Scan(&profile.UserID, &profile.Nickname, &profile.AvatarURL, &profile.CreatedAt); err != nil {
+		if err := rows.Scan(&profile.UserID, &profile.Nickname, &profile.AvatarURL, &profile.CreatedAt, &profile.Points, &profile.Rank); err != nil {
 			return nil, err
 		}
 		profiles[profile.UserID] = profile
@@ -894,7 +894,7 @@ func (s *Store) ListPrivateMessages(
 	rows, err := s.db.QueryContext(ctx, `SELECT CAST(id AS CHAR), sender_id, recipient_id, body, created_at
 			FROM chat_messages
 			WHERE room_id IS NULL AND
-				expires_at > UTC_TIMESTAMP(6) AND
+				(expires_at IS NULL OR expires_at > UTC_TIMESTAMP(6)) AND
 				((sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?))
 				AND NOT EXISTS (
 					SELECT 1 FROM chat_message_hides hidden
