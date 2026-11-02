@@ -20,6 +20,7 @@ import 'components/game_settlement_panel.dart';
 import 'components/table_cards.dart';
 import 'components/table_status_bar.dart';
 import 'theme/app_theme.dart';
+import 'room_chat_screen.dart';
 
 // RPC calls read this provider outside build; keep the channel for the current
 // authenticated scope instead of disposing it between asynchronous requests.
@@ -598,6 +599,19 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
           ),
           title: const Text('淮安80分'),
           actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).push<void>(
+                MaterialPageRoute(
+                  builder: (_) =>
+                      RoomChatScreen(auth: widget.auth, room: widget.room),
+                ),
+              ),
+              child: const Text('房间聊天'),
+            ),
+            TextButton(
+              onPressed: _room == null ? null : _showMembers,
+              child: const Text('成员'),
+            ),
             Flexible(
               child: Padding(
                 padding: const EdgeInsets.all(DarkTokens.spacingS3),
@@ -880,9 +894,51 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
     );
   }
 
+  Future<void> _showMembers() async {
+    final room = _room!;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: DarkTokens.bgPanel,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(DarkTokens.radiusPanel),
+        ),
+        scrollable: true,
+        title: const Text('房间成员'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final member in room.members)
+              Padding(
+                padding: const EdgeInsets.only(bottom: DarkTokens.spacingS3),
+                child: Text(
+                  '${member.profile.nickname.isEmpty ? member.userId : member.profile.nickname}'
+                  ' · ${member.role == pb.RoomMemberRole.ROOM_MEMBER_ROLE_SPECTATOR ? '旁观' : '${member.seatNo}号位'}'
+                  '${member.userId == room.room.owner.userId ? ' · 房主' : ''}'
+                  '\n段位 ${member.rank} · 积分 ${member.points}'
+                  '${member.seatNo == 0 ? '' : ' · 级数 ${member.team == 1 ? (_game?.teamOneLevel ?? '2') : (_game?.teamTwoLevel ?? '2')}'}',
+                  key: ValueKey('room-member-${member.userId}'),
+                ),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _playerActions() {
     final game = _game;
-    if (game == null) {
+    if (game == null ||
+        (game.phase == 'finished' &&
+            _room!.room.status == pb.RoomStatus.ROOM_STATUS_WAITING)) {
       return Wrap(
         spacing: DarkTokens.spacingS3,
         children: [

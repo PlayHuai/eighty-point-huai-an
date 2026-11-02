@@ -292,6 +292,12 @@ Future<void> _enterText(
 
 class _FakeApiClient implements ApiClient {
   @override
+  Future<void> changePassword({
+    required String accessToken,
+    required String currentPassword,
+    required String newPassword,
+  }) async => throw UnimplementedError();
+  @override
   Future<proto.ServerInfo> getServerInfo({required String accessToken}) =>
       throw UnimplementedError();
 

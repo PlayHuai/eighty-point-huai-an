@@ -112,6 +112,28 @@ Future<void> _close(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets(
+    'completed room exposes restart and authoritative member details',
+    (tester) async {
+      final room = _room()
+        ..room.status = pb.RoomStatus.ROOM_STATUS_WAITING
+        ..room.owner.userId = 'viewer';
+      room.members.first
+        ..points = Int64(1234)
+        ..rank = '白银';
+      final snapshot = _snapshot()..phase = 'finished';
+      await _open(tester, _FakeGameClient(room, snapshot));
+      expect(find.text('开始游戏'), findsOneWidget);
+      await tester.tap(find.text('成员'));
+      await tester.pumpAndSettle();
+      expect(find.text('房间成员'), findsOneWidget);
+      expect(find.textContaining('段位 白银 · 积分 1234'), findsOneWidget);
+      expect(find.textContaining('级数 A'), findsNWidgets(2));
+      expect(tester.takeException(), isNull);
+      await _close(tester);
+    },
+  );
+
   testWidgets('dealer lighter is installed in the Flutter asset bundle', (
     tester,
   ) async {
@@ -435,6 +457,12 @@ class _FakeGameClient implements GameTableClient {
 }
 
 class _AuthApi implements ApiClient {
+  @override
+  Future<void> changePassword({
+    required String accessToken,
+    required String currentPassword,
+    required String newPassword,
+  }) async => throw UnimplementedError();
   @override
   Future<AuthSession> login({
     required String account,

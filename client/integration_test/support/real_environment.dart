@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -59,6 +60,8 @@ class RealEnvironment {
   final trace = StringBuffer();
   final boundaryKey = GlobalKey();
   AuthController? auth;
+  final clientKeys = [GlobalKey(), GlobalKey()];
+  final clients = <AuthController>[];
   final users = <TestUser>[];
   final rooms = <(TestUser, String)>[];
   final _initialRoomVersions = <String, int>{};
@@ -91,6 +94,102 @@ class RealEnvironment {
     step('Created isolated test account ${value.id}');
     return value;
   }
+
+  Future<String> database(String sql) async {
+    final encoded = base64.encode(utf8.encode(sql));
+    final result = await Process.run('ssh', [
+      '-o',
+      'BatchMode=yes',
+      '-o',
+      'ConnectTimeout=10',
+      'derek@${apiEndpoint.host}',
+      'cd /home/derek/auto_test && printf %s $encoded | base64 -d | '
+          'docker compose --env-file deploy/.env -f test/windows/compose.test.yaml '
+          '-p huai-auto-test exec -T mysql sh -c '
+          '\'MYSQL_PWD="\$MYSQL_PASSWORD" exec mysql -u"\$MYSQL_USER" "\$MYSQL_DATABASE" --batch --skip-column-names\'',
+    ]).timeout(const Duration(seconds: 30));
+    if (result.exitCode != 0) {
+      throw StateError('Isolated database fixture failed: ${result.stderr}');
+    }
+    return (result.stdout as String).trim();
+  }
+
+  Future<void> accountFixture(
+    TestUser user, {
+    int? points,
+    bool disabled = false,
+  }) async {
+    if (!users.contains(user) ||
+        !RegExp(r'^[a-f0-9]{32}$').hasMatch(user.id) ||
+        (points != null && points < 0)) {
+      throw ArgumentError(
+        'Fixture must target an account created by this case.',
+      );
+    }
+    final result = await database(
+      '${points == null ? '' : "UPDATE player_profiles SET points=$points WHERE user_id='${user.id}';"}'
+      '${disabled ? "UPDATE users SET status='DISABLED' WHERE id='${user.id}';" : ''}'
+      "SELECT points FROM player_profiles WHERE user_id='${user.id}';",
+    );
+    if (points != null) expect(result, '$points');
+    step(
+      'Prepared isolated account fixture ${user.id}, points=$points disabled=$disabled',
+    );
+  }
+
+  Future<void> mountPair(TestUser first, TestUser second) async {
+    clients.clear();
+    for (final user in [first, second]) {
+      final session = await api.login(
+        account: user.account,
+        password: testPassword,
+      );
+      clients.add(
+        AuthController(
+          api: GrpcApiClient(apiEndpoint),
+          store: TestSessionStore(session),
+        ),
+      );
+    }
+    await tester.pumpWidget(
+      RepaintBoundary(
+        key: boundaryKey,
+        child: Directionality(
+          textDirection: TextDirection.ltr,
+          child: Row(
+            children: [
+              for (var index = 0; index < clients.length; index++)
+                Expanded(
+                  child: ClientApp(
+                    key: clientKeys[index],
+                    auth: clients[index],
+                    endpoint: apiEndpoint,
+                    websocketEndpoint: websocketEndpoint,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await waitFor(
+      () => clients.every(
+        (client) => !client.isLoading && client.session != null,
+      ),
+      'two independent client logins',
+    );
+    await visible(inClient(0, find.text('游戏大厅')));
+    await visible(inClient(1, find.text('游戏大厅')));
+    expect(clients[0].session!.userId, first.id);
+    expect(clients[1].session!.userId, second.id);
+    expect(
+      clients[0].session!.accessToken,
+      isNot(clients[1].session!.accessToken),
+    );
+  }
+
+  Finder inClient(int index, Finder finder) =>
+      find.descendant(of: find.byKey(clientKeys[index]), matching: finder);
 
   Future<void> mount({TestUser? signedIn}) async {
     final uiSession = signedIn == null
@@ -153,7 +252,15 @@ class RealEnvironment {
     await visible(finder);
     await tester.ensureVisible(finder);
     await tester.enterText(finder, value);
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    final editable = find.descendant(
+      of: finder,
+      matching: find.byType(EditableText),
+    );
+    await waitFor(
+      () => tester.widget<EditableText>(editable).controller.text == value,
+      'text input was applied to $key',
+    );
   }
 
   Future<void> registerForm({
@@ -311,7 +418,12 @@ class RealEnvironment {
       ),
     );
     await visible(find.byKey(const ValueKey('room-identity')));
-    await visible(find.byKey(const ValueKey('play-buttons')));
+    await waitFor(
+      () =>
+          find.byKey(const ValueKey('play-buttons')).evaluate().isNotEmpty ||
+          find.text('开始游戏').evaluate().isNotEmpty,
+      'loaded active or finished game actions',
+    );
     await captureUi('游戏牌桌');
   }
 

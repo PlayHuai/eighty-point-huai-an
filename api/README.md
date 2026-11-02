@@ -15,6 +15,9 @@ The server deduplicates an identical retry and rejects request-ID reuse for a
 different operation. `RoomMember.show_hand` is a player's opt-in spectator
 visibility flag; `view_seat` is only meaningful for spectators, and `team` is
 derived from the player's seat.
+`RoomMember.points` and `rank` are loaded with the same batched authoritative
+profile query as nickname/avatar. Clients display these fields rather than
+deriving ranks or balances locally; room/team levels come from GameSnapshot.
 
 `SupportService` requires authentication for both RPCs. `SubmitFeedback` accepts
 `FEEDBACK_KIND_BUG` or `FEEDBACK_KIND_SUGGESTION`, a trimmed UTF-8 body of 1–2000

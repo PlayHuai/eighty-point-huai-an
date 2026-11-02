@@ -1711,6 +1711,7 @@ type RoomMember struct {
 	ViewSeat      uint32                 `protobuf:"varint,6,opt,name=view_seat,json=viewSeat,proto3" json:"view_seat,omitempty"`
 	Team          uint32                 `protobuf:"varint,7,opt,name=team,proto3" json:"team,omitempty"`
 	Rank          string                 `protobuf:"bytes,8,opt,name=rank,proto3" json:"rank,omitempty"`
+	Points        int64                  `protobuf:"varint,9,opt,name=points,proto3" json:"points,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1799,6 +1800,13 @@ func (x *RoomMember) GetRank() string {
 		return x.Rank
 	}
 	return ""
+}
+
+func (x *RoomMember) GetPoints() int64 {
+	if x != nil {
+		return x.Points
+	}
+	return 0
 }
 
 type RoomDetails struct {
@@ -5016,7 +5024,7 @@ const file_huai_v1_api_proto_rawDesc = "" +
 	"\troom_code\x18\x01 \x01(\tR\broomCode\x12\x1a\n" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\x03 \x01(\tR\trequestId\"\xfd\x01\n" +
+	"request_id\x18\x03 \x01(\tR\trequestId\"\x95\x02\n" +
 	"\n" +
 	"RoomMember\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12+\n" +
@@ -5026,7 +5034,8 @@ const file_huai_v1_api_proto_rawDesc = "" +
 	"\tshow_hand\x18\x05 \x01(\bR\bshowHand\x12\x1b\n" +
 	"\tview_seat\x18\x06 \x01(\rR\bviewSeat\x12\x12\n" +
 	"\x04team\x18\a \x01(\rR\x04team\x12\x12\n" +
-	"\x04rank\x18\b \x01(\tR\x04rank\"\xa8\x01\n" +
+	"\x04rank\x18\b \x01(\tR\x04rank\x12\x16\n" +
+	"\x06points\x18\t \x01(\x03R\x06points\"\xa8\x01\n" +
 	"\vRoomDetails\x12(\n" +
 	"\x04room\x18\x01 \x01(\v2\x14.huai.v1.RoomSummaryR\x04room\x12-\n" +
 	"\amembers\x18\x02 \x03(\v2\x13.huai.v1.RoomMemberR\amembers\x12\x18\n" +

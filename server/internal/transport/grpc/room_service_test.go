@@ -18,6 +18,7 @@ func TestJoinInvitedFriendRoomBypassesRankedAdmission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	_, err = manager.JoinRoom(created.Room.ID, "owner", 0, "", created.Version)
 	if err != nil {
 		t.Fatal(err)
@@ -45,6 +46,33 @@ func TestJoinInvitedFriendRoomBypassesRankedAdmission(t *testing.T) {
 	retry, err := server.JoinInvitedRoom(ctxWithUserID(context.Background(), "friend"), request)
 	if err != nil || retry.GetVersion() != details.GetVersion() {
 		t.Fatalf("idempotent invitation retry = %+v, %v", retry, err)
+	}
+}
+
+func TestRoomMembersIncludeBatchedPointsAndRanks(t *testing.T) {
+	manager := room.NewManager()
+	created, err := manager.CreateRoom(lobby.HallOrdinary, "owner", 1234, room.Settings{Name: "members"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	details, err := manager.JoinRoom(created.Room.ID, "owner", 1234, "", created.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	service := &roomServer{manager: manager, profiles: lobbyProfiles{
+		public: map[string]player.PublicProfile{
+			"owner": {UserID: "owner", Nickname: "Owner", Points: 1234, Rank: "白银"},
+		},
+		batchCalls: &calls,
+	}}
+	message, err := service.detailsMessage(context.Background(), details)
+	if err != nil || len(message.GetMembers()) != 1 {
+		t.Fatalf("members = %+v, %v", message, err)
+	}
+	member := message.Members[0]
+	if member.Points != 1234 || member.Rank != "白银" || member.Profile.Nickname != "Owner" || calls != 1 {
+		t.Fatalf("authoritative batched member profile = %+v, calls=%d", member, calls)
 	}
 }
 

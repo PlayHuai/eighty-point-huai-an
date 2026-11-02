@@ -1,12 +1,131 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grpc/grpc.dart';
 
 import '../api/api_client.dart';
 import '../api/request_id.dart';
+import '../auth/auth_controller.dart';
 import '../generated/huai/v1/api.pb.dart' as api;
 import 'components/design_icon.dart';
 import 'theme/app_theme.dart';
+
+class ChangePasswordDialog extends StatefulWidget {
+  const ChangePasswordDialog({required this.auth, super.key});
+
+  final AuthController auth;
+
+  @override
+  State<ChangePasswordDialog> createState() => _ChangePasswordDialogState();
+}
+
+class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
+  final _form = GlobalKey<FormState>();
+  final _current = TextEditingController();
+  final _next = TextEditingController();
+  final _confirm = TextEditingController();
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _current.dispose();
+    _next.dispose();
+    _confirm.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_busy || !_form.currentState!.validate()) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await widget.auth.changePassword(_current.text, _next.text);
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (error) {
+      if (!mounted) return;
+      setState(
+        () => _error = switch (error) {
+          GrpcError(code: StatusCode.unauthenticated) => '当前密码不正确，请重新输入。',
+          GrpcError(code: StatusCode.invalidArgument) =>
+            '新密码须为8到128字节且包含字母和数字。',
+          _ => '修改密码失败，请检查网络后重试；若已退出，请使用新密码登录。',
+        },
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+    canPop: !_busy,
+    child: AlertDialog(
+      backgroundColor: DarkTokens.bgPanel,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(DarkTokens.radiusPanel),
+      ),
+      title: const Text('修改密码'),
+      scrollable: true,
+      content: Form(
+        key: _form,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextFormField(
+              key: const ValueKey('password-current'),
+              controller: _current,
+              obscureText: true,
+              decoration: const InputDecoration(labelText: '当前密码'),
+              validator: (value) =>
+                  value == null || value.isEmpty ? '请输入当前密码' : null,
+            ),
+            const SizedBox(height: DarkTokens.spacingS3),
+            TextFormField(
+              key: const ValueKey('password-new'),
+              controller: _next,
+              obscureText: true,
+              decoration: const InputDecoration(labelText: '新密码'),
+              validator: (value) {
+                final text = value ?? '';
+                final length = utf8.encode(text).length;
+                return length < 8 ||
+                        length > 128 ||
+                        !RegExp('[A-Za-z]').hasMatch(text) ||
+                        !RegExp('[0-9]').hasMatch(text)
+                    ? '新密码须为8到128字节且包含字母和数字'
+                    : null;
+              },
+            ),
+            const SizedBox(height: DarkTokens.spacingS3),
+            TextFormField(
+              key: const ValueKey('password-confirm'),
+              controller: _confirm,
+              obscureText: true,
+              decoration: const InputDecoration(labelText: '确认新密码'),
+              validator: (value) => value != _next.text ? '两次输入的密码不一致' : null,
+            ),
+            if (_error != null) Text(_error!),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: _busy ? null : _submit,
+          child: Text(_busy ? '提交中…' : '确认修改'),
+        ),
+      ],
+    ),
+  );
+}
 
 String _supportError(Object error) => switch (error) {
   GrpcError(code: StatusCode.unauthenticated) => '登录状态已失效，请重新登录。',

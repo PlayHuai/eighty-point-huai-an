@@ -51,6 +51,10 @@ real gRPC authentication and a real WebSocket event. No local fake server is use
 The test session store is isolated in memory to avoid replacing the developer's
 Windows secure-storage credentials; cross-process secure-storage persistence is
 not covered by the automatic-login case.
+Widget gestures and text entry are automated. The integration binding registers
+Flutter's test text-input channel to avoid native Windows IME races when editing
+the same focused field repeatedly; native hardware-keyboard/IME behavior itself
+is not covered. UI navigation waits for route transitions before the next action.
 
 ## Deployment safety
 
@@ -140,9 +144,37 @@ The isolated autotest build funds the spring and A-level score fixture players
 with 1,000 points before play; ordinary accounts still start at zero. Funding
 is compiled out of production and requires `HUAI_AUTOTEST=1`. Zero-balance loss
 caps and conservation also have repository regression tests.
-Non-game `BLOCKED` catalogue entries remain explicit coverage gaps, not PASS.
+The catalogue has 77 implemented cases, including all formerly blocked
+non-game cases, plus two deliberately deferred chat TODO cases. Actual PASS
+counts always come from the report, not this implementation count.
+
+Fresh full run, followed by its authorized failure-only repair round:
+
+```powershell
+python .\test\windows\run.py --max 2 --start-index 1 --output D:\huai_an_80\auto_test\full_run_20261102
+python .\test\windows\run.py --max 2 --start-index 2 --output D:\huai_an_80\auto_test\full_run_20261102
+```
+
+If that limit is reached with failures, stop and obtain approval before raising
+`--max`; an extension is never implicit.
 
 ## UI reference screenshots
+
+The complete page/dialog/menu inventory is `ui.list`. Every report writes
+`<output>\ui-coverage.tsv` with CAPTURED/MISSING and absolute screenshot paths.
+Missing screenshots are explicit review gaps, never silently counted as covered.
+The dual-client case mounts two real ClientApp instances side-by-side, each with
+its own authenticated provider scope, channel, session cache, Navigator and
+WebSocket. It exercises presence, logout/relogin and invitation acceptance
+without requiring a second Windows machine.
+
+The catalogue includes four real one-human/three-server-bot practice-room cases:
+UI entry/exit, creation idempotency/isolation, action retry/version/reconnect,
+and an entire match with continuation. Ordinary and practice sessions use the
+same production action validation; practice tests also inspect the isolated
+database for absence of game sessions/ledger and unchanged user statistics.
+Boundary/disabled-account setup uses passwordless SSH to the dedicated Compose
+database and accepts only IDs created by that case. No fixture RPC is exposed.
 
 Each round also visits real login, registration, lobby, room-creation, friend
 list/profile, waiting-room screens and support/join-by-ID dialogs independently
@@ -154,9 +186,9 @@ captures replace the same feature image, while per-round failure screenshots
 remain immutable. Capture errors are recorded in `ui\capture-error.txt`, not
 substituted with a mock image. Transient snackbars are dismissed for reference
 captures; failure screenshots are not altered. Chat pages are captured for design
-reference only: chat functional cases remain TODO. The room-chat page currently
-has no table navigation entry, so the walkthrough opens the existing page directly;
-this is not evidence that the room-chat entry or sending/receiving works.
+reference only: chat functional cases remain TODO. The walkthrough follows
+the table's room-chat entry and seeds one real private message to expose its
+message-action menu; this is not full sending/receiving functional coverage.
 The dealer's lighter PNG is copied unchanged from
 `ui-design/asserts/ic_lighter/lighter.png` into the client asset bundle.
 

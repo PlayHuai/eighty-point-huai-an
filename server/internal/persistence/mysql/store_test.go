@@ -115,6 +115,7 @@ type memoryDB struct {
 	mu            sync.Mutex
 	state         *memoryState
 	lastExecQuery string
+	lastQuery     string
 	failLedgerFor string
 	failEvent     bool
 }
@@ -264,8 +265,11 @@ func (c *memoryConn) ExecContext(_ context.Context, query string, args []driver.
 
 func (c *memoryConn) QueryContext(_ context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
 	query = strings.Join(strings.Fields(query), " ")
+	c.db.lastQuery = query
 	state := c.current()
 	switch {
+	case strings.HasPrefix(query, "SELECT CAST(id AS CHAR), sender_id, recipient_id, body, created_at FROM chat_messages"):
+		return &memoryRows{columns: []string{"id", "sender_id", "recipient_id", "body", "created_at"}}, nil
 	case strings.HasPrefix(query, "SELECT kind, body FROM feedback"):
 		value, ok := state.feedback[args[0].Value.(string)+":"+args[1].Value.(string)]
 		rows := &memoryRows{columns: []string{"kind", "body"}}
@@ -482,6 +486,16 @@ type memoryResultRows int64
 
 func (r memoryResultRows) LastInsertId() (int64, error) { return 0, nil }
 func (r memoryResultRows) RowsAffected() (int64, error) { return int64(r), nil }
+
+func TestPrivateMessageQueryIncludesDeferredRetention(t *testing.T) {
+	store, db := newTestStore(t, testMemoryState())
+	if _, err := store.ListPrivateMessages(context.Background(), "one", "two", 0, 50); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(db.lastQuery, "(expires_at IS NULL OR expires_at > UTC_TIMESTAMP(6))") {
+		t.Fatalf("private history must include messages with deferred retention: %s", db.lastQuery)
+	}
+}
 
 func sortLedger(entries []memoryLedgerEntry) {
 	for i := 0; i < len(entries); i++ {

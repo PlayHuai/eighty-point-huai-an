@@ -354,6 +354,7 @@ func (s *roomServer) detailsMessage(ctx context.Context, details room.Details) (
 			member.Profile = &huaiv1.UserProfile{
 				UserId: domainMember.UserID, Nickname: domainMember.Nickname,
 			}
+			member.Rank = "练习AI"
 			continue
 		}
 		profile, exists := profiles[member.GetUserId()]
@@ -364,6 +365,8 @@ func (s *roomServer) detailsMessage(ctx context.Context, details room.Details) (
 			UserId: profile.UserID, Nickname: profile.Nickname, AvatarUrl: profile.AvatarURL,
 			CreatedAt: timestamppb.New(profile.CreatedAt),
 		}
+		member.Points = profile.Points
+		member.Rank = profile.Rank
 	}
 	return message, nil
 }

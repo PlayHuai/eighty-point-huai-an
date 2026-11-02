@@ -119,6 +119,12 @@ Future<AuthController> _authenticated(_FakeApiClient api) async {
 }
 
 class _FakeApiClient implements ApiClient {
+  @override
+  Future<void> changePassword({
+    required String accessToken,
+    required String currentPassword,
+    required String newPassword,
+  }) async => throw UnimplementedError();
   List<PlayerFriend> friends = [];
   List<PlayerFriend> requests = [];
   List<PlayerFriend> searchResults = [];

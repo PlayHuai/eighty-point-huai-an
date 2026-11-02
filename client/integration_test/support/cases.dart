@@ -11,11 +11,15 @@ import 'package:grpc/grpc.dart';
 
 import 'real_environment.dart';
 import 'game_scenarios.dart';
+import 'remaining_cases.dart';
+import 'practice_cases.dart';
 
 typedef RealCase = Future<void> Function(RealEnvironment);
 
 final Map<String, RealCase> realCases = {
   ...gameScenarios,
+  ...remainingCases,
+  ...practiceCases,
   'ENV-001': (e) async {
     expect(apiEndpointValue, 'http://192.168.117.129:8081');
     expect(websocketEndpointValue, 'ws://192.168.117.129:8080/events');
@@ -596,6 +600,7 @@ final Map<String, RealCase> realCases = {
     await e.tester.enterText(search, b.id);
     await e.tap(find.byTooltip('搜索'));
     await e.visible(find.text(b.session.nickname));
+    await e.captureUi('好友搜索结果');
     await e.tap(find.byTooltip('发送好友申请'));
     await e.visible(find.text('好友申请已发送。'));
     await e.api.respondFriendRequest(

@@ -21,6 +21,8 @@ type PublicProfile struct {
 	Nickname  string
 	AvatarURL string
 	CreatedAt time.Time
+	Points    int64
+	Rank      string
 }
 
 type PublicProfileRepository interface {

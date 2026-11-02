@@ -53,6 +53,21 @@ $report.Add('')
 $report.Add('Remaining issues (only a later PASS removes a prior failure):')
 foreach ($id in @($lastFailures.Keys | Sort-Object)) { $report.Add("$id $($lastFailures[$id])") }
 $report.Add('Commits are not proof of a fix; only a subsequent real test PASS verifies it.')
+$uiCatalog = Join-Path $PSScriptRoot 'ui.list'
+if (Test-Path -LiteralPath $uiCatalog) {
+    $coverage = New-Object 'Collections.Generic.List[string]'
+    $coverage.Add("Feature`tStatus`tPath")
+    $missing = 0
+    foreach ($row in @(Import-Csv -LiteralPath $uiCatalog -Delimiter "`t" -Encoding UTF8 -Header Feature,Name,Notes | Select-Object -Skip 1)) {
+        $image = Join-Path $OutputDirectory ("ui\" + $row.Name + '.png')
+        $status = 'MISSING'
+        if ((Test-Path -LiteralPath $image) -and (Get-Item -LiteralPath $image).Length -gt 0) { $status = 'CAPTURED' } else { $missing++ }
+        $coverage.Add("$($row.Feature)`t$status`t$image")
+    }
+    $report.Add('')
+    $report.Add("UI page/dialog inventory: missing=$missing. See ui-coverage.tsv; screenshots are visual evidence, not case PASS.")
+    [IO.File]::WriteAllLines((Join-Path $OutputDirectory 'ui-coverage.tsv'), $coverage.ToArray(), (New-Object Text.UTF8Encoding($false)))
+}
 $assessment = Join-Path $OutputDirectory 'review-assessment.txt'
 if (Test-Path -LiteralPath $assessment) {
     $report.Add('')

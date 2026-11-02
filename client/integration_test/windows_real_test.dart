@@ -1,7 +1,7 @@
 import 'dart:io';
 
-import 'package:eighty_point_huai_an/src/ui/game_table_screen.dart';
 import 'package:eighty_point_huai_an/src/ui/room_chat_screen.dart';
+import 'package:eighty_point_huai_an/src/api/request_id.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -12,6 +12,9 @@ import 'support/real_environment.dart';
 
 Future<void> main() async {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  // Avoid racing the native Windows IME when replacing an already-focused field.
+  setUp(binding.testTextInput.register);
+  tearDown(binding.testTextInput.unregister);
   const catalogPath = String.fromEnvironment('AUTO_TEST_CATALOG');
   const selectedPath = String.fromEnvironment('AUTO_TEST_SELECTION');
   const roundPath = String.fromEnvironment('AUTO_TEST_ROUND');
@@ -62,6 +65,19 @@ Future<void> main() async {
           find.byKey(const ValueKey('create-room-dialog')),
         );
         await environment.captureUi('创建房间弹窗');
+        await environment.tap(
+          find.byKey(const ValueKey('create-room-private')),
+        );
+        await environment.visible(
+          find.byKey(const ValueKey('create-room-password')),
+        );
+        await environment.captureUi('创建房间-密码房弹窗');
+        await environment.tap(find.text('取消'));
+        await environment.tap(find.text('修改密码'));
+        await environment.visible(
+          find.byKey(const ValueKey('password-current')),
+        );
+        await environment.captureUi('修改密码弹窗');
         await environment.tap(find.text('取消'));
         await environment.tap(find.text('房间号加入'));
         await environment.visible(find.text('通过房间号加入'));
@@ -70,12 +86,24 @@ Future<void> main() async {
         await environment.tap(find.text('反馈'));
         await environment.visible(find.byTooltip('关闭反馈'));
         await environment.captureUi('反馈弹窗');
+        await environment.tap(find.text('Bug'));
+        await environment.visible(find.text('建议'));
+        await environment.captureUi('反馈-类型选择菜单');
+        await environment.tap(find.text('建议').last);
         await environment.tap(find.byTooltip('关闭反馈'));
         await environment.tap(find.text('关于'));
         await environment.visible(find.text('更新记录'));
         await environment.captureUi('关于与版本信息');
         await environment.tap(find.text('关闭'));
         await realCases['FRIEND-001']!(environment);
+        final sender = environment.users.last;
+        final recipient = environment.users[environment.users.length - 2];
+        await environment.api.sendPrivateMessage(
+          accessToken: sender.token,
+          peerUserId: recipient.id,
+          body: 'UI参考消息，仅用于消息操作菜单截图。',
+          requestId: createRequestId(),
+        );
         await environment.tap(find.byTooltip('聊天'));
         await environment.visible(
           find.byWidgetPredicate(
@@ -84,20 +112,39 @@ Future<void> main() async {
           ),
         );
         await environment.captureUi('好友聊天');
+        await environment.visible(find.byTooltip('消息操作'));
+        await environment.tap(find.byTooltip('消息操作'));
+        await environment.visible(find.text('举报消息'));
+        await environment.captureUi('好友聊天-消息操作菜单');
+        await tester.tapAt(const Offset(1, 1));
+        await tester.pumpAndSettle();
         await tester.pageBack();
+        await tester.pumpAndSettle();
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+        final search = find.byWidgetPredicate(
+          (widget) =>
+              widget is TextField && widget.decoration?.labelText == '搜索玩家',
+        );
+        await tester.enterText(search, '');
+        await environment.tap(find.byTooltip('搜索'));
+        final requester = await environment.user();
+        await environment.api.sendFriendRequest(
+          accessToken: requester.token,
+          userId: recipient.id,
+          requestId: createRequestId(),
+        );
+        await environment.tap(find.text('好友申请'));
+        await environment.visible(find.text(requester.session.nickname));
+        await environment.captureUi('好友申请列表');
         await realCases['ROOM-001']!(environment);
         await environment.visible(find.text('站起'));
         await environment.captureUi('房间等待入座');
-        final table = tester.widget<GameTableScreen>(
-          find.byType(GameTableScreen),
-        );
-        // This existing page has no table route yet; capture it without
-        // claiming chat functionality or navigation coverage.
-        Navigator.of(tester.element(find.byType(GameTableScreen))).push<void>(
-          MaterialPageRoute(
-            builder: (_) => RoomChatScreen(auth: table.auth, room: table.room),
-          ),
-        );
+        await environment.tap(find.text('成员'));
+        await environment.visible(find.text('房间成员'));
+        await environment.captureUi('房间成员弹窗');
+        await environment.tap(find.text('关闭'));
+        await environment.tap(find.text('房间聊天'));
         await environment.visible(find.byType(RoomChatScreen));
         await environment.captureUi('房间聊天');
       } catch (error, stack) {
@@ -201,6 +248,6 @@ Future<void> main() async {
         }
       }
       if (failure != null) Error.throwWithStackTrace(failure, failureStack!);
-    }, timeout: const Timeout(Duration(minutes: 15)));
+    }, timeout: const Timeout(Duration(minutes: 30)));
   }
 }

@@ -183,4 +183,26 @@ class AuthController extends ChangeNotifier {
       AppLog.info('auth.logout.complete');
     }
   }
+
+  Future<void> changePassword(
+    String currentPassword,
+    String newPassword,
+  ) async {
+    final session = _session;
+    if (session == null) throw StateError('请先登录。');
+    await _api.changePassword(
+      accessToken: session.accessToken,
+      currentPassword: currentPassword,
+      newPassword: newPassword,
+    );
+    // The server revokes every session, including this one.
+    _session = null;
+    _error = null;
+    try {
+      await _store.clear();
+    } finally {
+      notifyListeners();
+    }
+    AppLog.info('auth.password.changed');
+  }
 }

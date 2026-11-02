@@ -206,6 +206,7 @@ message RoomMember {
   uint32 view_seat = 6;
   uint32 team = 7;
   string rank = 8;
+  int64 points = 9;
 }
 
 message RoomDetails {
