@@ -368,6 +368,8 @@ func (s *State) settle(score int, winning []engine.Card, winner int, fault bool)
 		engine.IsSpring(true, s.HandNumber, s.Trump.Level,
 			result.Resolution.GameWon && result.WinnerTeam == dealerTeam, score)
 	s.Phase, s.Result, s.Turn = HandOver, result, -1
+	s.Ready = [4]bool{}
+	s.WaitPrompt, s.WaitVotes = false, [4]int{}
 	s.History = append(s.History, HandHistory{Number: s.HandNumber, Tricks: append([]Trick(nil), s.Completed[s.CompletedBaseline:]...)})
 	if result.Resolution.GameWon {
 		s.Phase = Finished

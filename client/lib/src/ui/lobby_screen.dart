@@ -355,13 +355,6 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => showDialog<void>(
-              context: context,
-              builder: (_) => SettingsDialog(auth: widget.auth),
-            ),
-            child: const Text('设置'),
-          ),
-          TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
             child: const Text('取消'),
           ),
@@ -532,6 +525,13 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         ],
       ),
       actions: [
+        TextButton(
+          onPressed: () => showDialog<void>(
+            context: context,
+            builder: (_) => SettingsDialog(auth: widget.auth),
+          ),
+          child: const Text('设置'),
+        ),
         TextButton(
           onPressed: () => showDialog<bool>(
             context: context,

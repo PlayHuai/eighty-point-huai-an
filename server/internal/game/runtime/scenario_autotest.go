@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/game/engine"
 )
@@ -58,6 +59,9 @@ func (r *Repository) CreateScenario(config Config, name string) (State, error) {
 		err = fmt.Errorf("%w: unknown scenario %q", ErrInvalidConfig, name)
 	}
 	if err != nil {
+		return State{}, err
+	}
+	if err := scheduleTurn(&state, time.Now().UTC()); err != nil {
 		return State{}, err
 	}
 	r.mu.Lock()

@@ -108,8 +108,8 @@ final Map<String, Future<void> Function(RealEnvironment)> practiceCases = {
       requestId: createRequestId(),
     );
     var state = await _humanTurn(e, user, room.id);
-    expect(state.visibleHand.length, 25);
-    expect(state.bottomCards, isEmpty);
+    expect(state.visibleHand.length, state.phase == 'bury' ? 33 : 25);
+    if (state.phase != 'bury') expect(state.bottomCards, isEmpty);
     final id = createRequestId();
     final action = suggestedAction(state);
     final first = await e.submit(user, state, action, requestId: id);
@@ -226,7 +226,9 @@ Future<pb.GameSnapshot> _humanTurn(
     }
     if (state.phase == 'finished' ||
         (state.currentTurnUserId == user.id &&
-            state.availableActions.isNotEmpty) ||
+            state.availableActions.any(
+              {'DECLARE', 'BURY', 'COUNTER', 'PASS', 'PLAY'}.contains,
+            )) ||
         state.availableActions.contains('CONTINUE'))
       return state;
     if (timeout.elapsed > const Duration(minutes: 2)) {

@@ -14,12 +14,40 @@ func readySession(t *testing.T, practice bool) (*Repository, State) {
 	if practice {
 		players = [4]string{"a", "practice:ready:Yao", "practice:ready:Jia", "practice:ready:Zhang"}
 	}
+
 	r := NewRepository(func([]engine.Card) {})
 	s, err := r.Create(Config{ID: "ready", Players: players, RequireReady: true, Practice: practice, DealInterval: 200 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return r, s
+}
+func TestSettledHandRequiresFreshReadyAndStillSchedulesTimeout(t *testing.T) {
+	for _, practice := range []bool{false, true} {
+		r, s := readySession(t, practice)
+		s.Ready = [4]bool{true, true, true, true}
+		if err := s.settle(80, nil, 1, false); err != nil {
+			t.Fatal(err)
+		}
+		if s.Ready != [4]bool{} || s.Phase != HandOver {
+			t.Fatalf("stale ready state: %+v", s)
+		}
+		s.Deadline = time.Time{}
+		if err := scheduleTurn(&s, time.Now().UTC()); err != nil {
+			t.Fatal(err)
+		}
+		if s.Ready[0] || s.Ready[1] != practice {
+			t.Fatal("human must prepare again; robots are pre-ready")
+		}
+		r.sessions[s.ID].state = s
+		if due := r.Due(s.Deadline); len(due) != 1 {
+			t.Fatal("negative turn must not exclude intermission deadline")
+		}
+		next, err := r.AdvanceWaiting(s.ID, s.Version, s.Deadline)
+		if err != nil || !next.WaitPrompt {
+			t.Fatalf("intermission prompt: %v", err)
+		}
+	}
 }
 func readyAction(t *testing.T, r *Repository, s State, seat int) State {
 	t.Helper()

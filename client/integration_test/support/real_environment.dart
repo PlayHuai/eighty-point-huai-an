@@ -483,7 +483,9 @@ class RealEnvironment {
     await waitFor(
       () =>
           find.byKey(const ValueKey('play-buttons')).evaluate().isNotEmpty ||
-          find.text('准备').evaluate().isNotEmpty,
+          find.text('准备').evaluate().isNotEmpty ||
+          find.text('等待四位玩家入座并准备').evaluate().isNotEmpty ||
+          find.byKey(const ValueKey('void-result')).evaluate().isNotEmpty,
       'loaded active or finished game actions',
     );
     await captureUi('游戏牌桌');

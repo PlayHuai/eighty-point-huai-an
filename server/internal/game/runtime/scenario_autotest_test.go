@@ -5,9 +5,24 @@ package runtime
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/game/engine"
 )
+
+func TestFinalFixtureUsesPlayingDeadlineNotDealingDeadline(t *testing.T) {
+	r := NewRepository(nil)
+	s, err := r.CreateScenario(Config{ID: "deadline-fixture", Players: [4]string{"a", "b", "c", "d"}, DealInterval: 200 * time.Millisecond}, "spring")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Phase != Playing || time.Until(s.Deadline) < 59*time.Second {
+		t.Fatalf("fixture inherited dealing deadline: %s %s", s.Phase, s.Deadline)
+	}
+	if len(r.Due(time.Now().Add(time.Second))) != 0 {
+		t.Fatal("fixture played itself before clients could inspect it")
+	}
+}
 
 func TestScenarioCardInventoryAndFinalTransitions(t *testing.T) {
 	names := []string{"declaration", "red", "fallback/2", "fallback/5", "fallback/15", "fallback/16",

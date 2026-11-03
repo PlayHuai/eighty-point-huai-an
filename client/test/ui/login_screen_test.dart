@@ -90,6 +90,11 @@ void main() {
 
     await tester.pumpWidget(ClientApp(auth: auth));
     await tester.pumpAndSettle();
+    expect(find.text('设置'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('设置')).dx,
+      lessThan(tester.getTopLeft(find.text('修改密码')).dx),
+    );
     await tester.pump(const Duration(seconds: 5));
 
     expect(api.hallListCount, 1);

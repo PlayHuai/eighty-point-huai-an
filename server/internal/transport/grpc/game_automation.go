@@ -68,7 +68,11 @@ func (s *gameServer) advanceDue(now time.Time) {
 			_, err = s.rooms.CompleteGameSession(state.ID, state.ID)
 		}
 		if err == nil {
-			err = s.publishUpdate(context.Background(), state.ID, state.Players[seat], updated.Version)
+			publisherSeat := seat
+			if publisherSeat < 0 || publisherSeat >= len(state.Players) {
+				publisherSeat = state.Dealer
+			}
+			err = s.publishUpdate(context.Background(), state.ID, state.Players[publisherSeat], updated.Version)
 		}
 		if err != nil {
 			logging.Error("game.timeout.publish.failed session=%q error=%q", state.ID, err)

@@ -232,7 +232,8 @@ func (r *Repository) Due(now time.Time) []State {
 	var due []State
 	for _, item := range r.sessions {
 		s := item.state
-		if s.Turn < 0 || s.Turn > 3 || s.Phase == Finished || s.Deadline.IsZero() {
+		waiting := s.RequireReady && (s.Phase == AwaitingReady || s.Phase == HandOver)
+		if (!waiting && (s.Turn < 0 || s.Turn > 3)) || s.Phase == Finished || s.Phase == Void || s.Deadline.IsZero() {
 			continue
 		}
 		if !now.Before(s.Deadline) {
