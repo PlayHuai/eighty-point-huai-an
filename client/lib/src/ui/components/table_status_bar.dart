@@ -8,6 +8,8 @@ class TableStatusBar extends StatelessWidget {
     required this.opponentLevel,
     required this.points,
     required this.scoringPerspective,
+    this.trumpSuit = '',
+    this.phase = '',
     super.key,
   });
 
@@ -15,6 +17,8 @@ class TableStatusBar extends StatelessWidget {
   final String opponentLevel;
   final int points;
   final bool scoringPerspective;
+  final String trumpSuit;
+  final String phase;
 
   @override
   Widget build(BuildContext context) {
@@ -50,6 +54,7 @@ class TableStatusBar extends StatelessWidget {
               ],
             ),
             key: const ValueKey('score-right'),
+            style: Theme.of(context).textTheme.titleMedium,
           );
           if (constraints.maxWidth < 600) {
             return Wrap(
@@ -60,11 +65,27 @@ class TableStatusBar extends StatelessWidget {
             );
           }
           return Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
             children: [
-              const Spacer(),
-              Expanded(flex: 2, child: levels),
-              Expanded(
-                child: Align(alignment: Alignment.centerRight, child: score),
+              levels,
+              const SizedBox(width: DarkTokens.spacingS5),
+              Text(
+                '主花色 ${switch (trumpSuit) {
+                  'spades' => '♠',
+                  'hearts' => '♥',
+                  'clubs' => '♣',
+                  'diamonds' => '♦',
+                  _ => '无主',
+                }}',
+                style: const TextStyle(color: DarkTokens.goldBright),
+              ),
+              const SizedBox(width: DarkTokens.spacingS5),
+              score,
+              const Expanded(child: SizedBox.shrink()),
+              Text(
+                phase,
+                style: const TextStyle(color: DarkTokens.textSecondary),
               ),
             ],
           );

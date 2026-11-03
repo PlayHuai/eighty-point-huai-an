@@ -86,7 +86,7 @@ Future<void> main() async {
         await environment.tap(find.text('反馈'));
         await environment.visible(find.byTooltip('关闭反馈'));
         await environment.captureUi('反馈弹窗');
-        await environment.tap(find.text('Bug'));
+        await environment.tap(find.text('问题'));
         await environment.visible(find.text('建议'));
         await environment.captureUi('反馈-类型选择菜单');
         await environment.tap(find.text('建议').last);
@@ -248,6 +248,6 @@ Future<void> main() async {
         }
       }
       if (failure != null) Error.throwWithStackTrace(failure, failureStack!);
-    }, timeout: const Timeout(Duration(minutes: 30)));
+    }, timeout: Timeout(Duration(minutes: id == 'PRACTICE-004' ? 120 : 30)));
   }
 }

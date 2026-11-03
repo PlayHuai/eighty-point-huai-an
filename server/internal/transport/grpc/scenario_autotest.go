@@ -15,5 +15,7 @@ func createGameSession(sessions *runtime.Repository, config runtime.Config, scen
 	if len(scenarios) != 1 || os.Getenv("HUAI_AUTOTEST") != "1" {
 		return runtime.State{}, runtime.ErrInvalidConfig
 	}
+	// Fixtures enter the explicitly requested phase; normal rooms always use readiness.
+	config.RequireReady = false
 	return sessions.CreateScenario(config, scenarios[0])
 }

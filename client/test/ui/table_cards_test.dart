@@ -30,6 +30,26 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('bottom-cards-panel')));
     await tester.pump();
     expect(find.byType(CardVisual), findsNWidgets(2));
+    final panel = tester.getRect(
+      find.byKey(const ValueKey('bottom-cards-panel')),
+    );
+    final card = tester.getRect(find.byType(CardVisual).first);
+    final container = tester.widget<Container>(
+      find
+          .descendant(
+            of: find.byKey(const ValueKey('bottom-cards-panel')),
+            matching: find.byType(Container),
+          )
+          .first,
+    );
+    final border = ((container.decoration! as BoxDecoration).border! as Border)
+        .bottom
+        .width;
+    expect(panel.bottom - border - card.bottom, closeTo(6, 0.01));
+    final inset = find.byKey(const ValueKey('card-face-inset')).first;
+    final image = find.descendant(of: inset, matching: find.byType(Image));
+    expect(tester.getRect(image).left - tester.getRect(inset).left, 2);
+    expect(tester.getRect(inset).bottom - tester.getRect(image).bottom, 2);
     await tester.tap(find.byKey(const ValueKey('bottom-cards-panel')));
     await tester.pump();
     expect(find.byType(CardVisual), findsNothing);

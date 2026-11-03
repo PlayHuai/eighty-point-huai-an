@@ -184,6 +184,13 @@ func newApplication(db *sql.DB, allowedOrigins []string) (*application, error) {
 		return nil, err
 	}
 	gameSessions := runtime.NewPersistentRepository(nil, store)
+	rooms.SetWaitingLeaveHandler(func(details room.Details, userID string) error {
+		err := gameSessions.AbortWaiting(details.GameSessionID, userID)
+		if errors.Is(err, runtime.ErrPhase) {
+			return room.ErrRoomStarted
+		}
+		return err
+	})
 	authService, err := auth.NewService(store)
 	if err != nil {
 		return nil, fmt.Errorf("create auth service: %w", err)
@@ -196,6 +203,10 @@ func newApplication(db *sql.DB, allowedOrigins []string) (*application, error) {
 	if err != nil {
 		return nil, err
 	}
+	rooms.SetVisibilityReader(func(ctx context.Context, userID string) (bool, error) {
+		value, err := playerService.Settings(ctx, userID)
+		return value.ShowHand, err
+	})
 	hub := websocket.NewHub()
 	hub.ObserveRooms(rooms)
 	chatService, err := chat.NewServiceWithRoomAccess(store, hub, rooms)
@@ -212,7 +223,9 @@ func newApplication(db *sql.DB, allowedOrigins []string) (*application, error) {
 	))
 	registrations := []func() error{
 		func() error { return grpctransport.RegisterAuthService(grpcServer, authService) },
-		func() error { return grpctransport.RegisterPlayerService(grpcServer, playerService) },
+		func() error {
+			return grpctransport.RegisterPlayerService(grpcServer, playerService, rooms.ApplyHandVisibility)
+		},
 		func() error { return grpctransport.RegisterFriendService(grpcServer, socialService, hub) },
 		func() error {
 			return grpctransport.RegisterLobbyServiceWithPracticeStarter(

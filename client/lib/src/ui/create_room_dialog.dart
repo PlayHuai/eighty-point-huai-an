@@ -23,6 +23,8 @@ class CreateRoomDialog extends StatefulWidget {
     String password,
     bool allowSpectators,
     int minimumPoints,
+    int dealIntervalMs,
+    int counterWindowMs,
   )
   onCreate;
 
@@ -34,11 +36,24 @@ class _CreateRoomDialogState extends State<CreateRoomDialog> {
   final _nameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _minimumPointsController = TextEditingController(text: '0');
+  final _dealIntervalController = TextEditingController(text: '0.2');
+  final _counterWindowController = TextEditingController(text: '10');
   bool _privateRoom = false;
   bool _allowSpectators = false;
   bool _submitting = false;
 
   bool get _isFriendRoom => widget.hall.id == friendRoomHallId;
+
+  int? _milliseconds(String text) {
+    if (!RegExp(r'^\d+(\.\d{1,3})?$').hasMatch(text.trim())) return null;
+    final seconds = double.tryParse(text.trim());
+    if (seconds == null ||
+        !seconds.isFinite ||
+        seconds <= 0 ||
+        seconds * 1000 > 4294967295)
+      return null;
+    return (seconds * 1000).round();
+  }
 
   String? get _pointsError {
     if (_isFriendRoom) return null;
@@ -60,13 +75,17 @@ class _CreateRoomDialogState extends State<CreateRoomDialog> {
       !_submitting &&
       _nameController.text.trim().isNotEmpty &&
       (_isFriendRoom || !_privateRoom || _passwordController.text.isNotEmpty) &&
-      _pointsError == null;
+      _pointsError == null &&
+      _milliseconds(_dealIntervalController.text) != null &&
+      _milliseconds(_counterWindowController.text) != null;
 
   @override
   void dispose() {
     _nameController.dispose();
     _passwordController.dispose();
     _minimumPointsController.dispose();
+    _dealIntervalController.dispose();
+    _counterWindowController.dispose();
     super.dispose();
   }
 
@@ -79,6 +98,8 @@ class _CreateRoomDialogState extends State<CreateRoomDialog> {
         !_isFriendRoom && _privateRoom ? _passwordController.text : '',
         !_isFriendRoom && _allowSpectators,
         _isFriendRoom ? 0 : int.parse(_minimumPointsController.text),
+        _milliseconds(_dealIntervalController.text)!,
+        _milliseconds(_counterWindowController.text)!,
       );
     } finally {
       if (mounted) setState(() => _submitting = false);
@@ -215,6 +236,42 @@ class _CreateRoomDialogState extends State<CreateRoomDialog> {
                   enabled: !_submitting,
                   maxLength: 32,
                   decoration: _decoration('输入房间名称').copyWith(counterText: ''),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              _field(
+                '发牌间隔（秒／张）',
+                TextField(
+                  key: const ValueKey('create-room-deal-interval'),
+                  controller: _dealIntervalController,
+                  enabled: !_submitting,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: _decoration('默认 0.2 秒').copyWith(
+                    errorText:
+                        _milliseconds(_dealIntervalController.text) == null
+                        ? '请输入正数秒数，最多3位小数且不超过4294967.295秒'
+                        : null,
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              _field(
+                '反主间隔（秒／人）',
+                TextField(
+                  key: const ValueKey('create-room-counter-window'),
+                  controller: _counterWindowController,
+                  enabled: !_submitting,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: _decoration('默认 10 秒').copyWith(
+                    errorText:
+                        _milliseconds(_counterWindowController.text) == null
+                        ? '请输入正数秒数，最多3位小数且不超过4294967.295秒'
+                        : null,
+                  ),
                   onChanged: (_) => setState(() {}),
                 ),
               ),

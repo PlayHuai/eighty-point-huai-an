@@ -375,6 +375,8 @@ class _FakeApiClient implements ApiClient {
     required String password,
     bool allowSpectators = false,
     int minimumPoints = 0,
+    int dealIntervalMs = 200,
+    int counterWindowMs = 10000,
     String requestId = '',
   }) => throw UnimplementedError();
 

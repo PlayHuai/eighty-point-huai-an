@@ -25,6 +25,7 @@ const testPassword = 'Cards2026!integration';
 const apiEndpointValue = String.fromEnvironment('API_ENDPOINT');
 const websocketEndpointValue = String.fromEnvironment('WEBSOCKET_ENDPOINT');
 const uiOutputPath = String.fromEnvironment('AUTO_TEST_UI');
+const roundOutputPath = String.fromEnvironment('AUTO_TEST_ROUND');
 final apiEndpoint = Uri.parse(apiEndpointValue);
 final websocketEndpoint = Uri.parse(websocketEndpointValue);
 
@@ -367,14 +368,75 @@ class RealEnvironment {
       ),
     );
     step('Started real four-player game ${snapshot.gameSessionId}');
-    return (players, created, snapshot);
+    if (snapshot.phase == 'awaiting_ready') {
+      for (final player in players.skip(1)) {
+        final waiting = await rawSnapshot(player, created.id);
+        if (waiting.availableActions.contains('CONTINUE'))
+          await submit(
+            player,
+            waiting,
+            pb.GameAction(continueAction: pb.ContinueAction()),
+          );
+      }
+    }
+    return (
+      players,
+      created,
+      await this.snapshot(players.first, snapshot.gameSessionId),
+    );
   }
 
-  Future<pb.GameSnapshot> snapshot(TestUser user, String id) =>
+  Future<pb.GameSnapshot> rawSnapshot(TestUser user, String id) =>
       game.getGameSnapshot(
         pb.GameSnapshotRequest(gameSessionId: id),
         options: options(user),
       );
+
+  Future<pb.GameSnapshot> enterPlaying(
+    List<TestUser> players,
+    pb.GameSnapshot initial,
+  ) async {
+    var state = initial;
+    final timeout = Stopwatch()..start();
+    while (state.phase != 'playing') {
+      if (timeout.elapsed > const Duration(minutes: 2))
+        throw TimeoutException('Game did not reach playing.');
+      if (state.phase == 'declaration') {
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+      } else {
+        final actor = players.singleWhere(
+          (user) => user.id == state.currentTurnUserId,
+        );
+        state = await snapshot(actor, state.gameSessionId);
+        final action = switch (state.phase) {
+          'bury' => pb.GameAction(
+            buryCards: pb.BuryCardsAction(cards: state.visibleHand.take(8)),
+          ),
+          'counter' => pb.GameAction(pass: pb.PassAction()),
+          _ => throw StateError('Unexpected setup phase ${state.phase}'),
+        };
+        await submit(actor, state, action);
+      }
+      state = await snapshot(players.first, state.gameSessionId);
+    }
+    return snapshot(
+      players.singleWhere((user) => user.id == state.currentTurnUserId),
+      state.gameSessionId,
+    );
+  }
+
+  Future<pb.GameSnapshot> snapshot(TestUser user, String id) async {
+    final timeout = Stopwatch()..start();
+    while (true) {
+      final state = await rawSnapshot(user, id);
+      if (state.phase != 'dealing') return state;
+      if (timeout.elapsed > const Duration(minutes: 2)) {
+        throw TimeoutException('Server dealing did not finish for $id.');
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      await tester.pump();
+    }
+  }
 
   Future<pb.SubmitActionResponse> submit(
     TestUser user,
@@ -421,7 +483,7 @@ class RealEnvironment {
     await waitFor(
       () =>
           find.byKey(const ValueKey('play-buttons')).evaluate().isNotEmpty ||
-          find.text('开始游戏').evaluate().isNotEmpty,
+          find.text('准备').evaluate().isNotEmpty,
       'loaded active or finished game actions',
     );
     await captureUi('游戏牌桌');
@@ -437,6 +499,11 @@ class RealEnvironment {
     final directory = Directory(uiOutputPath)..createSync(recursive: true);
     final path = '${directory.path}\\$function.png';
     await screenshot(path);
+    if (roundOutputPath.isNotEmpty) {
+      final history = Directory('$roundOutputPath\\ui')
+        ..createSync(recursive: true);
+      await File(path).copy('${history.path}\\$function.png');
+    }
     File('${directory.path}\\screenshots.tsv').writeAsStringSync(
       '$function\t${DateTime.now().toIso8601String()}\t$path\n',
       mode: FileMode.append,

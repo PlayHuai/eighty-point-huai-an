@@ -33,6 +33,20 @@ Equivalent direct PowerShell invocation:
 .\test\windows\Run.ps1 -MaxTurn 4 -StartRound 3 -OutputDirectory D:\huai_an_80\auto_test
 ```
 
+To rerun failures **plus** the new v3 cases in rounds 2–3:
+
+```powershell
+.\test\windows\Run.ps1 -MaxTurn 3 -StartRound 2 -OutputDirectory D:\huai_an_80\auto_test\full_run_20261103 -IncludeCaseIds TABLE-001,TABLE-002,TABLE-003,TABLE-004,TABLE-005,TABLE-006,TABLE-007,TABLE-008
+```
+
+`IncludeCaseIds` applies to retry rounds, merges with failures, and allows reruns
+even when the preceding round passed. TABLE-006 waits a real five minutes;
+normal rooms test the real ready barrier and ten-second fallback. Explicit rare-rule
+fixtures enter the requested phase directly, only in the `autotest` build.
+Screenshots of changed screens/dialogs are retained in `<output>\ui`.
+Each round also keeps its own copies in `<output>\第{N}轮\ui`, so later
+screenshots cannot replace earlier visual evidence.
+
 Default output: `D:\huai_an_80\auto_test`. The first run creates `need_test.list`
 from every non-chat case. It accepts a case ID followed by its description, so
 reviewers may narrow it. Preserve case IDs when replacing descriptions with issue
@@ -55,6 +69,13 @@ Widget gestures and text entry are automated. The integration binding registers
 Flutter's test text-input channel to avoid native Windows IME races when editing
 the same focused field repeatedly; native hardware-keyboard/IME behavior itself
 is not covered. UI navigation waits for route transitions before the next action.
+
+Helpers wait for authoritative single-card dealing to finish and for delayed
+robots to return control, rather than expecting immediate completion in an RPC.
+Default dealing takes 20 seconds per hand; robot moves take 2–4 seconds.
+The full practice-match case has a 120-minute wall-clock limit (other cases:
+30 minutes), and the native driver has a four-hour overall limit. These remain
+bounded real-time tests; no game clock is accelerated or rule assertion skipped.
 
 ## Deployment safety
 

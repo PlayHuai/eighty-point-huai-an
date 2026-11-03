@@ -54,7 +54,12 @@ type Settings struct {
 	MinimumPoints   int64
 	AllowSpectators bool
 	Password        string
+	DealIntervalMS  uint32
+	CounterWindowMS uint32
 }
+
+const DefaultDealIntervalMS uint32 = 200
+const DefaultCounterWindowMS uint32 = 10000
 
 type Summary struct {
 	ID              string
@@ -69,6 +74,8 @@ type Summary struct {
 	MinimumPoints   int64
 	Version         uint64
 	PracticeMode    bool
+	DealIntervalMS  uint32
+	CounterWindowMS uint32
 }
 
 type Member struct {
@@ -109,13 +116,15 @@ type roomState struct {
 }
 
 type Manager struct {
-	mu          sync.RWMutex
-	rooms       map[string]*roomState
-	hallRoomIDs map[string][]string
-	observerMu  sync.RWMutex
-	observer    func(Details)
-	cleanupMu   sync.RWMutex
-	cleanup     func(Details)
+	waitingLeave     func(Details, string) error
+	visibilityReader func(context.Context, string) (bool, error)
+	mu               sync.RWMutex
+	rooms            map[string]*roomState
+	hallRoomIDs      map[string][]string
+	observerMu       sync.RWMutex
+	observer         func(Details)
+	cleanupMu        sync.RWMutex
+	cleanup          func(Details)
 }
 
 func (m *Manager) SetSessionCleanup(cleanup func(Details)) {
@@ -171,6 +180,7 @@ func (m *Manager) CreatePracticeRoom(ownerID, nickname string) (Details, error) 
 		summary: Summary{
 			ID: id, HallID: "practice", OwnerID: ownerID, Name: "练习房",
 			Status: StatusWaiting, OccupiedSeats: 4, Capacity: 4, PracticeMode: true,
+			DealIntervalMS: DefaultDealIntervalMS, CounterWindowMS: DefaultCounterWindowMS,
 		},
 		ownerID: ownerID,
 		members: map[string]memberState{
@@ -308,6 +318,12 @@ func (m *Manager) startRoom(
 }
 
 func (m *Manager) CreateRoom(hallID, ownerID string, ownerPoints int64, settings Settings) (Details, error) {
+	if settings.DealIntervalMS == 0 {
+		settings.DealIntervalMS = DefaultDealIntervalMS
+	}
+	if settings.CounterWindowMS == 0 {
+		settings.CounterWindowMS = DefaultCounterWindowMS
+	}
 	hall, err := lobby.FindHall(hallID)
 	if err != nil {
 		return Details{}, lobby.ErrUnknownHall
@@ -331,7 +347,8 @@ func (m *Manager) CreateRoom(hallID, ownerID string, ownerPoints int64, settings
 			ID: id, HallID: hallID, OwnerID: ownerID, Name: strings.TrimSpace(settings.Name),
 			Status: StatusWaiting, Capacity: 4,
 			HasPassword: settings.Password != "", AllowSpectators: settings.AllowSpectators,
-			MinimumPoints: settings.MinimumPoints,
+			MinimumPoints:  settings.MinimumPoints,
+			DealIntervalMS: settings.DealIntervalMS, CounterWindowMS: settings.CounterWindowMS,
 		},
 		ownerID: ownerID, minimumPoints: settings.MinimumPoints,
 		members: make(map[string]memberState), invitees: make(map[string]struct{}),
@@ -820,7 +837,13 @@ func (m *Manager) LeaveRoom(roomID, userID string, expectedVersion uint64) (Deta
 	}
 	if member.Role == RolePlayer && member.Seat != 0 && state.summary.Status == StatusPlaying &&
 		!state.summary.PracticeMode {
-		return Details{}, ErrRoomStarted
+		if m.waitingLeave == nil {
+			return Details{}, ErrRoomStarted
+		}
+		if err := m.waitingLeave(snapshotLocked(state), userID); err != nil {
+			return Details{}, err
+		}
+		state.summary.Status = StatusWaiting
 	}
 	delete(state.members, userID)
 	delete(state.joinedInvites, userID)
@@ -832,8 +855,24 @@ func (m *Manager) LeaveRoom(roomID, userID string, expectedVersion uint64) (Deta
 		state.members = make(map[string]memberState)
 		state.summary.OccupiedSeats = 0
 	}
-	if userID == state.ownerID && state.summary.Status == StatusWaiting {
+	playersRemain := false
+	for _, candidate := range state.members {
+		if candidate.Role == RolePlayer {
+			playersRemain = true
+			break
+		}
+	}
+	if !playersRemain {
 		state.summary.Status = StatusClosed
+	}
+	if userID == state.ownerID && state.summary.Status != StatusClosed {
+		for _, candidate := range state.members {
+			if candidate.Role == RolePlayer {
+				state.ownerID = candidate.UserID
+				state.summary.OwnerID = candidate.UserID
+				break
+			}
+		}
 	}
 	state.version++
 	m.evictIfEmpty(state)
@@ -929,7 +968,7 @@ func (m *Manager) GetRoom(roomID, userID string) (Details, error) {
 	if _, exists := state.members[userID]; !exists {
 		return Details{}, ErrNotMember
 	}
-	return snapshotLocked(state), nil
+	return m.resolveVisibility(snapshotLocked(state))
 }
 
 func (m *Manager) GetSummary(roomID string) (Summary, error) {

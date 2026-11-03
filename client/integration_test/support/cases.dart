@@ -13,6 +13,7 @@ import 'real_environment.dart';
 import 'game_scenarios.dart';
 import 'remaining_cases.dart';
 import 'practice_cases.dart';
+import 'v3_cases.dart';
 
 typedef RealCase = Future<void> Function(RealEnvironment);
 
@@ -20,6 +21,7 @@ final Map<String, RealCase> realCases = {
   ...gameScenarios,
   ...remainingCases,
   ...practiceCases,
+  ...v3Cases,
   'ENV-001': (e) async {
     expect(apiEndpointValue, 'http://192.168.117.129:8081');
     expect(websocketEndpointValue, 'ws://192.168.117.129:8080/events');
@@ -377,19 +379,24 @@ final Map<String, RealCase> realCases = {
     );
   },
   'ROOM-008': (e) async {
-    final (players, created, _) = await e.start();
+    final players = [for (var i = 0; i < 4; i++) await e.user()];
+    final created = await e.create(players.first);
+    for (var i = 0; i < 4; i++) {
+      await e.join(players[i], created.id);
+      await e.sit(players[i], created.id, i + 1);
+    }
     final current = await e.details(players[1], created.id);
-    await grpcError(
-      () => e.room.startGame(
-        pb.RoomRequest(
-          roomId: created.id,
-          requestId: createRequestId(),
-          expectedVersion: current.version,
-        ),
-        options: e.options(players[1]),
+    final started = await e.room.startGame(
+      pb.RoomRequest(
+        roomId: created.id,
+        requestId: createRequestId(),
+        expectedVersion: current.version,
       ),
-      StatusCode.permissionDenied,
+      options: e.options(players[1]),
     );
+    expect(started.phase, 'awaiting_ready');
+    expect(started.readySeats, [2]);
+    expect(started.visibleHand, isEmpty);
   },
   'ROOM-009': (e) async {
     final (players, created, state) = await e.start();
@@ -488,6 +495,18 @@ final Map<String, RealCase> realCases = {
       final action = pb.GameAction();
       switch (state.phase) {
         case 'declaration':
+          final level = state.visibleHand.where(
+            (card) => card.split(':')[1] == '${state.trumpLevel}',
+          );
+          if (level.isEmpty) {
+            await Future<void>.delayed(const Duration(milliseconds: 200));
+            state = await e.snapshot(players.first, state.gameSessionId);
+            continue;
+          }
+          action.declareTrump = pb.DeclareTrumpAction(
+            cards: [level.first],
+            suit: level.first.split(':').first,
+          );
         case 'counter':
           action.pass = pb.PassAction();
         case 'bury':
@@ -515,10 +534,13 @@ final Map<String, RealCase> realCases = {
     expect(state.capturedPoints, greaterThanOrEqualTo(Int64.ZERO));
   },
   'GAME-002': (e) async {
-    final (players, _, initial) = await e.start();
+    final (players, _, started) = await e.start();
+    final initial = await e.enterPlaying(players, started);
     final actor = players.singleWhere((p) => p.id == initial.currentTurnUserId);
     final id = createRequestId();
-    final action = pb.GameAction(pass: pb.PassAction());
+    final action = pb.GameAction(
+      playCards: pb.PlayCardsAction(cards: initial.suggestedPlay),
+    );
     final first = await e.submit(actor, initial, action, requestId: id);
     final duplicate = await e.submit(actor, initial, action, requestId: id);
     expect(duplicate.stateVersion, first.stateVersion);
@@ -537,13 +559,14 @@ final Map<String, RealCase> realCases = {
     );
   },
   'GAME-003': (e) async {
-    final (players, _, initial) = await e.start();
+    final (players, _, started) = await e.start();
+    final initial = await e.enterPlaying(players, started);
     final actor = players.singleWhere((p) => p.id == initial.currentTurnUserId);
-    await e.submit(actor, initial, pb.GameAction(pass: pb.PassAction()));
-    await grpcError(
-      () => e.submit(actor, initial, pb.GameAction(pass: pb.PassAction())),
-      StatusCode.aborted,
+    final action = pb.GameAction(
+      playCards: pb.PlayCardsAction(cards: initial.suggestedPlay),
     );
+    await e.submit(actor, initial, action);
+    await grpcError(() => e.submit(actor, initial, action), StatusCode.aborted);
     expect(
       (await e.snapshot(actor, initial.gameSessionId)).stateVersion,
       initial.stateVersion + 1,
@@ -568,9 +591,16 @@ final Map<String, RealCase> realCases = {
     );
   },
   'GAME-005': (e) async {
-    final (players, _, initial) = await e.start();
+    final (players, _, started) = await e.start();
+    final initial = await e.enterPlaying(players, started);
     final actor = players.singleWhere((p) => p.id == initial.currentTurnUserId);
-    await e.submit(actor, initial, pb.GameAction(pass: pb.PassAction()));
+    await e.submit(
+      actor,
+      initial,
+      pb.GameAction(
+        playCards: pb.PlayCardsAction(cards: initial.suggestedPlay),
+      ),
+    );
     final reconnect = await e.game.requestReconnect(
       pb.RequestReconnectRequest(
         gameSessionId: initial.gameSessionId,

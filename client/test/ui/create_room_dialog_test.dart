@@ -38,7 +38,7 @@ Future<void> _openDialog(
   WidgetTester tester, {
   LobbyHall hall = _hall,
   AsyncValue<PlayerStatistics?> statistics = const AsyncData(_statistics),
-  Future<void> Function(String, String, bool, int)? onCreate,
+  Future<void> Function(String, String, bool, int, int, int)? onCreate,
   VoidCallback? onRetryStatistics,
   double textScale = 1,
   Size? surfaceSize = const Size(1440, 900),
@@ -63,7 +63,7 @@ Future<void> _openDialog(
                 hall: hall,
                 statistics: statistics,
                 onRetryStatistics: onRetryStatistics ?? () {},
-                onCreate: onCreate ?? (_, _, _, _) async {},
+                onCreate: onCreate ?? (_, _, _, _, _, _) async {},
               ),
             ),
             child: const Text('打开'),
@@ -78,6 +78,40 @@ Future<void> _openDialog(
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  testWidgets(
+    'room timing defaults and positive millisecond precision are submitted',
+    (tester) async {
+      (int, int)? submitted;
+      await _openDialog(
+        tester,
+        onCreate: (_, _, _, _, deal, counter) async {
+          submitted = (deal, counter);
+        },
+      );
+      expect(
+        tester.widget<TextField>(_key('deal-interval')).controller!.text,
+        '0.2',
+      );
+      expect(
+        tester.widget<TextField>(_key('counter-window')).controller!.text,
+        '10',
+      );
+      await tester.enterText(_key('name'), '节奏测试');
+      final create = find.widgetWithText(FilledButton, '创建');
+      for (final invalid in ['0', '-1', 'NaN', '0.0001', '4294967.296']) {
+        await tester.enterText(_key('deal-interval'), invalid);
+        await tester.pump();
+        expect(tester.widget<FilledButton>(create).onPressed, isNull);
+      }
+      await tester.enterText(_key('deal-interval'), '0.125');
+      await tester.ensureVisible(_key('counter-window'));
+      await tester.enterText(_key('counter-window'), '12.5');
+      await tester.pumpAndSettle();
+      await tester.tap(create);
+      await tester.pumpAndSettle();
+      expect(submitted, (125, 12500));
+    },
+  );
   setUpAll(() async {
     for (final (family, asset) in [
       ('Inter', 'assets/fonts/Inter/Inter.ttf'),
@@ -201,7 +235,7 @@ void main() {
     final calls = <(String, String, bool, int)>[];
     await _openDialog(
       tester,
-      onCreate: (name, password, spectators, points) async {
+      onCreate: (name, password, spectators, points, deal, counter) async {
         calls.add((name, password, spectators, points));
       },
     );
@@ -265,7 +299,7 @@ void main() {
     var calls = 0;
     await _openDialog(
       tester,
-      onCreate: (_, _, _, _) {
+      onCreate: (_, _, _, _, _, _) {
         calls++;
         return pending.future;
       },
@@ -312,7 +346,7 @@ void main() {
         maximumPoints: 0,
         multiplier: 1,
       ),
-      onCreate: (name, password, spectators, points) async {
+      onCreate: (name, password, spectators, points, deal, counter) async {
         calls.add((name, password, spectators, points));
       },
     );

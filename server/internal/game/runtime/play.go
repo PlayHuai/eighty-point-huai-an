@@ -44,6 +44,7 @@ func (s *State) play(action Action) error {
 	}
 	if s.Trick.Winner%2 != s.Dealer%2 {
 		s.DefenderPoints += points
+		s.Trick.CapturedPoints = points
 	}
 	s.Completed = append(s.Completed, s.Trick)
 	if len(s.Hands[0]) != 0 {

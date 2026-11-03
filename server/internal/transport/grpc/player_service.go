@@ -15,14 +15,19 @@ import (
 
 type playerServer struct {
 	huaiv1.UnimplementedPlayerServiceServer
-	service *player.PublicProfileService
+	service         *player.PublicProfileService
+	settingsChanged func(string, bool)
 }
 
-func RegisterPlayerService(server grpcgo.ServiceRegistrar, service *player.PublicProfileService) error {
+func RegisterPlayerService(server grpcgo.ServiceRegistrar, service *player.PublicProfileService, changed ...func(string, bool)) error {
 	if server == nil || service == nil {
 		return errors.New("gRPC registrar and player service are required")
 	}
-	huaiv1.RegisterPlayerServiceServer(server, &playerServer{service: service})
+	handler := &playerServer{service: service}
+	if len(changed) > 0 {
+		handler.settingsChanged = changed[0]
+	}
+	huaiv1.RegisterPlayerServiceServer(server, handler)
 	return nil
 }
 

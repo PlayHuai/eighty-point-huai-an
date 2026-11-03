@@ -455,7 +455,7 @@ func TestPersonalizedSnapshots(t *testing.T) {
 		if seat < 0 && (len(view.Hand) != 0 || len(view.Actions) != 0 || len(view.Bottom) != 0) {
 			t.Fatal("spectator got private information")
 		}
-		if seat >= 0 && !reflect.DeepEqual(view.Hand, state.Hands[seat]) {
+		if seat >= 0 && (len(view.Hand) != len(state.Hands[seat]) || !owns(view.Hand, state.Hands[seat])) {
 			t.Fatal("own hand missing")
 		}
 		if seat != 0 && len(view.Bottom) != 0 {

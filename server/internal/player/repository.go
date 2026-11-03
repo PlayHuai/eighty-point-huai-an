@@ -17,6 +17,7 @@ type ProfileRepository interface {
 }
 
 type PublicProfile struct {
+	ShowHand  bool
 	UserID    string
 	Nickname  string
 	AvatarURL string

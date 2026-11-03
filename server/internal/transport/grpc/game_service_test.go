@@ -2,7 +2,9 @@ package grpc
 
 import (
 	"context"
+	"fmt"
 	"testing"
+	"time"
 
 	huaiv1 "github.com/Derek0120/eighty-point-huai-an/server/gen/huai/v1"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/game/engine"
@@ -52,8 +54,9 @@ func TestSpectatorSnapshotUsesSelectedSeatAndShowHandPermission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	state = finishTestDeal(t, sessions, state.ID)
 	if _, err := sessions.Submit(started.GameSessionID, "player-1", runtime.Action{
-		Seat: 0, Kind: runtime.Pass, RequestID: "spectator-pass",
+		Seat: 0, Kind: runtime.SetAutoplay, Accept: true, RequestID: "spectator-autoplay",
 		ExpectedVersion: state.Version,
 	}); err != nil {
 		t.Fatal(err)
@@ -142,7 +145,7 @@ func TestPracticeGameStartsSnapshotsAndAdvancesRobots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sessions := runtime.NewRepository(nil)
+	sessions := runtime.NewRepository(func([]engine.Card) {})
 	started, err := StartGameSession(rooms, sessions, created)
 	if err != nil {
 		t.Fatal(err)
@@ -153,6 +156,7 @@ func TestPracticeGameStartsSnapshotsAndAdvancesRobots(t *testing.T) {
 
 	service := &gameServer{rooms: rooms, sessions: sessions}
 	ctx := ctxWithUserID(context.Background(), "owner")
+	finishTestDeal(t, sessions, started.GameSessionID)
 	snapshot, err := service.GetGameSnapshot(ctx, &huaiv1.GameSnapshotRequest{
 		GameSessionId: started.GameSessionID,
 	})
@@ -199,8 +203,12 @@ func TestPracticeGameStartsSnapshotsAndAdvancesRobots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	expectedHand := 25
+	if action.GetDeclareTrump() != nil {
+		expectedHand = 33
+	}
 	if updated.StateVersion != response.StateVersion ||
-		len(updated.VisibleHand) != 33 {
+		len(updated.VisibleHand) != expectedHand {
 		t.Fatalf("unexpected updated snapshot: %+v", updated)
 	}
 }
@@ -211,36 +219,99 @@ func TestPracticeRobotProgressionSurvivesCancelledSubmitContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sessions := runtime.NewRepository(nil)
+	sessions := runtime.NewRepository(func([]engine.Card) {})
 	started, err := StartGameSession(rooms, sessions, created)
 	if err != nil {
 		t.Fatal(err)
 	}
 	service := &gameServer{rooms: rooms, sessions: sessions}
+	finishTestDeal(t, sessions, started.GameSessionID)
 	snapshot, err := service.GetGameSnapshot(ctxWithUserID(context.Background(), "owner"),
 		&huaiv1.GameSnapshotRequest{GameSessionId: started.GameSessionID})
 	if err != nil {
 		t.Fatal(err)
 	}
+	_, err = service.SubmitAction(ctxWithUserID(context.Background(), "owner"), &huaiv1.SubmitActionRequest{
+		GameSessionId: started.GameSessionID, HandId: snapshot.HandId, RequestId: "33333333-3333-4333-8333-333333333333", ExpectedVersion: snapshot.StateVersion,
+		Action: &huaiv1.GameAction{Payload: &huaiv1.GameAction_DeclareTrump{DeclareTrump: &huaiv1.DeclareTrumpAction{Suit: "clubs", Cards: []string{"clubs:2:0"}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err = service.GetGameSnapshot(ctxWithUserID(context.Background(), "owner"), &huaiv1.GameSnapshotRequest{GameSessionId: started.GameSessionID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	buryAction := &huaiv1.GameAction{Payload: &huaiv1.GameAction_BuryCards{BuryCards: &huaiv1.BuryCardsAction{Cards: append([]string(nil), snapshot.VisibleHand[:8]...)}}}
 	ctx, cancel := context.WithCancel(ctxWithUserID(context.Background(), "owner"))
 	cancel()
 	response, err := service.SubmitAction(ctx, &huaiv1.SubmitActionRequest{
 		GameSessionId: started.GameSessionID, HandId: snapshot.HandId,
 		RequestId:       "22222222-2222-4222-8222-222222222222",
 		ExpectedVersion: snapshot.StateVersion,
-		Action: &huaiv1.GameAction{Payload: &huaiv1.GameAction_Pass{
-			Pass: &huaiv1.PassAction{},
-		}},
+		Action:          buryAction,
 	})
 	if err != nil || !response.GetAccepted() {
 		t.Fatalf("cancelled SubmitAction() = %+v, %v", response, err)
+	}
+	state, err := sessions.Load(started.GameSessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Turn != 1 || len(sessions.Due(time.Now())) != 0 {
+		t.Fatal("robot advanced synchronously")
+	}
+	for count := 0; count < 32 && state.Players[state.Turn] != "owner"; count++ {
+		service.advanceDue(state.Deadline)
+		state, err = sessions.Load(started.GameSessionID)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	updated, err := service.GetGameSnapshot(ctxWithUserID(context.Background(), "owner"),
 		&huaiv1.GameSnapshotRequest{GameSessionId: started.GameSessionID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.GetPhase() != string(runtime.Bury) || len(updated.GetVisibleHand()) != 33 {
+	if updated.GetStateVersion() <= response.StateVersion || updated.GetCurrentTurnUserId() != "owner" {
 		t.Fatalf("robot progression stopped after cancelled request: %+v", updated)
 	}
+	repeated, err := service.SubmitAction(ctxWithUserID(context.Background(), "owner"), &huaiv1.SubmitActionRequest{
+		GameSessionId: started.GameSessionID, HandId: snapshot.HandId,
+		RequestId: "22222222-2222-4222-8222-222222222222", ExpectedVersion: snapshot.StateVersion,
+		Action: buryAction,
+	})
+	if err != nil || repeated.GetStateVersion() != response.StateVersion {
+		t.Fatalf("retry changed accepted version after robots advanced: %+v, %v", repeated, err)
+	}
+}
+
+func finishTestDeal(t *testing.T, sessions *runtime.Repository, id string) runtime.State {
+	t.Helper()
+	state, err := sessions.Load(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Phase == runtime.AwaitingReady {
+		for seat := 0; seat < 4; seat++ {
+			if state.Ready[seat] {
+				continue
+			}
+			_, err = sessions.Submit(id, state.Players[seat], runtime.Action{Kind: runtime.Continue, Seat: seat, ExpectedVersion: state.Version, RequestID: fmt.Sprintf("ready-test:%d", seat)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			state, err = sessions.Load(id)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if state.Phase == runtime.Dealing {
+		state, err = sessions.AdvanceDealing(id, state.Version, state.DealStarted.Add(100*state.DealInterval))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	return state
 }

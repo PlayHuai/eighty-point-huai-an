@@ -42,6 +42,8 @@ type createRoomRequest struct {
 	name            string
 	allowSpectators bool
 	minimumPoints   int64
+	dealIntervalMS  uint32
+	counterWindowMS uint32
 }
 
 type createRoomResult struct {
@@ -212,6 +214,16 @@ func (s *lobbyServer) CreateRoom(
 	requestData := createRoomRequest{
 		hallID: request.GetHallId(), name: request.GetName(),
 		allowSpectators: request.GetAllowSpectators(), minimumPoints: request.GetMinimumPoints(),
+		dealIntervalMS: room.DefaultDealIntervalMS, counterWindowMS: room.DefaultCounterWindowMS,
+	}
+	if request.DealIntervalMs != nil {
+		requestData.dealIntervalMS = request.GetDealIntervalMs()
+	}
+	if request.CounterWindowMs != nil {
+		requestData.counterWindowMS = request.GetCounterWindowMs()
+	}
+	if requestData.dealIntervalMS == 0 || requestData.counterWindowMS == 0 {
+		return nil, status.Error(codes.InvalidArgument, "deal interval and counter window must be positive milliseconds")
 	}
 	key := roomRequestKey{userID: userID, requestID: requestID}
 	s.requestMu.Lock()
@@ -232,7 +244,8 @@ func (s *lobbyServer) CreateRoom(
 	}
 	var details room.Details
 	if requestData.hallID == "practice" {
-		if request.GetPassword() != "" || requestData.allowSpectators || requestData.minimumPoints != 0 {
+		if request.GetPassword() != "" || requestData.allowSpectators || requestData.minimumPoints != 0 ||
+			request.DealIntervalMs != nil || request.CounterWindowMs != nil {
 			return nil, status.Error(codes.InvalidArgument, "practice rooms do not accept room settings")
 		}
 		nickname := userID
@@ -248,6 +261,7 @@ func (s *lobbyServer) CreateRoom(
 		details, err = s.rooms.CreateRoom(requestData.hallID, userID, profile.Points, room.Settings{
 			Name: requestData.name, Password: request.GetPassword(),
 			AllowSpectators: requestData.allowSpectators, MinimumPoints: requestData.minimumPoints,
+			DealIntervalMS: requestData.dealIntervalMS, CounterWindowMS: requestData.counterWindowMS,
 		})
 	}
 	if err != nil {
@@ -404,6 +418,7 @@ func roomSummaryMessage(summary room.Summary, owner *huaiv1.UserProfile) *huaiv1
 		Status: roomStatusMessage(summary.Status), OccupiedSeats: summary.OccupiedSeats,
 		Capacity: summary.Capacity, HasPassword: summary.HasPassword, Version: summary.Version,
 		Owner: owner, AllowSpectators: summary.AllowSpectators, MinimumPoints: summary.MinimumPoints,
+		DealIntervalMs: summary.DealIntervalMS, CounterWindowMs: summary.CounterWindowMS,
 	}
 }
 

@@ -33,10 +33,12 @@ func Apply(state State, action Action, shuffle Shuffle) (State, error) {
 	case Continue:
 		err = next.continueHand(action, shuffle)
 	case SetAutoplay:
-		if next.Phase == Finished {
+		if next.Phase == Finished || next.Phase == Void {
 			return State{}, ErrPhase
 		}
 		next.Autoplay[action.Seat] = action.Accept
+	case WaitVote:
+		err = next.voteWait(action)
 	default:
 		err = ErrInvalidAction
 	}
@@ -48,10 +50,17 @@ func Apply(state State, action Action, shuffle Shuffle) (State, error) {
 }
 
 func (s *State) declare(action Action) error {
-	if s.Phase != Declaration {
+	if s.Phase != Declaration && s.Phase != Dealing {
 		return ErrPhase
 	}
-	if len(action.Cards) != 1 || !owns(s.Hands[action.Seat], action.Cards) {
+	if s.Declarer >= 0 {
+		return ErrInvalidAction
+	}
+	hand := s.Hands[action.Seat]
+	if s.Phase == Dealing {
+		hand = hand[:(s.DealtCards+3-action.Seat)/4]
+	}
+	if len(action.Cards) != 1 || !owns(hand, action.Cards) {
 		return ErrCards
 	}
 	trump, err := engine.TrumpFromLevelCard(action.Cards[0], s.Trump.Level)
@@ -61,11 +70,16 @@ func (s *State) declare(action Action) error {
 	s.Trump, s.Declarer = trump, action.Seat
 	card := action.Cards[0]
 	s.DeclaredCard = &card
-	s.pickBottom(s.Dealer)
+	if s.Phase != Dealing {
+		s.pickBottom(s.Dealer)
+	}
 	return nil
 }
 
 func (s *State) pass(action Action) error {
+	if s.Phase == Declaration && s.RequireReady {
+		return ErrPhase
+	}
 	if s.Phase != Declaration && s.Phase != Counter {
 		return ErrPhase
 	}
@@ -196,7 +210,7 @@ func (s *State) startPlaying() {
 }
 
 func (s *State) continueHand(action Action, shuffle Shuffle) error {
-	if s.Phase != HandOver {
+	if s.Phase != HandOver && s.Phase != AwaitingReady {
 		return ErrPhase
 	}
 	if s.Ready[action.Seat] {
@@ -208,8 +222,54 @@ func (s *State) continueHand(action Action, shuffle Shuffle) error {
 			return nil
 		}
 	}
+	if s.Phase == AwaitingReady {
+		s.Phase = Dealing
+		if s.DealInterval == 0 {
+			s.Phase, s.DealtCards = Declaration, 100
+		}
+		s.WaitPrompt, s.WaitVotes = false, [4]int{}
+		return nil
+	}
 	s.Dealer = s.Result.NextDealer
 	return deal(s, shuffle)
+}
+
+func (s *State) voteWait(action Action) error {
+	if !s.WaitPrompt || (s.Phase != AwaitingReady && s.Phase != HandOver) {
+		return ErrPhase
+	}
+	if robotSeat(*s, action.Seat) || s.WaitVotes[action.Seat] != 0 {
+		return ErrInvalidAction
+	}
+	s.WaitVotes[action.Seat] = -1
+	if action.Accept {
+		s.WaitVotes[action.Seat] = 1
+	}
+	no, answered, humans := 0, 0, 0
+	for seat, vote := range s.WaitVotes {
+		if robotSeat(*s, seat) {
+			continue
+		}
+		humans++
+		if vote != 0 {
+			answered++
+		}
+		if vote == -1 {
+			no++
+		}
+	}
+	threshold := 2
+	if s.Practice {
+		threshold = 1
+	}
+	if no >= threshold {
+		s.Phase, s.WaitPrompt = Void, false
+		return nil
+	}
+	if answered == humans {
+		s.WaitPrompt, s.WaitVotes = false, [4]int{}
+	}
+	return nil
 }
 
 func (s *State) settle(score int, winning []engine.Card, winner int, fault bool) error {

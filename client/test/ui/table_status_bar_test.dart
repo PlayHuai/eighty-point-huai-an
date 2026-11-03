@@ -1,6 +1,7 @@
 import 'package:eighty_point_huai_an/src/ui/components/table_status_bar.dart';
 import 'package:eighty_point_huai_an/src/ui/theme/app_theme.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -34,6 +35,18 @@ void main() {
       expect((span.children!.last as TextSpan).style!.color, color);
       expect((span.children!.last as TextSpan).text, '$points');
       expect(find.text('我方 A  :  对方 8'), findsOneWidget);
+      final levels = find.byKey(const ValueKey('levels-center'));
+      final scoreFinder = find.byKey(const ValueKey('score-right'));
+      double baseline(Finder finder) {
+        final paragraph = tester.renderObject<RenderParagraph>(finder);
+        return tester.getTopLeft(finder).dy +
+            paragraph.getDryBaseline(
+              paragraph.constraints,
+              TextBaseline.alphabetic,
+            )!;
+      }
+
+      expect(baseline(scoreFinder), closeTo(baseline(levels), 0.01));
     });
   }
 }

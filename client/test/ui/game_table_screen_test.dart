@@ -10,6 +10,8 @@ import 'package:eighty_point_huai_an/src/auth/session_store.dart';
 import 'package:eighty_point_huai_an/src/generated/huai/v1/api.pb.dart' as pb;
 import 'package:eighty_point_huai_an/src/ui/client_providers.dart';
 import 'package:eighty_point_huai_an/src/ui/components/card_visual.dart';
+import 'package:eighty_point_huai_an/src/ui/components/table_cards.dart';
+import 'package:eighty_point_huai_an/src/ui/components/game_table_board.dart';
 import 'package:eighty_point_huai_an/src/ui/game_table_screen.dart';
 import 'package:eighty_point_huai_an/src/ui/theme/app_theme.dart';
 import 'package:fixnum/fixnum.dart';
@@ -123,7 +125,7 @@ void main() {
         ..rank = '白银';
       final snapshot = _snapshot()..phase = 'finished';
       await _open(tester, _FakeGameClient(room, snapshot));
-      expect(find.text('开始游戏'), findsOneWidget);
+      expect(find.text('准备'), findsOneWidget);
       await tester.tap(find.text('成员'));
       await tester.pumpAndSettle();
       expect(find.text('房间成员'), findsOneWidget);
@@ -245,7 +247,7 @@ void main() {
     expect(find.byKey(const ValueKey('play-action')), findsNothing);
     expect(find.byKey(const ValueKey('bottom-cards-panel')), findsNothing);
     expect(find.byType(CardVisual), findsNothing);
-    expect(find.byType(CardBack), findsNWidgets(2));
+    expect(find.byType(CardBack), findsNWidgets(10));
     await tester.tap(find.byKey(const ValueKey('spectator-view-3')));
     await tester.pumpAndSettle();
     expect(client.views.single.viewSeat, 3);
@@ -281,6 +283,78 @@ void main() {
     expect(find.byType(CardVisual), findsNWidgets(2));
     await _close(tester);
   });
+
+  testWidgets('spectator avatar click updates the server view only', (
+    tester,
+  ) async {
+    final client = _FakeGameClient(
+      _room(spectator: true),
+      _snapshot()
+        ..visibleHand.clear()
+        ..bottomCards.clear(),
+    );
+    await _open(tester, client);
+    final seat = find.byKey(const ValueKey('table-seat-2'));
+    expect(tester.widget<InkWell>(seat).mouseCursor, SystemMouseCursors.click);
+    await tester.tap(seat);
+    await tester.pumpAndSettle();
+    expect(client.views.single.viewSeat, 2);
+    expect(client.views.single.expectedVersion, Int64(3));
+    expect(client.actions, isEmpty);
+    await _close(tester);
+  });
+
+  testWidgets('declaration choices have exact dock and title spacing', (
+    tester,
+  ) async {
+    final game = _snapshot()
+      ..phase = 'dealing'
+      ..availableActions.clear()
+      ..availableActions.add('DECLARE')
+      ..trumpLevel = 2
+      ..visibleHand.clear()
+      ..visibleHand.add('clubs:2:0');
+    await _open(tester, _FakeGameClient(_room(), game));
+    final panel = find.byKey(const ValueKey('declaration-choices'));
+    final board = find.byType(GameTableBoard).first;
+    expect(
+      tester.getRect(board).bottom - tester.getRect(panel).bottom,
+      closeTo(10, 0.01),
+    );
+    final title = find.text('抢定 · 选择已有级牌的花色，点击抢定');
+    final suits = find.descendant(of: panel, matching: find.byType(Wrap));
+    expect(
+      tester.getRect(suits).top - tester.getRect(title).bottom,
+      closeTo(6, 0.01),
+    );
+    await _close(tester);
+  });
+
+  for (final phase in ['playing', 'counter', 'awaiting_ready']) {
+    testWidgets('centered waiting marker names pending players in $phase', (
+      tester,
+    ) async {
+      final game = _snapshot()
+        ..phase = phase
+        ..currentTurnUserId = 'player-2'
+        ..readySeats.addAll([1, 3, 4])
+        ..availableActions.clear();
+      await _open(tester, _FakeGameClient(_room(), game));
+      final marker = find.byKey(const ValueKey('waiting-decision'));
+      expect(
+        find.descendant(of: marker, matching: find.text('2号 玩家2')),
+        findsOneWidget,
+      );
+      if (phase != 'awaiting_ready') {
+        expect(
+          tester.getCenter(marker).dy,
+          closeTo(tester.getCenter(find.byType(GameTableBoard).first).dy, 0.01),
+        );
+      }
+      expect(tester.takeException(), isNull);
+      await _close(tester);
+    });
+  }
 
   testWidgets('non-owner players cannot inspect private bottom', (
     tester,
@@ -377,6 +451,21 @@ void main() {
       'joker:16:0',
       'joker:16:1',
     ]);
+    await _close(tester);
+  });
+
+  testWidgets('desktop hand stays fully inside a short native window', (
+    tester,
+  ) async {
+    await _open(
+      tester,
+      _FakeGameClient(_room(), _snapshot()),
+      size: const Size(1280, 685),
+    );
+    final hand = find.byType(TableHand);
+    expect(hand, findsOneWidget);
+    expect(tester.getRect(hand).bottom, lessThanOrEqualTo(685));
+    expect(tester.takeException(), isNull);
     await _close(tester);
   });
 

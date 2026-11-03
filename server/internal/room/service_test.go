@@ -553,7 +553,7 @@ func TestMembersCanLeaveClosedRoomsAndClosedRoomsAreEvicted(t *testing.T) {
 	}
 }
 
-func TestOwnerDepartureClosesAndEvictsRoomAfterMembersLeave(t *testing.T) {
+func TestOwnerDepartureTransfersOwnershipAndLastPlayerClosesRoom(t *testing.T) {
 	manager := NewManager()
 	created, err := manager.CreateRoom(lobby.HallOrdinary, "owner", 0, Settings{Name: "table"})
 	if err != nil {
@@ -571,8 +571,8 @@ func TestOwnerDepartureClosesAndEvictsRoomAfterMembersLeave(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ownerLeft.Room.Status != StatusClosed {
-		t.Fatalf("room status after owner departure = %q, want %q", ownerLeft.Room.Status, StatusClosed)
+	if ownerLeft.Room.Status != StatusWaiting || ownerLeft.Room.OwnerID != "player" {
+		t.Fatalf("room should remain available with new player owner: %+v", ownerLeft.Room)
 	}
 	if _, err := manager.LeaveRoom(created.Room.ID, "player", ownerLeft.Version); err != nil {
 		t.Fatalf("player leaving after owner departure: %v", err)

@@ -234,6 +234,34 @@ func (s *roomServer) SetHandVisibility(
 		expectedVersion: request.GetExpectedVersion(), visible: request.GetShowHand(),
 	}
 	details, err := s.mutate(signature, request.GetRequestId(), func() (room.Details, error) {
+		if repository, ok := s.profiles.(player.SettingsRepository); ok {
+			current, err := s.manager.GetRoom(request.GetRoomId(), userID)
+			if err != nil {
+				return room.Details{}, err
+			}
+			if current.Version != request.GetExpectedVersion() {
+				return room.Details{}, room.ErrVersionConflict
+			}
+			seated := false
+			for _, member := range current.Members {
+				if member.UserID == userID && member.Role == room.RolePlayer {
+					seated = true
+					break
+				}
+			}
+			if !seated {
+				return room.Details{}, room.ErrNotMember
+			}
+			setting, err := repository.GetPlayerSettings(ctx, userID)
+			if err != nil {
+				return room.Details{}, err
+			}
+			if _, err = repository.UpdatePlayerSettings(ctx, userID, request.GetShowHand(), setting.Version, request.GetRequestId()); err != nil {
+				return room.Details{}, err
+			}
+			s.manager.ApplyHandVisibility(userID, request.GetShowHand())
+			return s.manager.GetRoom(request.GetRoomId(), userID)
+		}
 		return s.manager.SetHandVisibility(request.GetRoomId(), userID, request.GetShowHand(), request.GetExpectedVersion())
 	})
 	if err != nil {
@@ -260,8 +288,9 @@ func (s *roomServer) StartGame(ctx context.Context, request *huaiv1.RoomRequest)
 			if err != nil {
 				return room.Details{}, err
 			}
-			if current.Room.OwnerID != userID {
-				return room.Details{}, room.ErrOwnerRequired
+			member := findRoomMember(current, userID)
+			if member.Role != room.RolePlayer || member.Seat == 0 {
+				return room.Details{}, room.ErrNotMember
 			}
 			if current.Room.Status == room.StatusPlaying && current.GameSessionID != "" {
 				return current, nil
@@ -277,6 +306,18 @@ func (s *roomServer) StartGame(ctx context.Context, request *huaiv1.RoomRequest)
 		})
 		if err != nil {
 			return nil, roomServiceError(err)
+		}
+		state, loadErr := s.sessions.Load(details.GameSessionID)
+		if loadErr != nil {
+			return nil, gameRuntimeError(loadErr)
+		}
+		member := findRoomMember(details, userID)
+		if state.Phase == runtime.AwaitingReady && !state.Ready[member.Seat-1] {
+			_, readyErr := s.sessions.Submit(state.ID, userID, runtime.Action{Kind: runtime.Continue, Seat: int(member.Seat) - 1,
+				RequestID: request.GetRequestId(), ExpectedVersion: state.Version})
+			if readyErr != nil {
+				return nil, gameRuntimeError(readyErr)
+			}
 		}
 		return (&gameServer{rooms: s.manager, sessions: s.sessions}).snapshotForMember(details, userID)
 	}
@@ -367,6 +408,9 @@ func (s *roomServer) detailsMessage(ctx context.Context, details room.Details) (
 		}
 		member.Points = profile.Points
 		member.Rank = profile.Rank
+		if _, ok := s.profiles.(player.SettingsRepository); ok {
+			member.ShowHand = profile.ShowHand
+		}
 	}
 	return message, nil
 }

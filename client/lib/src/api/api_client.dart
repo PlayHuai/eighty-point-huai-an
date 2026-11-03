@@ -61,6 +61,8 @@ abstract interface class ApiClient {
     required String password,
     bool allowSpectators = false,
     int minimumPoints = 0,
+    int dealIntervalMs = 200,
+    int counterWindowMs = 10000,
     String requestId = '',
   });
 
@@ -370,6 +372,8 @@ class GrpcApiClient implements ApiClient {
     required String password,
     bool allowSpectators = false,
     int minimumPoints = 0,
+    int dealIntervalMs = 200,
+    int counterWindowMs = 10000,
     String requestId = '',
   }) async {
     final response = await _lobby.createRoom(
@@ -379,6 +383,8 @@ class GrpcApiClient implements ApiClient {
         ..password = password
         ..allowSpectators = allowSpectators
         ..minimumPoints = Int64(minimumPoints)
+        ..dealIntervalMs = dealIntervalMs
+        ..counterWindowMs = counterWindowMs
         ..requestId = requestId.isEmpty ? createRequestId() : requestId,
       options: _authenticatedOptions(accessToken),
     );
@@ -819,6 +825,8 @@ class GrpcApiClient implements ApiClient {
     allowSpectators: room.allowSpectators,
     minimumPoints: room.minimumPoints.toInt(),
     practiceMode: room.hallId == practiceRoomHallId,
+    dealIntervalMs: room.dealIntervalMs,
+    counterWindowMs: room.counterWindowMs,
   );
 
   @override

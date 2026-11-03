@@ -71,6 +71,35 @@ decide expiry. The server scheduler advances timed-out turns without any client.
 `autoplay_seats` reports current settings. Older servers without deadlines retain
 the client's previous explicit-autoplay behavior for compatibility.
 
+Room creation accepts optional positive `deal_interval_ms` and
+`counter_window_ms` (uint32 milliseconds). Omitted fields use 200 ms per card and
+10,000 ms per player's counter opportunity; explicit zero is `INVALID_ARGUMENT`.
+Both settings are returned in `RoomSummary` and participate in request-ID
+conflict detection. Practice rooms use those defaults and reject custom settings.
+Every hand starts in `dealing`: the server releases the 100 non-bottom cards,
+one card per interval, without exposing future cards or enabling game actions.
+The eight bottom cards remain private. All four hands having 25 cards advances
+to declaration; later hands use the same room timings.
+
+`server_time` lets clients compensate local clock skew when rendering
+`action_deadline` beside the active avatar. Humans receive a 60-second ordinary
+action window, counters use the configured window. Robots and explicit autoplay
+are scheduled asynchronously after a random 2–4 seconds, capped by a shorter
+configured counter window; no robot loop runs inside SubmitAction.
+An identical action retry returns the original accepted version even if robots
+have subsequently advanced. Hand-over robots also ready asynchronously.
+
+`visible_hand` is display-ordered: red fives, big jokers, small jokers, main-suit
+level cards, other level cards, remaining main-suit cards, then side suits in
+spades/hearts/clubs/diamonds order. Ranks descend left to right and identical
+cards are adjacent. Sorting affects the isolated view, not ownership or rules.
+`last_trick` identifies the latest completed trick and winning group's public
+cards. Its `captured_points` is the actual trick points won by defenders (zero
+for dealer wins or scoreless tricks), not a client-calculated amount or the
+multiplied bottom settlement. Clients highlight the full winning group and
+animate positive defender points. The completed result remains available while
+the next trick is being played.
+
 ## Generate bindings
 
 Install `buf` and the pinned Go plugins:

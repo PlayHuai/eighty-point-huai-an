@@ -17,10 +17,14 @@ import 'client_providers.dart';
 import 'components/design_icon.dart';
 import 'components/game_table_board.dart';
 import 'components/game_settlement_panel.dart';
+import 'components/completed_trick.dart';
 import 'components/table_cards.dart';
 import 'components/table_status_bar.dart';
 import 'theme/app_theme.dart';
 import 'room_chat_screen.dart';
+import 'settings_dialog.dart';
+import 'components/turn_countdown.dart';
+import 'components/card_visual.dart';
 
 // RPC calls read this provider outside build; keep the channel for the current
 // authenticated scope instead of disposing it between asynchronous requests.
@@ -60,6 +64,8 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
   int? _autoPausedVersion;
   int _revision = 0;
   bool _canPop = false;
+  bool _closedDialog = false;
+  bool _waitDialog = false;
   int _lastSeenSeq = 0;
   final _selected = <String>{};
   final _pending = <String, String>{};
@@ -101,6 +107,16 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
       final room = await _client.getRoom(
         pb.RoomRequest(roomId: widget.room.id),
       );
+      if (room.room.status == pb.RoomStatus.ROOM_STATUS_CLOSED) {
+        if (mounted) {
+          setState(() {
+            _room = room;
+            _loading = false;
+          });
+          unawaited(_confirmClosed());
+        }
+        return;
+      }
       pb.GameSnapshot? game;
       if (room.gameSessionId.isNotEmpty) {
         if (reconnect) {
@@ -141,6 +157,10 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
         _loading = false;
       });
       _resetAutoPlayAtGameEnd(game);
+      if (game?.readyWaitPrompt == true &&
+          game!.availableActions.contains('WAIT_VOTE') &&
+          !_waitDialog)
+        unawaited(_voteWait());
       if (_autoPlaying) unawaited(_maybeAutoPlay());
     } catch (error) {
       if (!mounted || revision != _revision || _canPop) return;
@@ -220,6 +240,12 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
         _busy ||
         !_isPlayer ||
         game == null ||
+        {
+          'awaiting_ready',
+          'hand_over',
+          'void',
+          'finished',
+        }.contains(game.phase) ||
         game.hasActionDeadline() ||
         (game.currentTurnUserId != _userId &&
             !game.availableActions.contains('CONTINUE') &&
@@ -484,6 +510,76 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
     });
   }
 
+  Future<void> _confirmClosed() async {
+    if (_closedDialog || !mounted) return;
+    _closedDialog = true;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          title: const Text('房间已关闭'),
+          content: const Text('房间内已无玩家，请确认退出。'),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('确认'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (mounted) await _leave();
+  }
+
+  Future<void> _voteWait() async {
+    if (_waitDialog || !mounted) return;
+    _waitDialog = true;
+    final continueWaiting = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          title: const Text('准备等待已超过5分钟'),
+          content: Text(
+            widget.room.practiceMode
+                ? '是否继续等待？选择“否”将流局，不计分。'
+                : '是否继续等待？两名玩家选择“否”将流局，不计分。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('否'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('是'),
+            ),
+          ],
+        ),
+      ),
+    );
+    final game = _game;
+    if (mounted && game != null && continueWaiting != null) {
+      await _run('wait:${game.stateVersion}:$continueWaiting', (id) async {
+        await _client.submitAction(
+          pb.SubmitActionRequest(
+            gameSessionId: game.gameSessionId,
+            handId: game.handId,
+            requestId: id,
+            expectedVersion: game.stateVersion,
+            action: pb.GameAction(
+              waitVote: pb.ConfirmAutoplayAction(accept: continueWaiting),
+            ),
+          ),
+        );
+      });
+    }
+    _waitDialog = false;
+  }
+
   Future<void> _standUp() async {
     final room = _room!;
     await _run('stand:${room.version}', (id) async {
@@ -600,6 +696,13 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
           title: const Text('淮安80分'),
           actions: [
             TextButton(
+              onPressed: () => showDialog<void>(
+                context: context,
+                builder: (_) => SettingsDialog(auth: widget.auth),
+              ),
+              child: const Text('设置'),
+            ),
+            TextButton(
               onPressed: () => Navigator.of(context).push<void>(
                 MaterialPageRoute(
                   builder: (_) =>
@@ -661,7 +764,7 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
         final compact = constraints.maxWidth < 600;
         final minHeight = compact
             ? DarkTokens.spacingS6 * 20
-            : DarkTokens.spacingS6 * 22;
+            : DarkTokens.spacingS6 * 16;
         return SingleChildScrollView(
           child: Column(
             children: [
@@ -670,6 +773,8 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
                 child: Column(
                   children: [
                     TableStatusBar(
+                      trumpSuit: game?.trumpSuit ?? '',
+                      phase: _phaseLabel(game?.phase ?? ''),
                       ownLevel: ownLevel ?? '—',
                       opponentLevel: otherLevel ?? '—',
                       points: game?.capturedPoints.toInt() ?? 0,
@@ -680,8 +785,25 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
                         padding: const EdgeInsets.all(DarkTokens.spacingS3),
                         child: GameTableBoard(
                           members: room.members,
+                          outsidePerspective: !compact,
+                          phase: game?.phase ?? '',
+                          readySeats: game?.readySeats ?? const [],
+                          bottomCards:
+                              game != null &&
+                                  (game.bottomPublic ||
+                                      (_isPlayer &&
+                                          game.bottomOwnerUserId == _userId))
+                              ? game.bottomCards
+                              : const [],
+                          bottomPublic: game?.bottomPublic ?? false,
                           perspective: perspective,
                           currentTurnUserId: game?.currentTurnUserId ?? '',
+                          actionDeadline: game?.hasActionDeadline() == true
+                              ? game!.actionDeadline.toDateTime()
+                              : null,
+                          serverTime: game?.hasServerTime() == true
+                              ? game!.serverTime.toDateTime()
+                              : null,
                           ownerId: room.room.owner.userId,
                           dealerUserId: game?.dealerUserId ?? '',
                           onSeat:
@@ -691,18 +813,28 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
                               ? _seat
                               : null,
                           center: _publicPlays(),
+                          bottomOverlay:
+                              game != null &&
+                                  game.availableActions.contains('DECLARE') &&
+                                  _isPlayer
+                              ? _declarationChoices(game)
+                              : null,
+                          onPerspective: !_isPlayer && !_busy
+                              ? _switchView
+                              : null,
                         ),
                       ),
                     ),
                     Padding(
                       padding: const EdgeInsets.all(DarkTokens.spacingS3),
                       child: Wrap(
-                        alignment: WrapAlignment.start,
+                        alignment: WrapAlignment.center,
                         crossAxisAlignment: WrapCrossAlignment.center,
                         spacing: DarkTokens.spacingS5,
                         runSpacing: DarkTokens.spacingS3,
                         children: [
-                          if (game != null &&
+                          if (compact &&
+                              game != null &&
                               (game.bottomPublic ||
                                   (_isPlayer &&
                                       game.bottomOwnerUserId == _userId)) &&
@@ -718,7 +850,7 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
                                 ),
                                 cards: game.bottomCards,
                                 publiclyRevealed: game.bottomPublic,
-                                level: ownLevel ?? '',
+                                level: game.trumpLevel.toString(),
                                 trumpSuit: game.trumpSuit,
                               ),
                             ),
@@ -731,6 +863,41 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          if (!compact)
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                left: DarkTokens.spacingS6,
+                                top: DarkTokens.spacingS3,
+                                right: DarkTokens.spacingS4,
+                              ),
+                              child: SizedBox(
+                                width: DarkTokens.spacingS6 * 6.25,
+                                height: DarkTokens.spacingS6 * 2.75,
+                                child: GameTableBoard(
+                                  members: room.members,
+                                  perspective: perspective,
+                                  currentTurnUserId:
+                                      game?.currentTurnUserId ?? '',
+                                  ownerId: room.room.owner.userId,
+                                  dealerUserId: game?.dealerUserId ?? '',
+                                  center: const SizedBox.shrink(),
+                                  onSeat: null,
+                                  seatOnly: true,
+                                  onPerspective: !_isPlayer && !_busy
+                                      ? _switchView
+                                      : null,
+                                  phase: game?.phase ?? '',
+                                  readySeats: game?.readySeats ?? const [],
+                                  actionDeadline:
+                                      game?.hasActionDeadline() == true
+                                      ? game!.actionDeadline.toDateTime()
+                                      : null,
+                                  serverTime: game?.hasServerTime() == true
+                                      ? game!.serverTime.toDateTime()
+                                      : null,
+                                ),
+                              ),
+                            ),
                           if (game != null && game.dealerSeat == perspective)
                             Padding(
                               padding: const EdgeInsets.only(
@@ -747,19 +914,26 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
                               ),
                             ),
                           Expanded(
-                            child: TableHand(
-                              cards: game?.visibleHand ?? const [],
-                              selected: _selected,
-                              hiddenCount: game?.visibleHandCount ?? 0,
-                              level: ownLevel ?? '',
-                              trumpSuit: game?.trumpSuit ?? '',
-                              onSelect: _isPlayer && !_busy && game != null
-                                  ? (card) => setState(() {
-                                      if (!_selected.add(card))
-                                        _selected.remove(card);
-                                    })
-                                  : null,
-                            ),
+                            child:
+                                (game?.phase == 'hand_over' ||
+                                    game?.phase == 'void' ||
+                                    game?.phase == 'finished' ||
+                                    game?.phase == 'awaiting_ready')
+                                ? const SizedBox.shrink()
+                                : TableHand(
+                                    cards: game?.visibleHand ?? const [],
+                                    selected: _selected,
+                                    hiddenCount: game?.visibleHandCount ?? 0,
+                                    level: game?.trumpLevel.toString() ?? '',
+                                    trumpSuit: game?.trumpSuit ?? '',
+                                    onSelect:
+                                        _isPlayer && !_busy && game != null
+                                        ? (card) => setState(() {
+                                            if (!_selected.add(card))
+                                              _selected.remove(card);
+                                          })
+                                        : null,
+                                  ),
                           ),
                         ],
                       ),
@@ -768,8 +942,6 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
                   ],
                 ),
               ),
-              if (game != null && game.hasSettlement())
-                GameSettlementPanel(game: game, onHistory: _showHistory),
             ],
           ),
         );
@@ -777,77 +949,274 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
     );
   }
 
-  Widget _publicPlays() {
-    final game = _game;
-    if (game == null) {
-      return const Center(child: Text('等待四位玩家入座，由房主开始'));
-    }
-    return Column(
-      children: [
-        Wrap(
-          alignment: WrapAlignment.center,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: DarkTokens.spacingS2,
-          children: [
-            Text(
-              game.currentTurnUserId == _userId
-                  ? '${game.phase} · 轮到你操作'
-                  : game.phase,
-              key: _isPlayer ? const ValueKey('play-action') : null,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: DarkTokens.goldBright),
-            ),
-            if (_autoPlaying)
-              DecoratedBox(
-                key: const ValueKey('autoplay-status'),
-                decoration: const BoxDecoration(
-                  color: DarkTokens.goldDark,
-                  borderRadius: BorderRadius.all(
-                    Radius.circular(DarkTokens.radiusBadge),
+  Widget _finalCenter(pb.GameSnapshot game) {
+    final won = game.viewerTeam == game.settlement.winnerTeam;
+    return SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '${game.capturedPoints}分，${won ? '我们赢了' : '我们输了'}',
+            style: Theme.of(context).textTheme.headlineSmall
+                ?.copyWith(color: DarkTokens.goldBright),
+          ),
+          const SizedBox(height: DarkTokens.spacingS3),
+          const Text('本局底牌 · 已公开'),
+          const SizedBox(height: DarkTokens.spacingS3),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: DarkTokens.spacingS2,
+            children: [
+              for (final card in game.bottomCards)
+                SizedBox(
+                  width: DarkTokens.spacingS6 * 1.5,
+                  height: DarkTokens.spacingS6 * 2.5,
+                  child: TableCard(
+                    card: card,
+                    level: game.trumpLevel.toString(),
+                    trumpSuit: game.trumpSuit,
                   ),
                 ),
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: DarkTokens.spacingS2,
-                    vertical: DarkTokens.spacingS1,
-                  ),
-                  child: Text('托管中'),
+            ],
+          ),
+          const SizedBox(height: DarkTokens.spacingS3),
+          Text(game.phase == 'finished' ? '整盘结束' : '本局已结束，点击“准备”继续对局'),
+          if (game.phase == 'hand_over')
+            _waitingDecision(game, preparing: true),
+          if (game.hasSettlement())
+            GameSettlementPanel(game: game, onHistory: _showHistory),
+        ],
+      ),
+    );
+  }
+
+  Widget _declarationChoices(pb.GameSnapshot game) => Container(
+    key: const ValueKey('declaration-choices'),
+    padding: const EdgeInsets.all(DarkTokens.spacingS3),
+    decoration: BoxDecoration(
+      color: DarkTokens.bgBase,
+      border: Border.all(color: DarkTokens.cardBack),
+      borderRadius: BorderRadius.circular(DarkTokens.radiusPanel),
+    ),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text('抢定 · 选择已有级牌的花色，点击抢定'),
+        const SizedBox(
+          height: (DarkTokens.spacingS1 + DarkTokens.spacingS2) / 2,
+        ),
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: DarkTokens.spacingS2,
+          children: [
+            for (final entry in {
+              'spades': DesignIconName.suitSpade,
+              'hearts': DesignIconName.suitHeart,
+              'clubs': DesignIconName.suitClub,
+              'diamonds': DesignIconName.suitDiamond,
+            }.entries)
+              OutlinedButton(
+                onPressed:
+                    !_busy &&
+                        game.visibleHand.any(
+                          (card) => card.startsWith(
+                            '${entry.key}:${game.trumpLevel}:',
+                          ),
+                        )
+                    ? () => setState(() {
+                        _selected
+                          ..clear()
+                          ..add(
+                            game.visibleHand.firstWhere(
+                              (card) => card.startsWith(
+                                '${entry.key}:${game.trumpLevel}:',
+                              ),
+                            ),
+                          );
+                      })
+                    : null,
+                child: DesignIcon(
+                  name: entry.value,
+                  enabled:
+                      !_busy &&
+                      game.visibleHand.any(
+                        (card) =>
+                            card.startsWith('${entry.key}:${game.trumpLevel}:'),
+                      ),
                 ),
               ),
           ],
         ),
-        const SizedBox(height: DarkTokens.spacingS3),
-        Expanded(
-          child: SingleChildScrollView(
-            child: Wrap(
-              alignment: WrapAlignment.center,
-              spacing: DarkTokens.spacingS3,
-              runSpacing: DarkTokens.spacingS2,
+      ],
+    ),
+  );
+
+  Widget _waitingDecision(pb.GameSnapshot game, {bool preparing = false}) {
+    final waiting = _room!.members.where(
+      (member) =>
+          member.seatNo != 0 &&
+          (preparing
+              ? !game.readySeats.contains(member.seatNo)
+              : member.userId == game.currentTurnUserId),
+    );
+    final names = waiting
+        .map(
+          (member) =>
+              '${member.seatNo}号 ${member.profile.nickname.isEmpty ? member.userId : member.profile.nickname}',
+        )
+        .join('、');
+    return DecoratedBox(
+      key: const ValueKey('waiting-decision'),
+      decoration: BoxDecoration(
+        color: DarkTokens.bgBase,
+        border: Border.all(color: DarkTokens.goldDark),
+        borderRadius: BorderRadius.circular(DarkTokens.radiusPanel),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(DarkTokens.spacingS3),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              preparing
+                  ? '等待准备'
+                  : switch (game.phase) {
+                      'counter' => '等待反主决定',
+                      'playing' => '等待出牌',
+                      'bury' => '等待扣底',
+                      'dealing' => '正在发牌 · 等待抢定',
+                      'declaration' => '等待抢定',
+                      _ => '等待操作',
+                    },
+              style: const TextStyle(color: DarkTokens.goldBright),
+            ),
+            Text(
+              game.phase == 'dealing' || game.phase == 'declaration'
+                  ? '等待任意玩家抢定'
+                  : names.isEmpty
+                  ? '等待服务端确认'
+                  : names,
+              key: _isPlayer ? const ValueKey('play-action') : null,
+              textAlign: TextAlign.center,
+            ),
+            if (_autoPlaying)
+              const Text('托管中', key: ValueKey('autoplay-status')),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _publicPlays() {
+    final game = _game;
+    if (game == null) {
+      return const Center(child: Text('等待四位玩家入座并准备'));
+    }
+    if (game.phase == 'void')
+      return const Center(
+        child: Text('流局 · 不计分', key: ValueKey('void-result')),
+      );
+    if (game.phase == 'awaiting_ready')
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _waitingDecision(game, preparing: true),
+            Text('已有 ${game.readySeats.length} / 4 位玩家准备'),
+            if (game.hasReadyDeadline())
+              TurnCountdown(
+                deadline: game.readyDeadline.toDateTime(),
+                serverTime: game.serverTime.toDateTime(),
+              ),
+          ],
+        ),
+      );
+    if (game.phase == 'hand_over' || game.phase == 'finished')
+      return _finalCenter(game);
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        _waitingDecision(game),
+        if (game.phase == 'dealing')
+          const Align(
+            alignment: Alignment.topCenter,
+            child: SizedBox(
+              height: DarkTokens.spacingS6 * 2,
+              child: CardBack(),
+            ),
+          ),
+        if (game.phase == 'declaration' && game.hasActionDeadline())
+          Align(
+            alignment: Alignment.topCenter,
+            child: TurnCountdown(
+              deadline: game.actionDeadline.toDateTime(),
+              serverTime: game.serverTime.toDateTime(),
+            ),
+          ),
+        if (game.fallbackCard.isNotEmpty)
+          Align(
+            alignment: Alignment.topCenter,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                for (final play in game.publicPlays)
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text('${play.seatNo} 号位'),
-                      SizedBox(
-                        height: DarkTokens.spacingS6 * 2,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            for (final card in play.cards)
-                              SizedBox(
-                                width: DarkTokens.spacingS6,
-                                child: TableCard(card: card),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                const Text('无人抢定 · 底牌首张 '),
+                SizedBox(
+                  width: DarkTokens.spacingS5,
+                  height: DarkTokens.spacingS6,
+                  child: TableCard(card: game.fallbackCard),
+                ),
               ],
             ),
           ),
-        ),
+        if (game.hasLastTrick())
+          Align(
+            alignment: Alignment.topCenter,
+            child: SizedBox(
+              height: DarkTokens.spacingS6 * 2,
+              child: SingleChildScrollView(
+                child: CompletedTrick(
+                  key: ValueKey('${game.handId}:${game.lastTrick.trickNo}'),
+                  trick: game.lastTrick,
+                ),
+              ),
+            ),
+          ),
+        if (game.publicPlays.isNotEmpty)
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: SizedBox(
+              height: DarkTokens.spacingS6 * 2.5,
+              child: SingleChildScrollView(
+                child: Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: DarkTokens.spacingS3,
+                  runSpacing: DarkTokens.spacingS2,
+                  children: [
+                    for (final play in game.publicPlays)
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('${play.seatNo} 号位'),
+                          SizedBox(
+                            height: DarkTokens.spacingS6 * 2,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                for (final card in play.cards)
+                                  SizedBox(
+                                    width: DarkTokens.spacingS6,
+                                    child: TableCard(card: card),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -894,6 +1263,19 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
     );
   }
 
+  String _phaseLabel(String phase) => switch (phase) {
+    'awaiting_ready' => '等待准备',
+    'void' => '流局',
+    'dealing' => '发牌中',
+    'declaration' => '定主',
+    'counter' => '反主',
+    'bury' => '扣底',
+    'playing' => '出牌',
+    'hand_over' => '本局结算',
+    'finished' => '整盘结束',
+    _ => phase,
+  };
+
   Future<void> _showMembers() async {
     final room = _room!;
     await showDialog<void>(
@@ -937,16 +1319,15 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
   Widget _playerActions() {
     final game = _game;
     if (game == null ||
-        (game.phase == 'finished' &&
+        ((game.phase == 'finished' || game.phase == 'void') &&
             _room!.room.status == pb.RoomStatus.ROOM_STATUS_WAITING)) {
       return Wrap(
         spacing: DarkTokens.spacingS3,
         children: [
-          if (_room!.room.owner.userId == _userId &&
-              _room!.room.occupiedSeats == 4)
+          if (_room!.room.occupiedSeats == 4)
             FilledButton(
               onPressed: _busy ? null : _start,
-              child: const Text('开始游戏'),
+              child: const Text('准备'),
             ),
           if (_member!.seatNo != 0)
             OutlinedButton(
@@ -958,6 +1339,7 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
     }
     return Wrap(
       key: const ValueKey('play-buttons'),
+      alignment: WrapAlignment.center,
       spacing: DarkTokens.spacingS3,
       runSpacing: DarkTokens.spacingS2,
       children: [
@@ -977,19 +1359,25 @@ class _GameTableScreenState extends ConsumerState<GameTableScreen> {
               child: Text(switch (action) {
                 'PLAY' => '确认出牌 · ${_selected.length} 张',
                 'BURY' => '确认扣底 · ${_selected.length} 张',
-                'DECLARE' => '定主',
+                'DECLARE' => '抢定',
                 'COUNTER' => '反主',
                 'REDECLARE' => '重新定主',
-                'PASS' => '不定主',
-                'CONTINUE' => '下一局',
+                'PASS' => game.phase == 'counter' ? '不反主' : '不定主',
+                'CONTINUE' => '准备',
                 _ => '托管',
               }),
             ),
-        OutlinedButton(
-          key: const ValueKey('autoplay-toggle'),
-          onPressed: _toggleAutoPlay,
-          child: Text(_autoPlaying ? '取消托管' : '托管'),
-        ),
+        if (!{
+          'awaiting_ready',
+          'hand_over',
+          'finished',
+          'void',
+        }.contains(game.phase))
+          OutlinedButton(
+            key: const ValueKey('autoplay-toggle'),
+            onPressed: _toggleAutoPlay,
+            child: Text(_autoPlaying ? '取消托管' : '托管'),
+          ),
       ],
     );
   }

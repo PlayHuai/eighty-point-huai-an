@@ -83,8 +83,7 @@ func initializeLiveState(state *State) error {
 		return err
 	}
 	state.MatchID = hex.EncodeToString(id[:])
-	state.Deadline = time.Now().UTC().Add(time.Minute)
-	return nil
+	return scheduleTurn(state, time.Now().UTC())
 }
 
 // Load returns server-private state for trusted domain callers, never transport
@@ -155,8 +154,29 @@ func (r *Repository) submit(id, playerID, handID string, action Action) (Submiss
 	if err != nil {
 		return Submission{}, err
 	}
-	if action.Kind != SetAutoplay || state.Turn == action.Seat {
-		state.Deadline = time.Now().UTC().Add(time.Minute)
+	if state.Phase != item.state.Phase {
+		state.Deadline = time.Time{}
+	}
+	if state.Phase == Dealing && item.state.Phase == Dealing {
+		// Declarations and autoplay preferences must not restart the deal clock.
+	} else if action.Kind != SetAutoplay || (state.Turn == action.Seat && state.Phase != Dealing) {
+		if err := scheduleTurn(&state, time.Now().UTC()); err != nil {
+			return Submission{}, err
+		}
+		if state.Phase == Void && r.persistence != nil && !state.Practice {
+			store, ok := r.persistence.(interface {
+				VoidLiveMatch(context.Context, State) error
+			})
+			if !ok {
+				return Submission{}, errors.New("void match persistence unavailable")
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			err := store.VoidLiveMatch(ctx, state)
+			cancel()
+			if err != nil {
+				return Submission{}, err
+			}
+		}
 	}
 	if state.Phase == Finished && !state.Practice && state.HallID != "" {
 		requested, err := MatchResult(state)
@@ -212,10 +232,10 @@ func (r *Repository) Due(now time.Time) []State {
 	var due []State
 	for _, item := range r.sessions {
 		s := item.state
-		if s.Turn < 0 || s.Turn > 3 || s.Phase == Finished || s.Phase == HandOver {
+		if s.Turn < 0 || s.Turn > 3 || s.Phase == Finished || s.Deadline.IsZero() {
 			continue
 		}
-		if !now.Before(s.Deadline) || s.Autoplay[s.Turn] {
+		if !now.Before(s.Deadline) {
 			due = append(due, clone(s))
 		}
 	}

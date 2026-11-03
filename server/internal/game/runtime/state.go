@@ -17,12 +17,15 @@ import (
 type Phase string
 
 const (
-	Declaration Phase = "declaration"
-	Bury        Phase = "bury"
-	Counter     Phase = "counter"
-	Playing     Phase = "playing"
-	HandOver    Phase = "hand_over"
-	Finished    Phase = "finished"
+	AwaitingReady Phase = "awaiting_ready"
+	Void          Phase = "void"
+	Dealing       Phase = "dealing"
+	Declaration   Phase = "declaration"
+	Bury          Phase = "bury"
+	Counter       Phase = "counter"
+	Playing       Phase = "playing"
+	HandOver      Phase = "hand_over"
+	Finished      Phase = "finished"
 )
 
 type ActionKind string
@@ -36,6 +39,7 @@ const (
 	PlayCards    ActionKind = "play"
 	Continue     ActionKind = "continue"
 	SetAutoplay  ActionKind = "autoplay"
+	WaitVote     ActionKind = "wait_vote"
 )
 
 var (
@@ -55,13 +59,16 @@ var (
 type Shuffle func([]engine.Card)
 
 type Config struct {
-	ID       string
-	Players  [4]string
-	Practice bool
-	Dealer   int
-	Levels   [2]engine.Rank // Zero values start both teams at 2.
-	HallID   string
-	OwnerID  string
+	RequireReady  bool
+	ID            string
+	Players       [4]string
+	Practice      bool
+	Dealer        int
+	Levels        [2]engine.Rank // Zero values start both teams at 2.
+	HallID        string
+	OwnerID       string
+	DealInterval  time.Duration
+	CounterWindow time.Duration
 }
 
 type HandHistory struct {
@@ -75,9 +82,10 @@ type Played struct {
 }
 
 type Trick struct {
-	Leader int      `json:"leader"`
-	Plays  []Played `json:"plays"`
-	Winner int      `json:"winner"`
+	Leader         int      `json:"leader"`
+	Plays          []Played `json:"plays"`
+	Winner         int      `json:"winner"`
+	CapturedPoints int      `json:"captured_points"`
 }
 
 type Result struct {
@@ -96,6 +104,10 @@ type Result struct {
 // State contains hidden hands, bottom cards and declaration proofs. Persisting
 // practice State is prohibited; the repository excludes it from storage hooks.
 type State struct {
+	RequireReady      bool               `json:"require_ready"`
+	WaitPrompt        bool               `json:"wait_prompt"`
+	WaitVotes         [4]int             `json:"wait_votes"`
+	FallbackCard      *engine.Card       `json:"fallback_card,omitempty"`
 	ID                string             `json:"id"`
 	Players           [4]string          `json:"players"`
 	Practice          bool               `json:"practice"`
@@ -132,6 +144,10 @@ type State struct {
 	Autoplay          [4]bool            `json:"autoplay"`
 	TestScenario      string             `json:"test_scenario,omitempty"`
 	CompletedBaseline int                `json:"completed_baseline,omitempty"`
+	DealInterval      time.Duration      `json:"deal_interval"`
+	CounterWindow     time.Duration      `json:"counter_window"`
+	DealStarted       time.Time          `json:"deal_started"`
+	DealtCards        int                `json:"dealt_cards"`
 }
 
 type Action struct {
@@ -144,7 +160,7 @@ type Action struct {
 }
 
 func NewSession(config Config, shuffle Shuffle) (State, error) {
-	if config.ID == "" || config.Dealer < 0 || config.Dealer > 3 {
+	if config.ID == "" || config.Dealer < 0 || config.Dealer > 3 || config.DealInterval < 0 || config.CounterWindow < 0 {
 		return State{}, ErrInvalidConfig
 	}
 	seen := map[string]bool{}
@@ -163,12 +179,20 @@ func NewSession(config Config, shuffle Shuffle) (State, error) {
 		}
 	}
 	state := State{
-		ID: config.ID, Players: config.Players, Practice: config.Practice,
+		RequireReady: config.RequireReady,
+		ID:           config.ID, Players: config.Players, Practice: config.Practice,
 		Version: 1, Dealer: config.Dealer, Levels: config.Levels,
 		HallID: config.HallID, OwnerID: config.OwnerID,
+		DealInterval: config.DealInterval, CounterWindow: config.CounterWindow,
 	}
 	if err := deal(&state, shuffle); err != nil {
 		return State{}, err
+	}
+	if state.RequireReady {
+		state.Phase, state.DealtCards = AwaitingReady, 0
+		for seat := range state.Ready {
+			state.Ready[seat] = robotSeat(state, seat)
+		}
 	}
 	return state, nil
 }
@@ -213,6 +237,10 @@ func deal(state *State, shuffle Shuffle) error {
 	state.Bottom = append([]engine.Card(nil), cards[100:]...)
 	state.HandNumber++
 	state.Phase, state.Turn = Declaration, state.Dealer
+	state.DealtCards = 100
+	if state.DealInterval > 0 {
+		state.Phase, state.DealtCards = Dealing, 0
+	}
 	state.Trump = engine.Trump{Level: state.Levels[state.Dealer%2]}
 	state.Declarer, state.BottomOwner = -1, -1
 	state.DeclaredCard, state.CounterProof = nil, nil
@@ -221,6 +249,7 @@ func deal(state *State, shuffle Shuffle) error {
 	state.Trick, state.Completed = Trick{}, nil
 	state.CompletedBaseline = 0
 	state.DefenderPoints, state.Ready, state.Result = 0, [4]bool{}, nil
+	state.WaitPrompt, state.WaitVotes, state.FallbackCard = false, [4]int{}, nil
 	return nil
 }
 

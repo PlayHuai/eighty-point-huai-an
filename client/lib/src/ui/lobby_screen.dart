@@ -16,6 +16,7 @@ import 'responsive_breakpoints.dart';
 import 'game_table_screen.dart';
 import 'theme/app_theme.dart';
 import 'support_dialogs.dart';
+import 'settings_dialog.dart';
 
 final lobbyHallsProvider = FutureProvider<List<LobbyHall>>((ref) {
   final session = ref.watch(
@@ -239,6 +240,8 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     String password,
     bool allowSpectators,
     int minimumPoints,
+    int dealIntervalMs,
+    int counterWindowMs,
   ) async {
     final session = widget.auth.session;
     if (session == null || _isCreating) return;
@@ -248,7 +251,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       return;
     }
     final requestKey =
-        '$hallId\u0000$name\u0000$password\u0000$allowSpectators\u0000$minimumPoints';
+        '$hallId\u0000$name\u0000$password\u0000$allowSpectators\u0000$minimumPoints\u0000$dealIntervalMs\u0000$counterWindowMs';
     if (_createRequestKey != requestKey) {
       _createRequestKey = requestKey;
       _createRequestId = createRequestId();
@@ -264,6 +267,8 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
             password: password,
             allowSpectators: allowSpectators,
             minimumPoints: minimumPoints,
+            dealIntervalMs: dealIntervalMs,
+            counterWindowMs: counterWindowMs,
             requestId: _createRequestId!,
           );
       if (!mounted) return;
@@ -350,6 +355,13 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         ),
         actions: [
           TextButton(
+            onPressed: () => showDialog<void>(
+              context: context,
+              builder: (_) => SettingsDialog(auth: widget.auth),
+            ),
+            child: const Text('设置'),
+          ),
+          TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
             child: const Text('取消'),
           ),
@@ -381,14 +393,23 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
           statistics: ref.watch(lobbyPlayerStatisticsProvider),
           onRetryStatistics: () =>
               ref.invalidate(lobbyPlayerStatisticsProvider),
-          onCreate: (name, password, allowSpectators, minimumPoints) =>
-              _createRoom(
+          onCreate:
+              (
+                name,
+                password,
+                allowSpectators,
+                minimumPoints,
+                dealIntervalMs,
+                counterWindowMs,
+              ) => _createRoom(
                 dialogContext,
                 hall.id,
                 name,
                 password,
                 allowSpectators,
                 minimumPoints,
+                dealIntervalMs,
+                counterWindowMs,
               ),
         ),
       ),

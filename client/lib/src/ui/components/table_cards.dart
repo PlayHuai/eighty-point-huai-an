@@ -10,12 +10,14 @@ class TableCard extends StatelessWidget {
     required this.card,
     this.level = '',
     this.trumpSuit = '',
+    this.exposedStrip = false,
     super.key,
   });
 
   final String card;
   final String level;
   final String trumpSuit;
+  final bool exposedStrip;
 
   @override
   Widget build(BuildContext context) {
@@ -35,6 +37,7 @@ class TableCard extends StatelessWidget {
     final rank = CardRank.values[number - 2];
     return CardVisual(
       rank: rank,
+      exposedStrip: exposedStrip,
       suit: suit,
       isLevelCard: level == parts[1] || level == rank.label,
       isRedFive: suit == CardSuit.hearts && rank == CardRank.five,
@@ -78,13 +81,13 @@ class TableHand extends StatelessWidget {
         DarkTokens.spacingS6 * (compact ? 2 : 3),
       );
       final cardWidth = cardHeight * DarkTokens.cardAspectRatio;
-      final minStep = cardWidth * 0.42;
+      final minStep = cardWidth * 0.45;
       final step = count == 1
           ? cardWidth
           : math.max(
               minStep,
               math.min(
-                cardWidth * 0.72,
+                cardWidth * 0.45,
                 (constraints.maxWidth - cardWidth) / (count - 1),
               ),
             );
@@ -112,35 +115,48 @@ class TableHand extends StatelessWidget {
                   width: cardWidth,
                   height: cardHeight,
                   child: Transform.rotate(
-                    angle: compact ? 0 : (index - (count - 1) / 2) * 0.006,
+                    angle: 0,
                     child: cards.isEmpty
                         ? const CardBack()
                         : Semantics(
                             selected: selected.contains(cards[index]),
                             button: onSelect != null,
-                            child: GestureDetector(
-                              key: ValueKey('hand-card-${cards[index]}'),
-                              onTap: onSelect == null
-                                  ? null
-                                  : () => onSelect!(cards[index]),
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  border: selected.contains(cards[index])
-                                      ? Border.all(
-                                          color: DarkTokens.goldBright,
-                                          width: DarkTokens.spacingS1 / 2,
-                                        )
-                                      : null,
-                                  borderRadius: BorderRadius.circular(
-                                    DarkTokens.radiusCard,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    border: selected.contains(cards[index])
+                                        ? Border.all(
+                                            color: DarkTokens.goldBright,
+                                            width: DarkTokens.spacingS1 / 2,
+                                          )
+                                        : null,
+                                    borderRadius: BorderRadius.circular(
+                                      DarkTokens.radiusCard,
+                                    ),
+                                  ),
+                                  child: TableCard(
+                                    card: cards[index],
+                                    level: level,
+                                    trumpSuit: trumpSuit,
+                                    exposedStrip: true,
                                   ),
                                 ),
-                                child: TableCard(
-                                  card: cards[index],
-                                  level: level,
-                                  trumpSuit: trumpSuit,
+                                Positioned(
+                                  left: 0,
+                                  top: 0,
+                                  bottom: 0,
+                                  width: index == count - 1 ? cardWidth : step,
+                                  child: GestureDetector(
+                                    key: ValueKey('hand-card-${cards[index]}'),
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: onSelect == null
+                                        ? null
+                                        : () => onSelect!(cards[index]),
+                                  ),
                                 ),
-                              ),
+                              ],
                             ),
                           ),
                   ),
@@ -190,7 +206,12 @@ class _BottomCardsPanelState extends State<BottomCardsPanel> {
               ? null
               : () => setState(() => _pinned = !_pinned),
           child: Container(
-            padding: const EdgeInsets.all(DarkTokens.spacingS3),
+            padding: const EdgeInsets.fromLTRB(
+              DarkTokens.spacingS3,
+              DarkTokens.spacingS3,
+              DarkTokens.spacingS3,
+              (DarkTokens.spacingS1 + DarkTokens.spacingS2) / 2,
+            ),
             decoration: BoxDecoration(
               color: DarkTokens.bgPanel,
               border: Border.all(color: DarkTokens.cardBack),

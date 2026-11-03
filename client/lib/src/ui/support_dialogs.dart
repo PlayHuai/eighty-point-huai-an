@@ -216,58 +216,62 @@ class _FeedbackDialogState extends State<FeedbackDialog> {
         ],
       ),
       scrollable: true,
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          DropdownButtonFormField<api.FeedbackKind>(
-            initialValue: _kind,
-            decoration: const InputDecoration(labelText: '反馈类型'),
-            items: const [
-              DropdownMenuItem(
-                value: api.FeedbackKind.FEEDBACK_KIND_BUG,
-                child: Text('Bug'),
+      content: SizedBox(
+        width: MediaQuery.sizeOf(context).width
+            .clamp(0, DarkTokens.spacingS6 * 22),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            DropdownButtonFormField<api.FeedbackKind>(
+              initialValue: _kind,
+              decoration: const InputDecoration(labelText: '反馈类型'),
+              items: const [
+                DropdownMenuItem(
+                  value: api.FeedbackKind.FEEDBACK_KIND_BUG,
+                  child: Text('问题'),
+                ),
+                DropdownMenuItem(
+                  value: api.FeedbackKind.FEEDBACK_KIND_SUGGESTION,
+                  child: Text('建议'),
+                ),
+              ],
+              onChanged: _submitting
+                  ? null
+                  : (value) {
+                      if (value != null) setState(() => _kind = value);
+                    },
+            ),
+            const SizedBox(height: DarkTokens.spacingS4),
+            TextField(
+              controller: _body,
+              enabled: !_submitting,
+              minLines: 6,
+              maxLines: 10,
+              maxLength: 2000,
+              decoration: const InputDecoration(
+                labelText: '反馈内容',
+                hintText: '请描述遇到的问题或建议',
+                alignLabelWithHint: true,
               ),
-              DropdownMenuItem(
-                value: api.FeedbackKind.FEEDBACK_KIND_SUGGESTION,
-                child: Text('建议'),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: DarkTokens.spacingS2),
+              Semantics(
+                liveRegion: true,
+                child: Text(
+                  _error!,
+                  style: const TextStyle(color: DarkTokens.redBright),
+                ),
               ),
             ],
-            onChanged: _submitting
-                ? null
-                : (value) {
-                    if (value != null) setState(() => _kind = value);
-                  },
-          ),
-          const SizedBox(height: DarkTokens.spacingS4),
-          TextField(
-            controller: _body,
-            enabled: !_submitting,
-            minLines: 3,
-            maxLines: 6,
-            maxLength: 2000,
-            decoration: const InputDecoration(
-              labelText: '反馈内容',
-              hintText: '请描述遇到的问题或建议',
-              alignLabelWithHint: true,
-            ),
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: DarkTokens.spacingS2),
-            Semantics(
-              liveRegion: true,
-              child: Text(
-                _error!,
-                style: const TextStyle(color: DarkTokens.redBright),
-              ),
+            const SizedBox(height: DarkTokens.spacingS4),
+            FilledButton(
+              onPressed: _submitting ? null : _submit,
+              child: Text(_submitting ? '提交中…' : '提交'),
             ),
           ],
-          const SizedBox(height: DarkTokens.spacingS4),
-          FilledButton(
-            onPressed: _submitting ? null : _submit,
-            child: Text(_submitting ? '提交中…' : '提交'),
-          ),
-        ],
+        ),
       ),
     ),
   );

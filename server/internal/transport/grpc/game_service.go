@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	huaiv1 "github.com/Derek0120/eighty-point-huai-an/server/gen/huai/v1"
 	"github.com/Derek0120/eighty-point-huai-an/server/internal/game/engine"
@@ -66,7 +67,7 @@ func StartGameSession(
 	}
 	if details.GameSessionID != "" {
 		if previous, loadErr := sessions.Load(details.GameSessionID); loadErr == nil {
-			if previous.Phase != runtime.Finished {
+			if previous.Phase != runtime.Finished && previous.Phase != runtime.Void {
 				return room.Details{}, runtime.ErrInvalidConfig
 			}
 			sessions.Delete(details.GameSessionID)
@@ -82,8 +83,11 @@ func StartGameSession(
 		players[member.Seat-1] = member.UserID
 	}
 	state, err := createGameSession(sessions, runtime.Config{
-		ID: details.Room.ID, Players: players, Practice: details.Room.PracticeMode,
+		RequireReady: true,
+		ID:           details.Room.ID, Players: players, Practice: details.Room.PracticeMode,
 		HallID: details.Room.HallID, OwnerID: details.Room.OwnerID,
+		DealInterval:  time.Duration(details.Room.DealIntervalMS) * time.Millisecond,
+		CounterWindow: time.Duration(details.Room.CounterWindowMS) * time.Millisecond,
 	}, scenarios)
 	if err != nil {
 		return room.Details{}, err
@@ -140,20 +144,17 @@ func (s *gameServer) SubmitAction(
 	if request.GetHandId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "hand_id is required")
 	}
-	_, err = s.sessions.SubmitHand(
+	submission, err := s.sessions.SubmitHand(
 		request.GetGameSessionId(), userID, request.GetHandId(), action,
 	)
 	if err != nil {
-		return nil, gameRuntimeError(err)
-	}
-	if err := s.advanceRobots(request.GetGameSessionId()); err != nil {
 		return nil, gameRuntimeError(err)
 	}
 	state, err := s.sessions.Load(request.GetGameSessionId())
 	if err != nil {
 		return nil, gameRuntimeError(err)
 	}
-	if state.Phase == runtime.Finished {
+	if state.Phase == runtime.Finished || state.Phase == runtime.Void {
 		if _, err := s.rooms.CompleteGameSession(request.GetGameSessionId(), request.GetGameSessionId()); err != nil {
 			return nil, roomServiceError(err)
 		}
@@ -165,7 +166,7 @@ func (s *gameServer) SubmitAction(
 	logging.Info("game.action.complete game_session_id=%q request_id=%q user_id=%q version=%d phase=%v",
 		state.ID, request.GetRequestId(), userID, state.Version, state.Phase)
 	return &huaiv1.SubmitActionResponse{
-		Accepted: true, StateVersion: state.Version,
+		Accepted: true, StateVersion: submission.Snapshot.Version,
 	}, nil
 }
 
@@ -251,7 +252,7 @@ func (s *gameServer) authorizedRoom(sessionID, userID string) (room.Details, err
 			return room.Details{}, status.Error(codes.NotFound, "game session not found")
 		}
 		state, err := s.sessions.Load(sessionID)
-		if err != nil || state.Phase != runtime.Finished {
+		if err != nil || (state.Phase != runtime.Finished && state.Phase != runtime.Void) {
 			return room.Details{}, status.Error(codes.NotFound, "game session not found")
 		}
 	}
@@ -286,47 +287,6 @@ func (s *gameServer) snapshotForMember(
 		return nil, gameRuntimeError(err)
 	}
 	return snapshotMessage(view, member, visibleHand), nil
-}
-
-func (s *gameServer) advanceRobots(sessionID string) error {
-	for range 128 {
-		state, err := s.sessions.Load(sessionID)
-		if err != nil {
-			return err
-		}
-		if !state.Practice {
-			return nil
-		}
-		seat := state.Turn
-		if state.Phase == runtime.HandOver {
-			seat = -1
-			for i, playerID := range state.Players {
-				if strings.HasPrefix(playerID, "practice:"+sessionID+":") && !state.Ready[i] {
-					seat = i
-					break
-				}
-			}
-			if seat < 0 {
-				return nil
-			}
-		} else if seat < 0 || seat > 3 ||
-			!strings.HasPrefix(state.Players[seat], "practice:"+sessionID+":") {
-			return nil
-		}
-		requestID := fmt.Sprintf("robot:%d:%d", seat, state.Version)
-		action, err := runtime.AutomaticAction(state, seat, requestID)
-		if err != nil {
-			return err
-		}
-		_, err = s.sessions.Submit(sessionID, state.Players[seat], action)
-		if errors.Is(err, runtime.ErrVersion) {
-			continue
-		}
-		if err != nil {
-			return err
-		}
-	}
-	return errors.New("automatic players exceeded the action limit")
 }
 
 func (s *gameServer) publishUpdate(
@@ -412,6 +372,8 @@ func runtimeAction(
 		result.Kind = runtime.Continue
 	case *huaiv1.GameAction_ConfirmAutoplay:
 		result.Kind, result.Accept = runtime.SetAutoplay, payload.ConfirmAutoplay.GetAccept()
+	case *huaiv1.GameAction_WaitVote:
+		result.Kind, result.Accept = runtime.WaitVote, payload.WaitVote.GetAccept()
 	default:
 		return runtime.Action{}, runtime.ErrInvalidAction
 	}
@@ -431,6 +393,7 @@ func snapshotMessage(view runtime.Snapshot, member room.Member, visibleHand bool
 		ViewSeat: member.Seat, VisibleHandCount: visibleHandCount,
 		TrumpSuit: view.Trump.Suit.String(), TrumpLevel: uint32(view.Trump.Level),
 		State: "IN_PROGRESS", Seq: view.Version,
+		ServerTime:       timestamppb.Now(),
 		AvailableActions: make([]string, 0, len(view.Actions)),
 		PublicPlays:      make([]*huaiv1.PublicPlay, 0, len(view.Trick.Plays)),
 	}
@@ -439,6 +402,26 @@ func snapshotMessage(view runtime.Snapshot, member room.Member, visibleHand bool
 	}
 	if view.Phase == runtime.Finished {
 		result.State = "FINISHED"
+	}
+	if view.Phase == runtime.Void {
+		result.State = "VOID"
+	}
+	result.ReadyWaitPrompt = view.ReadyPrompt
+	for seat, ready := range view.Ready {
+		if ready {
+			result.ReadySeats = append(result.ReadySeats, uint32(seat+1))
+		}
+	}
+	for seat, vote := range view.WaitVotes {
+		if vote < 0 {
+			result.DeclinedWaitSeats = append(result.DeclinedWaitSeats, uint32(seat+1))
+		}
+	}
+	if !view.ReadyDeadline.IsZero() {
+		result.ReadyDeadline = timestamppb.New(view.ReadyDeadline)
+	}
+	if view.FallbackCard != nil {
+		result.FallbackCard = cardsMessage([]engine.Card{*view.FallbackCard})[0]
 	}
 	if view.Result != nil {
 		result.CapturedPoints = int64(view.Result.DefenderScore)
@@ -456,7 +439,8 @@ func snapshotMessage(view runtime.Snapshot, member room.Member, visibleHand bool
 			})
 		}
 	}
-	if !view.Deadline.IsZero() && view.Turn >= 0 {
+	if !view.Deadline.IsZero() && view.Turn >= 0 && view.Phase != runtime.Dealing && view.Phase != runtime.AwaitingReady && view.Phase != runtime.Void &&
+		view.Phase != runtime.HandOver && view.Phase != runtime.Finished {
 		result.ActionDeadline = timestamppb.New(view.Deadline)
 	}
 	for seat, enabled := range view.Autoplay {
@@ -466,14 +450,15 @@ func snapshotMessage(view runtime.Snapshot, member room.Member, visibleHand bool
 	}
 	for _, hand := range view.History {
 		for i, trick := range hand.Tricks {
-			history := &huaiv1.TrickHistory{RoundNo: uint32(hand.Number), TrickNo: uint32(i + 1), WinnerSeat: uint32(trick.Winner + 1)}
+			history := &huaiv1.TrickHistory{RoundNo: uint32(hand.Number), TrickNo: uint32(i + 1), WinnerSeat: uint32(trick.Winner + 1), CapturedPoints: int64(trick.CapturedPoints)}
 			for _, play := range trick.Plays {
 				history.Plays = append(history.Plays, &huaiv1.PublicPlay{SeatNo: uint32(play.Seat + 1), Cards: cardsMessage(play.Cards)})
 			}
 			result.History = append(result.History, history)
 		}
 	}
-	if view.Turn >= 0 && view.Turn < 4 {
+	if view.Turn >= 0 && view.Turn < 4 && view.Phase != runtime.Dealing && view.Phase != runtime.AwaitingReady && view.Phase != runtime.Void &&
+		view.Phase != runtime.HandOver && view.Phase != runtime.Finished {
 		result.CurrentTurnUserId = view.Players[view.Turn]
 	}
 	if view.Dealer >= 0 && view.Dealer < 4 {
@@ -508,6 +493,18 @@ func snapshotMessage(view runtime.Snapshot, member room.Member, visibleHand bool
 	for _, completed := range view.Completed {
 		for _, play := range completed.Plays {
 			result.PublicCards = append(result.PublicCards, cardsMessage(play.Cards)...)
+		}
+	}
+	if count := len(view.Completed); count > view.CompletedBaseline {
+		trick := view.Completed[count-1]
+		result.LastTrick = &huaiv1.TrickHistory{
+			RoundNo: uint32(view.HandNumber), TrickNo: uint32(count - view.CompletedBaseline),
+			WinnerSeat: uint32(trick.Winner + 1), CapturedPoints: int64(trick.CapturedPoints),
+		}
+		for _, play := range trick.Plays {
+			result.LastTrick.Plays = append(result.LastTrick.Plays, &huaiv1.PublicPlay{
+				SeatNo: uint32(play.Seat + 1), Cards: cardsMessage(play.Cards),
+			})
 		}
 	}
 	for _, play := range view.Trick.Plays {
@@ -548,6 +545,8 @@ func actionName(kind runtime.ActionKind) string {
 		return "PLAY"
 	case runtime.Continue:
 		return "CONTINUE"
+	case runtime.WaitVote:
+		return "WAIT_VOTE"
 	default:
 		return ""
 	}

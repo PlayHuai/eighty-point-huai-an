@@ -196,17 +196,29 @@ final Map<String, Future<void> Function(RealEnvironment)> remainingCases = {
       "SELECT COUNT(*) FROM game_sessions WHERE room_id='${created.id}';",
     );
     await e.showTable(players.first, created);
-    await e.visible(find.text('开始游戏'));
+    await e.visible(find.text('准备'));
     await e.captureUi('牌桌-整盘结束等待再开局');
-    await e.tap(find.text('开始游戏'));
+    await e.tap(find.text('准备'));
     await e.waitFor(
-      () => find.text('开始游戏').evaluate().isEmpty,
+      () => find.byKey(const ValueKey('play-buttons')).evaluate().isNotEmpty,
       'second match begins',
     );
     var second = await e.snapshot(players.first, created.id);
+    if (second.phase == 'awaiting_ready') {
+      for (final player in players.skip(1)) {
+        final waiting = await e.rawSnapshot(player, created.id);
+        await e.submit(
+          player,
+          waiting,
+          pb.GameAction(continueAction: pb.ContinueAction()),
+        );
+      }
+      second = await e.snapshot(players.first, created.id);
+    }
     expect(second.phase, 'declaration');
     expect(second.roundNo, 1);
-    expect(second.stateVersion, lessThan(finished.stateVersion));
+    expect(second.readySeats, containsAll([1, 2, 3, 4]));
+    expect(second.seq, second.stateVersion);
     expect(
       await e.database(
         "SELECT COUNT(*) FROM game_sessions WHERE room_id='${created.id}';",
@@ -220,13 +232,22 @@ final Map<String, Future<void> Function(RealEnvironment)> remainingCases = {
       (await e.api.getStatistics(accessToken: players.first.token)).totalGames,
       before.totalGames + 1,
     );
-    await e.visible(find.text('开始游戏'));
+    await e.visible(find.text('准备'));
     await e.tap(find.byTooltip('离开房间'));
     await e.visible(find.text('游戏大厅'));
     expect(
       (await e.details(players[1], created.id)).room.status,
-      pb.RoomStatus.ROOM_STATUS_CLOSED,
+      pb.RoomStatus.ROOM_STATUS_WAITING,
     );
+    for (final player in players.skip(1)) {
+      final details = await e.details(player, created.id);
+      await e.api.leaveRoom(
+        accessToken: player.token,
+        roomId: created.id,
+        expectedVersion: details.version.toInt(),
+        requestId: createRequestId(),
+      );
+    }
     final rooms = await e.api.listRooms(
       accessToken: players[1].token,
       hallId: 'ordinary',
@@ -304,6 +325,11 @@ Future<pb.GameSnapshot> completeMatch(
         );
       }
     } else {
+      if (state.phase == 'declaration' && state.availableActions.isEmpty) {
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        state = await e.snapshot(players.first, initial.gameSessionId);
+        continue;
+      }
       final actor = players.singleWhere(
         (player) => player.id == state.currentTurnUserId,
       );
@@ -321,6 +347,20 @@ Future<pb.GameSnapshot> completeMatch(
 }
 
 pb.GameAction suggestedAction(pb.GameSnapshot state) => switch (state.phase) {
+  'declaration' when state.availableActions.contains('DECLARE') =>
+    pb.GameAction(
+      declareTrump: pb.DeclareTrumpAction(
+        cards: [
+          state.visibleHand.firstWhere(
+            (card) => card.split(':')[1] == '${state.trumpLevel}',
+          ),
+        ],
+        suit: state.visibleHand
+            .firstWhere((card) => card.split(':')[1] == '${state.trumpLevel}')
+            .split(':')
+            .first,
+      ),
+    ),
   'declaration' || 'counter' => pb.GameAction(pass: pb.PassAction()),
   'bury' => pb.GameAction(
     buryCards: pb.BuryCardsAction(cards: state.visibleHand.take(8)),

@@ -32,6 +32,7 @@ void main() {
     await auth.restoreSession();
     await tester.pumpWidget(MaterialApp(home: LoginScreen(auth: auth)));
     await tester.pumpAndSettle();
+    expect(find.text('多次输错将临时锁定账号，请谨慎输入'), findsNothing);
 
     final panel = tester.getRect(find.byKey(const ValueKey('login-panel')));
     final account = tester.getRect(
@@ -286,6 +287,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('创建房间'));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('create-room-private')),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('create-room-private')));
     await tester.pumpAndSettle();
     final fields = find.descendant(
@@ -293,7 +298,10 @@ void main() {
       matching: find.byType(TextField),
     );
     await tester.enterText(fields.at(0), '密码房');
-    await tester.enterText(fields.at(1), 'secret');
+    await tester.enterText(
+      find.byKey(const ValueKey('create-room-password')),
+      'secret',
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, '创建'));
     await tester.pumpAndSettle();
@@ -384,8 +392,10 @@ void main() {
     final points = find.byKey(const ValueKey('create-room-minimum-points'));
     await tester.ensureVisible(points);
     await tester.enterText(points, '100');
+    await tester.pumpAndSettle();
     final spectators = find.byKey(const ValueKey('create-room-spectators'));
     await tester.ensureVisible(spectators);
+    await tester.pumpAndSettle();
     await tester.tap(spectators);
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, '创建'));
@@ -815,6 +825,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('账号或密码不正确，请重新输入。'), findsOneWidget);
+    expect(find.text('多次输错将临时锁定账号，请谨慎输入'), findsOneWidget);
     expect(find.textContaining('gRPC Error'), findsNothing);
   });
 
@@ -1275,6 +1286,8 @@ class _FakeApiClient implements ApiClient {
     required String password,
     bool allowSpectators = false,
     int minimumPoints = 0,
+    int dealIntervalMs = 200,
+    int counterWindowMs = 10000,
     String requestId = '',
   }) async {
     createdRoomMinimumPoints.add(minimumPoints);

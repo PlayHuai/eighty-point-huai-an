@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 import '../../generated/huai/v1/api.pb.dart' as pb;
 import '../theme/app_theme.dart';
 import 'design_icon.dart';
+import 'turn_countdown.dart';
+import 'card_visual.dart';
+import 'table_cards.dart';
 
 class GameTableBoard extends StatelessWidget {
   const GameTableBoard({
@@ -15,6 +18,16 @@ class GameTableBoard extends StatelessWidget {
     required this.dealerUserId,
     required this.center,
     required this.onSeat,
+    this.actionDeadline,
+    this.serverTime,
+    this.outsidePerspective = false,
+    this.seatOnly = false,
+    this.phase = '',
+    this.readySeats = const [],
+    this.bottomCards = const [],
+    this.bottomPublic = false,
+    this.bottomOverlay,
+    this.onPerspective,
     super.key,
   });
 
@@ -25,11 +38,22 @@ class GameTableBoard extends StatelessWidget {
   final String dealerUserId;
   final Widget center;
   final ValueChanged<int>? onSeat;
+  final DateTime? actionDeadline;
+  final DateTime? serverTime;
+  final bool outsidePerspective;
+  final bool seatOnly;
+  final String phase;
+  final List<int> readySeats;
+  final List<String> bottomCards;
+  final bool bottomPublic;
+  final Widget? bottomOverlay;
+  final ValueChanged<int>? onPerspective;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
       final compact = constraints.maxWidth < 600;
+      if (seatOnly) return _seat(context, perspective, compact: compact);
       final width = constraints.maxWidth;
       final height = constraints.maxHeight;
       final seatWidth = math.min(
@@ -37,66 +61,118 @@ class GameTableBoard extends StatelessWidget {
         DarkTokens.spacingS6 * 6.25,
       );
       final seatHeight = math.min(
-        height * 0.22,
-        DarkTokens.spacingS6 * (compact ? 2 : 2.75),
+        height,
+        math.max(
+          DarkTokens.spacingS6 * 2,
+          math.min(height * 0.22, DarkTokens.spacingS6 * (compact ? 2 : 2.75)),
+        ),
       );
       return Stack(
         alignment: Alignment.center,
         children: [
           Positioned(
-            left: width * 0.11,
-            right: width * 0.11,
-            top: height * 0.18,
-            bottom: height * 0.09,
+            left: 0,
+            right: 0,
+            top: 0,
+            bottom: 0,
             child: DecoratedBox(
               decoration: BoxDecoration(
-                color: Color.alphaBlend(
-                  DarkTokens.redAccent.withValues(alpha: 0.5),
-                  DarkTokens.bgBase,
-                ),
-                border: Border.all(color: DarkTokens.goldPrimary),
-                borderRadius: BorderRadius.circular(DarkTokens.radiusBadge),
+                color: DarkTokens.bgPanel,
+                border: Border.all(color: DarkTokens.cardBack),
+                borderRadius: BorderRadius.circular(DarkTokens.radiusPanel),
               ),
               child: Padding(
                 padding: const EdgeInsets.all(DarkTokens.spacingS4),
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    border: Border.all(
-                      color: DarkTokens.goldDark.withValues(alpha: 0.35),
-                    ),
+                    border: Border.all(color: DarkTokens.bgPanel),
                     borderRadius: BorderRadius.circular(DarkTokens.radiusBadge),
                   ),
                 ),
               ),
             ),
           ),
+          if (!compact && !{'hand_over', 'finished', 'void'}.contains(phase))
+            Positioned(
+              left: DarkTokens.spacingS4,
+              top: DarkTokens.spacingS4,
+              child: bottomCards.isNotEmpty
+                  ? SizedBox(
+                      width: DarkTokens.spacingS6 * 8,
+                      child: BottomCardsPanel(
+                        cards: bottomCards,
+                        publiclyRevealed: bottomPublic,
+                      ),
+                    )
+                  : Container(
+                      padding: const EdgeInsets.fromLTRB(
+                        DarkTokens.spacingS2,
+                        DarkTokens.spacingS2,
+                        DarkTokens.spacingS2,
+                        (DarkTokens.spacingS1 + DarkTokens.spacingS2) / 2,
+                      ),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: DarkTokens.cardBack),
+                        borderRadius: BorderRadius.circular(
+                          DarkTokens.radiusPanel,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('底牌'),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              for (var i = 0; i < 8; i++)
+                                SizedBox(
+                                  width: DarkTokens.spacingS5,
+                                  height: DarkTokens.spacingS6,
+                                  child: i < bottomCards.length
+                                      ? TableCard(card: bottomCards[i])
+                                      : const CardBack(),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+            ),
           Positioned(
             left: width * (compact ? 0.28 : 0.25),
             right: width * (compact ? 0.28 : 0.25),
-            top: height * 0.3,
-            bottom: height * 0.12,
+            top: math.min(seatHeight + DarkTokens.spacingS3, height * 0.25),
+            bottom: math.min(seatHeight + DarkTokens.spacingS3, height * 0.25),
             child: center,
           ),
-          for (var relative = 0; relative < 4; relative++)
+          if (bottomOverlay != null)
             Positioned(
-              left: switch (relative) {
-                3 => DarkTokens.spacingS2,
-                1 => width - seatWidth - DarkTokens.spacingS2,
-                _ => (width - seatWidth) / 2,
-              },
-              top: switch (relative) {
-                0 => height - seatHeight,
-                2 => 0,
-                _ => (height - seatHeight) / 2,
-              },
-              width: seatWidth,
-              height: seatHeight,
-              child: _seat(
-                context,
-                (perspective - 1 + relative) % 4 + 1,
-                compact: compact,
-              ),
+              left: width * (compact ? 0.1 : 0.25),
+              right: width * (compact ? 0.1 : 0.25),
+              bottom: (DarkTokens.spacingS2 + DarkTokens.spacingS3) / 2,
+              child: bottomOverlay!,
             ),
+          for (var relative = 0; relative < 4; relative++)
+            if (relative != 0 || !outsidePerspective)
+              Positioned(
+                left: switch (relative) {
+                  3 => DarkTokens.spacingS2,
+                  1 => width - seatWidth - DarkTokens.spacingS2,
+                  _ => (width - seatWidth) / 2,
+                },
+                top: switch (relative) {
+                  0 => height - seatHeight,
+                  2 => 0,
+                  _ => (height - seatHeight) / 2,
+                },
+                width: seatWidth,
+                height: seatHeight,
+                child: _seat(
+                  context,
+                  (perspective - 1 + relative) % 4 + 1,
+                  compact: compact,
+                ),
+              ),
         ],
       );
     },
@@ -118,7 +194,14 @@ class GameTableBoard extends StatelessWidget {
       child: InkWell(
         key: ValueKey('table-seat-$seat'),
         borderRadius: BorderRadius.circular(DarkTokens.radiusPanel),
-        onTap: member == null && onSeat != null ? () => onSeat!(seat) : null,
+        mouseCursor: member != null && onPerspective != null
+            ? SystemMouseCursors.click
+            : MouseCursor.defer,
+        onTap: member != null && onPerspective != null
+            ? () => onPerspective!(seat)
+            : member == null && onSeat != null
+            ? () => onSeat!(seat)
+            : null,
         child: Container(
           padding: const EdgeInsets.all(DarkTokens.spacingS2),
           decoration: BoxDecoration(
@@ -159,7 +242,9 @@ class GameTableBoard extends StatelessWidget {
                       children: [
                         Flexible(
                           child: Text(
-                            member?.rank.isNotEmpty == true
+                            (phase == 'awaiting_ready' || phase == 'hand_over')
+                                ? (readySeats.contains(seat) ? '已准备' : '等待准备')
+                                : member?.rank.isNotEmpty == true
                                 ? member!.rank
                                 : '$seat 号位${active ? ' · 出牌中' : ''}',
                             maxLines: 1,
@@ -185,6 +270,12 @@ class GameTableBoard extends StatelessWidget {
                   ],
                 ),
               ),
+              if (active && actionDeadline != null)
+                TurnCountdown(
+                  key: ValueKey('turn-countdown-$seat'),
+                  deadline: actionDeadline!,
+                  serverTime: serverTime,
+                ),
             ],
           ),
         ),

@@ -52,8 +52,9 @@ func TestDeadlineAndAutoplayAreServerOwned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(repository.Due(time.Now())) != 1 {
-		t.Fatal("explicit autoplay not due")
+	if len(repository.Due(time.Now())) != 0 ||
+		len(repository.Due(submitted.Snapshot.Deadline)) != 1 {
+		t.Fatal("explicit autoplay must wait for its server deadline")
 	}
 	action.RequestID, action.Accept, action.ExpectedVersion = "disable", false, submitted.Snapshot.Version
 	if _, err := repository.Submit(state.ID, state.Players[state.Turn], action); err != nil {

@@ -5,7 +5,8 @@ param(
     [string]$ServerHost = '192.168.117.129',
     [string]$OutputDirectory = 'D:\huai_an_80\auto_test',
     [switch]$SkipDeploy,
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [string[]]$IncludeCaseIds = @()
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -24,6 +25,7 @@ if ($StartRound -gt 1) {
     }
     $previous = @(Import-Csv -LiteralPath $previousResults -Delimiter "`t" -Header Id,Title,Status -Encoding UTF8)
     $retryIds = @($previous | Where-Object { $_.Status -ne 'PASS' -and $_.Status -ne 'TODO' } | Select-Object -ExpandProperty Id -Unique)
+    $retryIds = @($retryIds + $IncludeCaseIds | Select-Object -Unique)
     if ($retryIds.Count -eq 0) {
         Write-Output 'Previous round has no remaining cases; stopping.'
         exit 0

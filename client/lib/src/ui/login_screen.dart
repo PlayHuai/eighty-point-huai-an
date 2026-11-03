@@ -25,6 +25,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _account = TextEditingController();
   final _password = TextEditingController();
   bool _passwordVisible = false;
+  bool _loginFailed = false;
 
   @override
   void dispose() {
@@ -36,7 +37,11 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _submit() async {
     if (widget.auth.isLoading) return;
     if (!_formKey.currentState!.validate()) return;
-    await widget.auth.login(_account.text.trim(), _password.text);
+    final success = await widget.auth.login(
+      _account.text.trim(),
+      _password.text,
+    );
+    if (mounted && !success) setState(() => _loginFailed = true);
   }
 
   InputDecoration _decoration(String hint, DesignIconName icon) =>
@@ -262,33 +267,35 @@ class _LoginScreenState extends State<LoginScreen> {
                                           },
                                     child: const Text('创建账号'),
                                   ),
-                                const SizedBox(height: DarkTokens.spacingS2),
-                                DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    color: DarkTokens.redAccent.withValues(
-                                      alpha: 0.2,
+                                if (_loginFailed) ...[
+                                  const SizedBox(height: DarkTokens.spacingS2),
+                                  DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: DarkTokens.redAccent.withValues(
+                                        alpha: 0.2,
+                                      ),
+                                      border: Border.all(
+                                        color: DarkTokens.suitRed,
+                                      ),
+                                      borderRadius: BorderRadius.circular(
+                                        DarkTokens.radiusButton,
+                                      ),
                                     ),
-                                    border: Border.all(
-                                      color: DarkTokens.suitRed,
-                                    ),
-                                    borderRadius: BorderRadius.circular(
-                                      DarkTokens.radiusButton,
-                                    ),
-                                  ),
-                                  child: const Padding(
-                                    padding: EdgeInsets.all(
-                                      DarkTokens.spacingS3,
-                                    ),
-                                    child: Text(
-                                      '多次输错将临时锁定账号，请谨慎输入',
-                                      style: TextStyle(
-                                        color: DarkTokens.textPrimary,
-                                        fontSize: DarkTokens.fontSizeL5,
-                                        height: 1.2,
+                                    child: const Padding(
+                                      padding: EdgeInsets.all(
+                                        DarkTokens.spacingS3,
+                                      ),
+                                      child: Text(
+                                        '多次输错将临时锁定账号，请谨慎输入',
+                                        style: TextStyle(
+                                          color: DarkTokens.textPrimary,
+                                          fontSize: DarkTokens.fontSizeL5,
+                                          height: 1.2,
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
+                                ],
                               ],
                             ),
                           ),

@@ -62,3 +62,47 @@ try {
 ```
 
 将 `API_ENDPOINT` 和 `WEBSOCKET_ENDPOINT` 替换为部署环境的 HTTPS / WSS 地址；同一 TLS 网关同时提供 API 与 `/events` 时，可留空 `WEBSOCKET_ENDPOINT`。Windows release 文件生成在 `client/build/windows/x64/runner/Release/`。
+
+### 本地服务器部署与 Windows 免安装 ZIP 包
+
+自测环境复用 [自动化部署脚本](test/windows/Deploy.ps1)，服务器为
+`derek@192.168.117.129`，需预先配置 SSH 公钥登录。只更新
+`/home/derek/auto_test` 的 `huai-auto-test` Compose 项目，保留原 MySQL／Redis
+数据；会重建服务，正在进行的内存牌局会中断。该环境使用 `autotest` 构建，
+仅限可信局域网自测，不得当作生产服务或暴露到公网。
+
+在 Windows 上按前文准备 Flutter、生成代码及 Visual Studio C++ 工具；
+无需 Inno Setup／ISCC 或其他安装包制作工具。从仓库根目录执行：
+
+```powershell
+# 1. 上传当前工作区代码，部署服务，并检查 HTTP 8080 / gRPC 8081。
+.\test\windows\Deploy.ps1 `
+  -ServerHost 192.168.117.129 `
+  -OutputDirectory D:\huai_an_80\auto_test\manual_build
+
+# 2. 编译普通客户端入口（不运行 integration_test），生成 Release 免安装 ZIP。
+.\test\windows\Build-Package.ps1 `
+  -ServerHost 192.168.117.129 `
+  -OutputDirectory D:\huai_an_80\auto_test\manual_build
+```
+
+两条命令可分开运行；只重新打包无需重新部署。
+
+脚本按根目录 `VERSION` 编译 x64 Release，并固定注入：
+
+- `API_ENDPOINT=http://192.168.117.129:8081`
+- `WEBSOCKET_ENDPOINT=ws://192.168.117.129:8080/events`
+
+这是局域网明文连接，仅用于本地自测。换服务器须重新打包，不能靠修改安装后
+的环境变量切换。输出位于
+`manual_build\package-<版本>-<时间>-<标识>\`：
+
+- `HuaiAn80-<版本>-windows-x64-local.zip`：完整客户端免安装压缩包。
+- 同名 `.sha256`：ZIP 的 SHA256 校验值。
+- `app\`：完整免安装客户端（含 Flutter 资源、插件和可再分发的 x64 MSVC 运行库）。
+- `app\local-environment.json`：本次构建的版本、源码提交及注入地址，仅供核对，不是动态配置文件。
+
+将 ZIP 完整解压到可写目录，运行其中 `app\eighty_point_huai_an.exe` 即可自测，
+无需管理员权限。可手动创建快捷方式；退出后删除解压目录即可移除程序（不会主动清理用户日志或凭据）。
+不要仅复制客户端 EXE，必须保留同目录 DLL 和 `data`。客户端未进行代码签名，
+Windows 可能提示未知发布者；仅在确认来源和校验值后运行。

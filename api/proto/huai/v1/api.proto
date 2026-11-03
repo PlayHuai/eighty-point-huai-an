@@ -110,12 +110,25 @@ message ListFriendRecentResultsRequest {
 }
 
 service PlayerService {
+  rpc GetSettings(Empty) returns (PlayerSettings);
+  rpc UpdateSettings(UpdateSettingsRequest) returns (PlayerSettings);
   rpc GetProfile(GetProfileRequest) returns (UserProfile);
   rpc UpdateProfile(UpdateProfileRequest) returns (UserProfile);
   rpc GetStatistics(Empty) returns (PlayerStatistics);
   rpc ListRecentResults(PageRequest) returns (ListRecentResultsResponse);
   rpc GetFriendStatistics(GetFriendStatisticsRequest) returns (PlayerStatistics);
   rpc ListFriendRecentResults(ListFriendRecentResultsRequest) returns (ListRecentResultsResponse);
+}
+
+message PlayerSettings {
+  bool show_hand_to_spectators = 1;
+  uint64 version = 2;
+}
+
+message UpdateSettingsRequest {
+  bool show_hand_to_spectators = 1;
+  string request_id = 2;
+  uint64 expected_version = 3;
 }
 
 enum RoomStatus {
@@ -149,6 +162,8 @@ message RoomSummary {
   UserProfile owner = 9;
   bool allow_spectators = 10;
   int64 minimum_points = 11;
+  uint32 deal_interval_ms = 12;
+  uint32 counter_window_ms = 13;
 }
 
 message ListRoomsRequest {
@@ -168,6 +183,8 @@ message CreateRoomRequest {
   bool allow_spectators = 4;
   int64 minimum_points = 5;
   string request_id = 6;
+  optional uint32 deal_interval_ms = 7;
+  optional uint32 counter_window_ms = 8;
 }
 
 message RoomRequest {
@@ -285,6 +302,7 @@ message GameAction {
     ConfirmAutoplayAction confirm_autoplay = 6;
     PassAction pass = 7;
     ContinueAction continue_action = 8;
+    ConfirmAutoplayAction wait_vote = 9;
   }
 }
 
@@ -337,6 +355,7 @@ message TrickHistory {
   uint32 trick_no = 2;
   uint32 winner_seat = 3;
   repeated PublicPlay plays = 4;
+  int64 captured_points = 5;
 }
 
 message GameSnapshot {
@@ -372,6 +391,13 @@ message GameSnapshot {
   repeated TrickHistory history = 30;
   google.protobuf.Timestamp action_deadline = 31;
   repeated uint32 autoplay_seats = 32;
+  TrickHistory last_trick = 33;
+  google.protobuf.Timestamp server_time = 34;
+  repeated uint32 ready_seats = 35;
+  bool ready_wait_prompt = 36;
+  repeated uint32 declined_wait_seats = 37;
+  google.protobuf.Timestamp ready_deadline = 38;
+  string fallback_card = 39;
 }
 
 message ListEventsAfterRequest {

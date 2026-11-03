@@ -15,6 +15,7 @@ final Map<String, Future<void> Function(RealEnvironment)> practiceCases = {
     await e.mount(signedIn: user);
     await e.tap(find.text('练习'));
     await e.visible(find.byKey(const ValueKey('room-identity')));
+    await e.tap(find.text('准备'));
     await e.visible(find.byKey(const ValueKey('play-buttons')));
     final rooms = await e.database(
       "SELECT COUNT(*) FROM rooms WHERE owner_id='${user.id}';",
@@ -106,7 +107,7 @@ final Map<String, Future<void> Function(RealEnvironment)> practiceCases = {
       accessToken: user.token,
       requestId: createRequestId(),
     );
-    var state = await e.snapshot(user, room.id);
+    var state = await _humanTurn(e, user, room.id);
     expect(state.visibleHand.length, 25);
     expect(state.bottomCards, isEmpty);
     final id = createRequestId();
@@ -124,7 +125,7 @@ final Map<String, Future<void> Function(RealEnvironment)> practiceCases = {
       ),
       StatusCode.aborted,
     );
-    state = await e.snapshot(user, room.id);
+    state = await _humanTurn(e, user, room.id);
     expect(state.currentTurnUserId, user.id);
     expect(state.stateVersion, greaterThan(Int64(1)));
     await grpcError(
@@ -150,7 +151,7 @@ final Map<String, Future<void> Function(RealEnvironment)> practiceCases = {
       requestId: createRequestId(),
     );
     await e.showTable(user, room);
-    var state = await e.snapshot(user, room.id);
+    var state = await _humanTurn(e, user, room.id);
     final captured = <String>{};
     var continued = false;
     for (var step = 0; step < 10000 && state.phase != 'finished'; step++) {
@@ -165,7 +166,7 @@ final Map<String, Future<void> Function(RealEnvironment)> practiceCases = {
       if (state.phase == 'hand_over') continued = true;
       final previous = state;
       await e.submit(user, state, suggestedAction(state));
-      state = await e.snapshot(user, room.id);
+      state = await _humanTurn(e, user, room.id);
       expect(state.stateVersion, greaterThan(previous.stateVersion));
       if (state.phase == 'playing') {
         expect(state.suggestedPlay, isNotEmpty);
@@ -199,10 +200,41 @@ final Map<String, Future<void> Function(RealEnvironment)> practiceCases = {
       ),
       '0',
     );
-    await e.visible(find.text('开始游戏'));
+    await e.visible(find.text('准备'));
     await e.captureUi('练习房-整盘结束不计积分');
     await e.tap(find.byTooltip('离开房间'));
     await e.visible(find.text('游戏大厅'));
     await grpcError(() => e.snapshot(user, room.id), StatusCode.notFound);
   },
 };
+
+Future<pb.GameSnapshot> _humanTurn(
+  RealEnvironment e,
+  TestUser user,
+  String roomId,
+) async {
+  final timeout = Stopwatch()..start();
+  while (true) {
+    final state = await e.snapshot(user, roomId);
+    if (state.phase == 'awaiting_ready') {
+      await e.submit(
+        user,
+        state,
+        pb.GameAction(continueAction: pb.ContinueAction()),
+      );
+      continue;
+    }
+    if (state.phase == 'finished' ||
+        (state.currentTurnUserId == user.id &&
+            state.availableActions.isNotEmpty) ||
+        state.availableActions.contains('CONTINUE'))
+      return state;
+    if (timeout.elapsed > const Duration(minutes: 2)) {
+      throw StateError(
+        'Server robots did not return control to the human in $roomId.',
+      );
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    await e.tester.pump();
+  }
+}

@@ -32,6 +32,8 @@ class LobbyRoom {
     this.allowSpectators = false,
     this.minimumPoints = 0,
     this.practiceMode = false,
+    this.dealIntervalMs = 200,
+    this.counterWindowMs = 10000,
   });
 
   final String id;
@@ -45,4 +47,6 @@ class LobbyRoom {
   final bool allowSpectators;
   final int minimumPoints;
   final bool practiceMode;
+  final int dealIntervalMs;
+  final int counterWindowMs;
 }

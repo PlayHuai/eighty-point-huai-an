@@ -1,8 +1,9 @@
 package runtime
 
 import (
-	"github.com/Derek0120/eighty-point-huai-an/server/internal/game/engine"
 	"time"
+
+	"github.com/Derek0120/eighty-point-huai-an/server/internal/game/engine"
 )
 
 // AvailableAction describes a private action opportunity, not a robot strategy.
@@ -15,38 +16,43 @@ type AvailableAction struct {
 }
 
 type Snapshot struct {
-	ID             string             `json:"id"`
-	Players        [4]string          `json:"players"`
-	Practice       bool               `json:"practice"`
-	Version        uint64             `json:"version"`
-	HandNumber     int                `json:"hand_number"`
-	Phase          Phase              `json:"phase"`
-	Dealer         int                `json:"dealer"`
-	Turn           int                `json:"turn"`
-	BottomOwner    int                `json:"bottom_owner"`
-	Levels         [2]engine.Rank     `json:"levels"`
-	Trump          engine.Trump       `json:"trump"`
-	CounterKind    engine.CounterKind `json:"counter_kind"`
-	Seat           int                `json:"seat"`
-	Hand           []engine.Card      `json:"hand,omitempty"`
-	SuggestedPlay  []engine.Card      `json:"suggested_play,omitempty"`
-	HandCounts     [4]int             `json:"hand_counts"`
-	Bottom         []engine.Card      `json:"bottom,omitempty"`
-	BottomCount    int                `json:"bottom_count"`
-	BottomPublic   bool               `json:"bottom_public"`
-	Declarer       int                `json:"declarer"`
-	CounterPasses  int                `json:"counter_passes"`
-	Countered      bool               `json:"countered"`
-	FinalTrump     bool               `json:"final_trump"`
-	Trick          Trick              `json:"trick"`
-	Completed      []Trick            `json:"completed"`
-	DefenderPoints int                `json:"defender_points"`
-	Ready          [4]bool            `json:"ready"`
-	Result         *Result            `json:"result,omitempty"`
-	Actions        []AvailableAction  `json:"actions"`
-	History        []HandHistory      `json:"history"`
-	Deadline       time.Time          `json:"deadline"`
-	Autoplay       [4]bool            `json:"autoplay"`
+	ReadyPrompt       bool               `json:"ready_prompt"`
+	WaitVotes         [4]int             `json:"wait_votes"`
+	ReadyDeadline     time.Time          `json:"ready_deadline"`
+	FallbackCard      *engine.Card       `json:"fallback_card,omitempty"`
+	ID                string             `json:"id"`
+	Players           [4]string          `json:"players"`
+	Practice          bool               `json:"practice"`
+	Version           uint64             `json:"version"`
+	HandNumber        int                `json:"hand_number"`
+	Phase             Phase              `json:"phase"`
+	Dealer            int                `json:"dealer"`
+	Turn              int                `json:"turn"`
+	BottomOwner       int                `json:"bottom_owner"`
+	Levels            [2]engine.Rank     `json:"levels"`
+	Trump             engine.Trump       `json:"trump"`
+	CounterKind       engine.CounterKind `json:"counter_kind"`
+	Seat              int                `json:"seat"`
+	Hand              []engine.Card      `json:"hand,omitempty"`
+	SuggestedPlay     []engine.Card      `json:"suggested_play,omitempty"`
+	HandCounts        [4]int             `json:"hand_counts"`
+	Bottom            []engine.Card      `json:"bottom,omitempty"`
+	BottomCount       int                `json:"bottom_count"`
+	BottomPublic      bool               `json:"bottom_public"`
+	Declarer          int                `json:"declarer"`
+	CounterPasses     int                `json:"counter_passes"`
+	Countered         bool               `json:"countered"`
+	FinalTrump        bool               `json:"final_trump"`
+	Trick             Trick              `json:"trick"`
+	Completed         []Trick            `json:"completed"`
+	DefenderPoints    int                `json:"defender_points"`
+	Ready             [4]bool            `json:"ready"`
+	Result            *Result            `json:"result,omitempty"`
+	Actions           []AvailableAction  `json:"actions"`
+	History           []HandHistory      `json:"history"`
+	Deadline          time.Time          `json:"deadline"`
+	Autoplay          [4]bool            `json:"autoplay"`
+	CompletedBaseline int                `json:"completed_baseline,omitempty"`
 }
 
 // View returns an isolated, personalized view. Seat -1 is a closed-hand
@@ -66,18 +72,24 @@ func View(state State, seat int) (Snapshot, error) {
 		DefenderPoints: s.DefenderPoints, Ready: s.Ready, Result: s.Result,
 		Actions: []AvailableAction{},
 		History: s.History, Deadline: s.Deadline, Autoplay: s.Autoplay,
+		CompletedBaseline: s.CompletedBaseline,
+		ReadyPrompt:       s.WaitPrompt, WaitVotes: s.WaitVotes, FallbackCard: s.FallbackCard,
 	}
 	for i := range s.Hands {
 		view.HandCounts[i] = len(s.Hands[i])
+		if s.Phase == Dealing || s.Phase == AwaitingReady {
+			view.HandCounts[i] = (s.DealtCards + 3 - i) / 4
+		}
 	}
-	view.BottomPublic = s.Result != nil && s.Result.BottomCaptured
+	view.BottomPublic = s.Result != nil
 	if view.BottomPublic {
 		view.Bottom = s.Bottom
 	}
 	if seat == -1 {
 		return view, nil
 	}
-	view.Hand = s.Hands[seat]
+	view.Hand = s.Hands[seat][:view.HandCounts[seat]]
+	sortHand(view.Hand, s.Trump)
 	if seat == s.BottomOwner {
 		view.Bottom = s.Bottom
 	}
@@ -89,23 +101,32 @@ func View(state State, seat int) (Snapshot, error) {
 	add := func(kind ActionKind, cards []engine.Card, count int) {
 		view.Actions = append(view.Actions, AvailableAction{Kind: kind, Cards: cards, Count: count})
 	}
-	if s.Phase == Declaration {
-		for _, card := range s.Hands[seat] {
+	if s.Phase == AwaitingReady || s.Phase == HandOver {
+		view.ReadyDeadline = s.Deadline
+		if !s.Ready[seat] {
+			add(Continue, nil, 0)
+		}
+		if s.WaitPrompt && s.WaitVotes[seat] == 0 && !robotSeat(s, seat) {
+			add(WaitVote, nil, 0)
+		}
+		return view, nil
+	}
+	if (s.Phase == Declaration || s.Phase == Dealing) && s.Declarer < 0 {
+		for _, card := range view.Hand {
 			if card.Rank == s.Trump.Level {
 				add(Declare, []engine.Card{card}, 1)
 			}
 		}
-		if s.Turn == seat {
+		if s.Phase == Declaration && s.Turn == seat && !s.RequireReady {
 			add(Pass, nil, 0)
 		}
 		return view, nil
 	}
-	if s.Phase == HandOver && !s.Ready[seat] {
-		add(Continue, nil, 0)
-	}
+
 	if s.Turn != seat {
 		return view, nil
 	}
+
 	switch s.Phase {
 	case Bury:
 		add(BuryCards, nil, 8)

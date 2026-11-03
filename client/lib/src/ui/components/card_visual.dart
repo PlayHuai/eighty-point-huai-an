@@ -52,6 +52,7 @@ class CardVisual extends StatelessWidget {
     this.isLevelCard = false,
     this.isRedFive = false,
     this.trumpSuit,
+    this.exposedStrip = false,
     super.key,
   });
 
@@ -60,6 +61,7 @@ class CardVisual extends StatelessWidget {
   final bool isLevelCard;
   final bool isRedFive;
   final CardSuit? trumpSuit;
+  final bool exposedStrip;
 
   String get assetPath {
     if (rank == CardRank.smallJoker || rank == CardRank.bigJoker) {
@@ -95,10 +97,17 @@ class CardVisual extends StatelessWidget {
               return Stack(
                 fit: StackFit.expand,
                 children: [
-                  Image.asset(
-                    assetPath,
-                    fit: BoxFit.fill,
-                    excludeFromSemantics: true,
+                  ColoredBox(
+                    color: DarkTokens.cardFace,
+                    child: Padding(
+                      key: const ValueKey('card-face-inset'),
+                      padding: const EdgeInsets.all(DarkTokens.spacingS1 / 2),
+                      child: Image.asset(
+                        assetPath,
+                        fit: BoxFit.fill,
+                        excludeFromSemantics: true,
+                      ),
+                    ),
                   ),
                   if (isLevelCard || isRedFive)
                     DecoratedBox(
@@ -116,12 +125,23 @@ class CardVisual extends StatelessWidget {
                     ),
                   if (indicators.isNotEmpty)
                     Positioned(
-                      top: DarkTokens.spacingS1,
-                      right: DarkTokens.spacingS1,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: indicators,
+                      top: exposedStrip ? null : DarkTokens.spacingS1,
+                      bottom: exposedStrip ? DarkTokens.spacingS2 : null,
+                      left: exposedStrip ? DarkTokens.spacingS1 : null,
+                      right: exposedStrip ? null : DarkTokens.spacingS1,
+                      child: SizedBox(
+                        width: exposedStrip
+                            ? constraints.maxWidth * 0.36
+                            : null,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.bottomLeft,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: indicators,
+                          ),
+                        ),
                       ),
                     ),
                 ],
@@ -155,10 +175,7 @@ class CardBack extends StatelessWidget {
             borderRadius: BorderRadius.circular(DarkTokens.radiusCard),
           ),
           child: const Center(
-            child: DesignIcon(
-              name: DesignIconName.cardBack,
-              enabled: true,
-            ),
+            child: DesignIcon(name: DesignIconName.cardBack, enabled: true),
           ),
         ),
       ),
@@ -173,11 +190,7 @@ class LevelCardHighlight extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) =>
-      _CardBadge(
-        label: '级牌',
-        color: DarkTokens.goldDark,
-        compact: compact,
-      );
+      _CardBadge(label: '级牌', color: DarkTokens.goldDark, compact: compact);
 }
 
 class RedFiveHighlight extends StatelessWidget {
